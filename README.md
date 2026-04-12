@@ -69,10 +69,7 @@ Email notifications are **not** implemented in this release; you can send mail f
 git clone https://github.com/Raktim94/Submify.git
 cd Submify
 ```
-cd ~/Submify
-git pull
-docker compose up --build -d
-docker compose logs -f api
+
 ### 2. Set secrets and origins (recommended before first boot)
 
 Create a `.env` next to `docker-compose.yml` (Compose loads it automatically) or export variables in your shell:
