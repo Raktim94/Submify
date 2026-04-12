@@ -39,7 +39,7 @@ func HashPassword(password string) (string, error) {
 
 func VerifyPassword(password, encoded string) bool {
 	parts := strings.Split(encoded, "$")
-	if len(parts) != 6 || parts[0] != "argon2id" {
+	if len(parts) != 5 || parts[0] != "argon2id" {
 		return false
 	}
 
@@ -50,11 +50,11 @@ func VerifyPassword(password, encoded string) bool {
 		return false
 	}
 
-	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
 	if err != nil {
 		return false
 	}
-	hash, err := base64.RawStdEncoding.DecodeString(parts[5])
+	hash, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
 		return false
 	}

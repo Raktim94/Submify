@@ -15,7 +15,8 @@ func NotifyAsync(token, chatID, message string) {
 	}
 	go func() {
 		for i := 0; i < 3; i++ {
-			if err := send(token, chatID, message); err == nil {
+			err := send(token, chatID, message)
+			if err == nil {
 				return
 			}
 			log.Printf("telegram notify failed (attempt=%d): %v", i+1, err)

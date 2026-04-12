@@ -17,11 +17,22 @@ export default function ExportPage() {
     });
   }, []);
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     const format = form.get('format') as string;
-    window.open(`${API_BASE}/projects/${projectId}/export?format=${format}`, '_blank');
+    const token = localStorage.getItem('submify_access_token');
+    const res = await fetch(`${API_BASE}/projects/${projectId}/export?format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `submissions.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (

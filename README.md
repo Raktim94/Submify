@@ -107,6 +107,19 @@ docker compose logs -f api
 docker compose logs -f nginx
 ```
 
+### 6. Quick redeploy (pull latest code, rebuild, watch API logs)
+
+On a server where you cloned the repo to `~/Submify`, use this copy-paste sequence after changes are pushed to Git:
+
+```bash
+cd ~/Submify
+git pull
+docker compose up --build -d
+docker compose logs -f api
+```
+
+The last command streams API container logs (Ctrl+C to stop). Omit it if you only need a one-shot deploy.
+
 ---
 
 ## Configuration and environment variables
@@ -295,14 +308,18 @@ Use **HTTPS** in production, rotate **`public_api_key`** if exposed inappropriat
 
 ## Operations: logs, backup, updates
 
-**Logs:** `docker compose logs -f [service]`
+**Logs:** `docker compose logs -f [service]` (e.g. `docker compose logs -f api` or `nginx`)
 
-**Update images / rebuild:**
+**Pull latest code, rebuild, and follow API logs** (duplicate of **Installation → Quick redeploy** for convenience):
 
 ```bash
+cd ~/Submify
 git pull
 docker compose up --build -d
+docker compose logs -f api
 ```
+
+Adjust `~/Submify` if your clone lives elsewhere.
 
 **Backups:** Persisted data (see `docker-compose.yml`):
 
@@ -339,11 +356,22 @@ Review performed against the code in this repository (handlers, routes, middlewa
 | Frontend API | `apps/web/lib/api.ts` uses `NEXT_PUBLIC_API_BASE` default `/api/v1` |
 | Module path | Go module is `github.com/nodedr/submify/apps/api` (forks keep import paths or use replace directives if forking internals) |
 
-**Operational notes (not necessarily bugs):**
+### Bugs found and fixed
 
-- Global IP rate limit applies to **all** routes, including `/system/health` and submit—tune at the edge if you need aggressive monitoring without hitting limits.
+| File | Bug | Fix |
+|------|-----|-----|
+| `apps/api/internal/telegram/telegram.go` | **Compile error** — `err` from `if err := send(...)` was scoped inside the `if` block but referenced on the next line outside it | Separated `err := send(...)` from the `if` so `err` is in scope for the log line |
+| `apps/api/internal/auth/password.go` | **Login always fails** — `HashPassword` produces 5 `$`-delimited parts but `VerifyPassword` expected 6 parts and read salt/hash from wrong indices | Changed verify to expect 5 parts and read salt from `parts[3]`, hash from `parts[4]` |
+| `apps/api/Dockerfile` | **Build fails** — no `go.sum` existed; only `go.mod` was copied before `go mod download` | Replaced with `COPY . .` then `go mod tidy && go build` so the builder resolves deps itself |
+| `apps/web/Dockerfile` | **Build fails** — `COPY /app/public` fails because no `public/` directory exists in the project | Replaced with `RUN mkdir -p ./public` |
+| `docker-compose.yml` | **Warning** — obsolete `version: '3.9'` attribute | Removed |
+| `apps/web/app/export/page.tsx` | **Exports always 401** — `window.open()` cannot send `Authorization` header | Replaced with `fetch()` + Blob download that sends the Bearer token |
+
+**Operational notes:**
+
+- Global IP rate limit applies to **all** routes, including `/system/health` and submit — tune at the edge if you need aggressive monitoring without hitting limits.
 - `GITHUB_REPO` defaults to `nodedr/submify`; set it if you rely on update checks against a fork.
-- Automated tests were not executed in this environment (Go toolchain not available on the review host); run `go test ./...` under `apps/api` where Go is installed.
+- Run `go test ./...` under `apps/api` to execute unit tests for password hashing, JWT, etc.
 
 ---
 
