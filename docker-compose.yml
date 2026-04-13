@@ -69,7 +69,7 @@ services:
       RATE_LIMIT_SUBMIT_KEY_RPM: ${RATE_LIMIT_SUBMIT_KEY_RPM:-180}
       RATE_LIMIT_AUTH_USER_RPM: ${RATE_LIMIT_AUTH_USER_RPM:-600}
       APP_VERSION: ${APP_VERSION:-0.1.0}
-      GITHUB_REPO: ${GITHUB_REPO:-nodedr/submify}
+      GITHUB_REPO: ${GITHUB_REPO:-Raktim94/Submify}
       # Optional: GitHub PAT for higher rate limits or private repos (https://github.com/settings/tokens).
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       UPDATE_CHECK_MINUTES: ${UPDATE_CHECK_MINUTES:-360}

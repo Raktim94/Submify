@@ -59,7 +59,7 @@ func Load() Config {
 		CorsPublicSubmitAnyOrigin:   getEnvBool("CORS_PUBLIC_SUBMIT_ANY_ORIGIN", true),
 		TrustedProxies:              trusted,
 		AppVersion:                  getEnv("APP_VERSION", "0.1.0"),
-		GitHubRepo:                  getEnv("GITHUB_REPO", "nodedr/submify"),
+		GitHubRepo:                  getEnv("GITHUB_REPO", "Raktim94/Submify"),
 		GitHubToken:                 getEnv("GITHUB_TOKEN", ""),
 		UpdateCheckInterval:         time.Duration(getEnvInt("UPDATE_CHECK_MINUTES", 360)) * time.Minute,
 		AllowUpdateTrigger:          getEnvBool("ALLOW_UPDATE_TRIGGER", false),
