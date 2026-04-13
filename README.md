@@ -31,7 +31,7 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
 - **Nginx** listens on port **2512** and proxies:
   - `/api/*` → API (Go, port 8080 in the container)
   - `/*` → Next.js (port 3000 in the container)
-- **PostgreSQL** stores users, projects, submissions, and system configuration.
+- **PostgreSQL** stores all tenants in one database (JSONB-friendly, battle-tested). Rows are scoped by `user_id` / `project_id`; the API never lists or mutates another user’s data.
 - **RustFS / MinIO** (`rustfs` service) provides an S3-compatible API for presigned uploads when configured.
 
 The browser and external clients should use **one origin** for dashboard + API (e.g. `https://forms.example.com:2512/api/v1/...`) or configure **CORS** for separate sites (see [Connecting a client website](#connecting-a-client-website-forms)).
@@ -40,7 +40,7 @@ The browser and external clients should use **one origin** for dashboard + API (
 
 ## What you get
 
-- JSON form submission API keyed per project (`public_api_key`)
+- JSON form submission API: **one primary `api_key` per account** (embed on all sites) plus optional per-project legacy keys
 - Admin login (JWT access + refresh tokens)
 - Projects CRUD, submission list, bulk delete
 - Export submissions as **XLSX** or **PDF**
@@ -142,6 +142,12 @@ Values used by the **API** container (see `docker-compose.yml` and `apps/api/int
 | `PRESIGN_EXPIRY_MINUTES` | `10` | Presigned URL lifetime |
 | `ACCESS_TOKEN_TTL_MINUTES` | `30` | Access token lifetime |
 | `REFRESH_TOKEN_TTL_HOURS` | `168` | Refresh token lifetime |
+| `POSTGRES_PASSWORD` | `submify` | DB password (set a strong value in production; must match `DATABASE_URL` in Compose) |
+| `TRUSTED_PROXIES` | private RFC1918 + loopback | CIDRs allowed to set `X-Forwarded-For` (trust Nginx / load balancers only) |
+| `RATE_LIMIT_SENSITIVE_PUBLIC_RPM` | `25` | Login / setup / refresh / logout per IP |
+| `RATE_LIMIT_SUBMIT_IP_RPM` | `90` | Public submit per client IP |
+| `RATE_LIMIT_SUBMIT_KEY_RPM` | `180` | Public submit per API key (path + header) |
+| `RATE_LIMIT_AUTH_USER_RPM` | `600` | Authenticated API per user id |
 
 **Web** container:
 
@@ -164,8 +170,8 @@ You will enter:
 After setup:
 
 1. Log in at **`/login`**
-2. Create a **project** and copy **`public_api_key`**
-3. Use that key in your website integration (see below)
+2. Open **Dashboard** — your **form API key** is shown there (a **Default** inbox project is created for you automatically)
+3. Use that **`api_key`** on every website integration (see [Connecting a client website](#connecting-a-client-website-forms)); add more **Projects** only if you want separate legacy ingest keys or organization
 
 **Dashboard-only / no real S3:** You can enter placeholder non-empty S3 values to pass setup. JSON submissions and the dashboard will work; **health** may report S3 degraded until valid storage is configured, and **presign/upload** will not work until real S3 settings are saved under **Settings**.
 
@@ -196,7 +202,7 @@ Summary:
 | Setup | POST | `/api/v1/system/setup` | None (once) |
 | Health | GET | `/api/v1/system/health` | None |
 | Auth | POST | `/api/v1/auth/login`, `/auth/refresh`, `/auth/logout` | None |
-| Submit | POST | `/api/v1/submit/{project_key}` | Header `x-api-key` (must match `project_key`) |
+| Submit | POST | `/api/v1/submit/{key}` | Header `x-api-key` (must match path). `key` = account **`api_key`** (recommended) or a project **`public_api_key`** (legacy) |
 | Projects | GET, POST | `/api/v1/projects` | Bearer |
 | Project | PATCH | `/api/v1/projects/{id}` | Bearer |
 | Submissions | GET | `/api/v1/projects/{id}/submissions` | Bearer |
@@ -210,12 +216,14 @@ Summary:
 
 ## Connecting a client website (forms)
 
-### 1. Get the project key
+### 1. Get your API key
 
-In the dashboard, create a project and copy **`public_api_key`** (a UUID string). This value is both:
+After login, the dashboard shows **your form API key** (also returned as `api_key` from `POST /auth/login` and `GET /auth/me`). Use the same UUID for:
 
-- The **`project_key`** path segment: `POST /api/v1/submit/<public_api_key>`
-- The **`x-api-key`** header value (the server requires them to **match**)
+- The URL segment: `POST /api/v1/submit/<api_key>`
+- The **`x-api-key`** header (must **match** the path)
+
+Submissions go to your **default inbox** project. **Project-only keys** (`public_api_key` on non-default projects) still work for separate ingest endpoints if you need them.
 
 ### 2. CORS for browser-based forms on another domain
 
@@ -245,14 +253,14 @@ Flat objects (without `data` / `files`) are also accepted; they are stored as th
 ### 4. Example: `fetch` from the browser
 
 ```javascript
-const PROJECT_KEY = "<public_api_key>";
+const API_KEY = "<your account api_key from dashboard>";
 const API_BASE = "https://your-submify-host:2512/api/v1";
 
-await fetch(`${API_BASE}/submit/${PROJECT_KEY}`, {
+await fetch(`${API_BASE}/submit/${API_KEY}`, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "x-api-key": PROJECT_KEY
+    "x-api-key": API_KEY
   },
   body: JSON.stringify({
     data: { name: "Jane", email: "jane@example.com", message: "Hi" },
@@ -263,11 +271,18 @@ await fetch(`${API_BASE}/submit/${PROJECT_KEY}`, {
 
 ### 5. Example: Next.js server action / route (keeps key out of client if you proxy)
 
-You can call Submify from **your** backend with the same `POST /submit/{key}` contract so the project key never ships to the browser (implement a route that forwards the body).
+You can call Submify from **your** backend with the same `POST /submit/{key}` contract so the **api_key** never ships to the browser (implement a route that forwards the body).
 
 ### 6. Rate limits
 
-The API applies **10 requests per minute per IP** across routes. High-traffic public forms should sit behind your own CDN or server-side proxy if you need higher burst capacity.
+Limits are **tiered** so dashboard users are not punished by anonymous/IP caps:
+
+- **`GET /system/bootstrap-status`** and **`GET /system/health`**: no API rate limit (use WAF/monitoring in production if needed).
+- **Login / refresh / logout / setup**: per **client IP** (default **25/min**; `RATE_LIMIT_SENSITIVE_PUBLIC_RPM`).
+- **`POST /submit`**: per **IP** and per **API key** (defaults **90/min** and **180/min**; `RATE_LIMIT_SUBMIT_IP_RPM`, `RATE_LIMIT_SUBMIT_KEY_RPM`).
+- **All Bearer-authenticated routes**: per **user id** (default **600/min**; `RATE_LIMIT_AUTH_USER_RPM`).
+
+Nginx forwards `X-Forwarded-For`; the API uses **`TRUSTED_PROXIES`** (CIDR list) so client IPs are derived safely. Tune env vars in `docker-compose.yml` if legitimate traffic hits `429`.
 
 ---
 
@@ -284,10 +299,10 @@ MIME types and max size are enforced server-side (`UPLOAD_ALLOWED_MIME`, `UPLOAD
 
 ## Dashboard workflow
 
-1. Log in as admin  
-2. Create projects and copy **API keys**  
-3. Point website forms at **`POST /api/v1/submit/{key}`**  
-4. Review submissions under each project  
+1. Log in  
+2. Copy your **account form API key** from the dashboard (one key for all sites)  
+3. Point website forms at **`POST /api/v1/submit/{api_key}`** with matching **`x-api-key`**  
+4. Review submissions (default inbox under **Default** project; optional extra projects for separation)  
 5. Export **XLSX** or **PDF**; use **bulk delete** to stay under the per-project cap  
 
 ---
@@ -299,10 +314,10 @@ MIME types and max size are enforced server-side (`UPLOAD_ALLOWED_MIME`, `UPLOAD
 | Submissions per project | **5000** (then `429`) |
 | Password hashing | **Argon2id** |
 | JWT | Access + refresh; Bearer auth for dashboard APIs |
-| Rate limit | **10 req/min/IP** |
+| Rate limit | Tiered: see [Connecting → Rate limits](#6-rate-limits); authed users limited **per account**, not shared 10/min/IP |
 | Tenant isolation | Project ownership checked on authenticated routes |
 
-Use **HTTPS** in production, rotate **`public_api_key`** if exposed inappropriately, and treat the admin account like infrastructure access.
+Use **HTTPS** in production. The **account `api_key`** is meant to be embedded in public sites (like a reCAPTCHA site key — not a secret admin password). If it leaks, plan to add a **rotate key** feature or re-provision the account; project-level keys can be rotated from **Projects** today.
 
 ---
 
@@ -336,8 +351,8 @@ Back up these directories on a schedule appropriate to your RPO/RTO.
 |---------|----------------|
 | Nothing on port 2512 | Firewall, `docker compose ps`, Nginx logs |
 | Setup loop | DB healthy, API logs, `system_configs` row |
-| `401` on submit | `x-api-key` equals URL `project_key` and matches a project |
-| `429` on submit | Per-project 5000 cap or global IP rate limit |
+| `401` on submit | `x-api-key` equals URL segment and matches a valid **`api_key`** or project **`public_api_key`** |
+| `429` on submit | Per-project **5000** cap, or submit IP/key rate limits |
 | CORS errors from browser | `ALLOWED_ORIGINS` includes your site’s exact origin (scheme + host + port) |
 | S3 degraded in health | Expected with placeholder S3; fix credentials in Settings |
 
@@ -350,7 +365,7 @@ Review performed against the code in this repository (handlers, routes, middlewa
 | Area | Assessment |
 |------|------------|
 | Routes vs [docs/api.md](docs/api.md) | Aligned with `apps/api/internal/httpapi/server.go` |
-| Submit auth | URL `project_key` and `x-api-key` must match and exist in DB |
+| Submit auth | URL segment and `x-api-key` must match; key resolves to **user** (default inbox) or **project** (legacy) |
 | Secured routes | `SetupGuard` + `AuthGuard` + ownership checks on project-scoped handlers |
 | Nginx | `/api/` → API, `/` → web; `client_max_body_size 30M` |
 | Frontend API | `apps/web/lib/api.ts` uses `NEXT_PUBLIC_API_BASE` default `/api/v1` |
@@ -369,7 +384,9 @@ Review performed against the code in this repository (handlers, routes, middlewa
 
 **Operational notes:**
 
-- Global IP rate limit applies to **all** routes, including `/system/health` and submit — tune at the edge if you need aggressive monitoring without hitting limits.
+- **Tenant isolation:** one PostgreSQL database with strict `user_id` / `project_id` checks on every mutating and listing path; another user’s JWT cannot read their rows.
+- **Persistence:** Postgres files live in the **host bind mount** (`/var/lib/submify/data/postgres` in the default Compose file), not in the API image — restarts keep data. Use a strong **`POSTGRES_PASSWORD`** in production.
+- Rate limits are **tiered** (health/bootstrap exempt; authed traffic per **user**). Adjust env vars if you still see `429` for legitimate load.
 - `GITHUB_REPO` defaults to `nodedr/submify`; set it if you rely on update checks against a fork.
 - Run `go test ./...` under `apps/api` to execute unit tests for password hashing, JWT, etc.
 

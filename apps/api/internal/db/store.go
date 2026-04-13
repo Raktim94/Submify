@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -16,6 +17,7 @@ type Store struct {
 type User struct {
 	ID           string    `json:"id"`
 	Email        string    `json:"email"`
+	APIKey       string    `json:"api_key"`
 	PasswordHash string    `json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
 }
@@ -99,11 +101,21 @@ func (s *Store) CreateInitialSystemConfig(cfg SystemConfig) error {
 		return err
 	}
 
+	userID := uuid.NewString()
+	apiKey := uuid.NewString()
+	internalProjectKey := uuid.NewString()
+
 	if _, err := tx.Exec(`
-		INSERT INTO users(id, email, password_hash)
-		VALUES (gen_random_uuid(), $1, $2)
-		ON CONFLICT (email) DO NOTHING
-	`, cfg.AdminEmail, cfg.AdminHash); err != nil {
+		INSERT INTO users(id, email, password_hash, api_key)
+		VALUES ($1, $2, $3, $4)
+	`, userID, cfg.AdminEmail, cfg.AdminHash, apiKey); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO projects(id, user_id, name, public_api_key, is_default)
+		VALUES (gen_random_uuid(), $1, 'Default', $2, TRUE)
+	`, userID, internalProjectKey); err != nil {
 		return err
 	}
 
@@ -142,22 +154,54 @@ func (s *Store) SetUpdateStatus(available bool, latestVersion string) error {
 
 func (s *Store) FindUserByEmail(email string) (User, error) {
 	var u User
-	err := s.DB.QueryRow(`SELECT id,email,password_hash,created_at FROM users WHERE email=$1`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt)
+	err := s.DB.QueryRow(`SELECT id,email,password_hash,api_key,created_at FROM users WHERE email=$1`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.APIKey, &u.CreatedAt)
 	return u, err
 }
 
-func (s *Store) CreateProject(userID, name, apiKey string) (Project, error) {
+func (s *Store) FindUserByID(id string) (User, error) {
+	var u User
+	err := s.DB.QueryRow(`SELECT id,email,password_hash,api_key,created_at FROM users WHERE id=$1`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.APIKey, &u.CreatedAt)
+	return u, err
+}
+
+func (s *Store) FindUserByAPIKey(key string) (User, error) {
+	var u User
+	err := s.DB.QueryRow(`SELECT id,email,password_hash,api_key,created_at FROM users WHERE api_key=$1`, key).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.APIKey, &u.CreatedAt)
+	return u, err
+}
+
+func (s *Store) CreateProject(userID, name, apiKey string, isDefault bool) (Project, error) {
 	var p Project
 	err := s.DB.QueryRow(`
-		INSERT INTO projects(id,user_id,name,public_api_key)
-		VALUES (gen_random_uuid(),$1,$2,$3)
+		INSERT INTO projects(id,user_id,name,public_api_key,is_default)
+		VALUES (gen_random_uuid(),$1,$2,$3,$4)
 		RETURNING id,user_id,name,public_api_key,created_at
-	`, userID, name, apiKey).Scan(&p.ID, &p.UserID, &p.Name, &p.PublicAPIKey, &p.CreatedAt)
+	`, userID, name, apiKey, isDefault).Scan(&p.ID, &p.UserID, &p.Name, &p.PublicAPIKey, &p.CreatedAt)
 	return p, err
 }
 
+func (s *Store) DefaultInboxProject(userID string) (Project, error) {
+	var p Project
+	err := s.DB.QueryRow(`
+		SELECT id,user_id,name,public_api_key,created_at
+		FROM projects WHERE user_id=$1 AND is_default=TRUE LIMIT 1
+	`, userID).Scan(&p.ID, &p.UserID, &p.Name, &p.PublicAPIKey, &p.CreatedAt)
+	return p, err
+}
+
+func (s *Store) EnsureDefaultInboxProject(userID string) (Project, error) {
+	p, err := s.DefaultInboxProject(userID)
+	if err == nil {
+		return p, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return Project{}, err
+	}
+	return s.CreateProject(userID, "Default", uuid.NewString(), true)
+}
+
 func (s *Store) ListProjects(userID string) ([]Project, error) {
-	rows, err := s.DB.Query(`SELECT id,user_id,name,public_api_key,created_at FROM projects WHERE user_id=$1 ORDER BY created_at DESC`, userID)
+	rows, err := s.DB.Query(`SELECT id,user_id,name,public_api_key,created_at FROM projects WHERE user_id=$1 ORDER BY is_default DESC, created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}

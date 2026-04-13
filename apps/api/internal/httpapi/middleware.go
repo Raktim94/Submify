@@ -1,49 +1,10 @@
 package httpapi
 
 import (
-	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/time/rate"
 )
-
-type IPRateLimiter struct {
-	ips map[string]*rate.Limiter
-	mu  sync.RWMutex
-	r   rate.Limit
-	b   int
-}
-
-func NewIPRateLimiter(r rate.Limit, b int) *IPRateLimiter {
-	return &IPRateLimiter{ips: map[string]*rate.Limiter{}, r: r, b: b}
-}
-
-func (i *IPRateLimiter) getLimiter(ip string) *rate.Limiter {
-	i.mu.RLock()
-	limiter, exists := i.ips[ip]
-	i.mu.RUnlock()
-	if exists {
-		return limiter
-	}
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	limiter = rate.NewLimiter(i.r, i.b)
-	i.ips[ip] = limiter
-	return limiter
-}
-
-func (s *Server) RateLimitMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ip := c.ClientIP()
-		if !s.limiter.getLimiter(ip).Allow() {
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded (10 req/min)"})
-			return
-		}
-		c.Next()
-	}
-}
 
 func SecurityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -51,6 +12,7 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+		c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 		c.Next()
 	}
 }

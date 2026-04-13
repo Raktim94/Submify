@@ -21,24 +21,33 @@ import (
 	"github.com/nodedr/submify/apps/api/internal/telegram"
 	"github.com/nodedr/submify/apps/api/internal/update"
 	"github.com/xuri/excelize/v2"
-	"golang.org/x/time/rate"
 )
 
 type Server struct {
-	cfg     config.Config
-	store   *db.Store
-	tokens  *auth.TokenManager
-	checker *update.Checker
-	limiter *IPRateLimiter
+	cfg                    config.Config
+	store                  *db.Store
+	tokens                 *auth.TokenManager
+	checker                *update.Checker
+	sensitivePublicLimiter *KeyedRateLimiter
+	submitLimitIP          *KeyedRateLimiter
+	submitLimitKey         *KeyedRateLimiter
+	authedUserLimiter      *KeyedRateLimiter
 }
 
 func NewServer(cfg config.Config, store *db.Store) *Server {
+	sensBurst := max(8, cfg.RateLimitSensitivePublicRPM/2)
+	subIPBurst := max(15, cfg.RateLimitSubmitIPRPM/3)
+	subKeyBurst := max(30, cfg.RateLimitSubmitKeyRPM/3)
+	authBurst := max(40, cfg.RateLimitAuthedUserRPM/5)
 	return &Server{
-		cfg:     cfg,
-		store:   store,
-		tokens:  auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTLMinutes, cfg.RefreshTokenTTLHours),
-		checker: update.NewChecker(cfg.GitHubRepo, cfg.AppVersion),
-		limiter: NewIPRateLimiter(rate.Every(6*time.Second), 10),
+		cfg:                    cfg,
+		store:                  store,
+		tokens:                 auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTLMinutes, cfg.RefreshTokenTTLHours),
+		checker:                update.NewChecker(cfg.GitHubRepo, cfg.AppVersion),
+		sensitivePublicLimiter: NewKeyedRateLimiter(cfg.RateLimitSensitivePublicRPM, sensBurst),
+		submitLimitIP:          NewKeyedRateLimiter(cfg.RateLimitSubmitIPRPM, subIPBurst),
+		submitLimitKey:         NewKeyedRateLimiter(cfg.RateLimitSubmitKeyRPM, subKeyBurst),
+		authedUserLimiter:      NewKeyedRateLimiter(cfg.RateLimitAuthedUserRPM, authBurst),
 	}
 }
 
@@ -47,7 +56,9 @@ func (s *Server) Router() *gin.Engine {
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 	r.Use(SecurityHeaders())
-	r.Use(s.RateLimitMiddleware())
+	if err := r.SetTrustedProxies(s.cfg.TrustedProxies); err != nil {
+		log.Printf("SetTrustedProxies: %v", err)
+	}
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     s.cfg.AllowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
@@ -59,18 +70,30 @@ func (s *Server) Router() *gin.Engine {
 	api := r.Group("/api/v1")
 	{
 		api.GET("/system/bootstrap-status", s.BootstrapStatus)
-		api.POST("/system/setup", s.SetupSystem)
 		api.GET("/system/health", s.Health)
-		api.POST("/auth/login", s.Login)
-		api.POST("/auth/refresh", s.Refresh)
-		api.POST("/auth/logout", s.Logout)
-		api.POST("/submit/:project_key", s.Submit)
+	}
+
+	sens := api.Group("")
+	sens.Use(KeyedRateLimitMiddleware(s.sensitivePublicLimiter, clientIPKey, "rate limit exceeded (login or setup); try again shortly"))
+	{
+		sens.POST("/auth/login", s.Login)
+		sens.POST("/auth/refresh", s.Refresh)
+		sens.POST("/system/setup", s.SetupSystem)
+		sens.POST("/auth/logout", s.Logout)
+	}
+
+	sub := api.Group("")
+	sub.Use(s.SubmitRateLimitMiddleware())
+	{
+		sub.POST("/submit/:project_key", s.Submit)
 	}
 
 	secured := api.Group("")
 	secured.Use(s.SetupGuard())
 	secured.Use(s.AuthGuard())
+	secured.Use(s.AuthedUserRateLimitMiddleware())
 	{
+		secured.GET("/auth/me", s.GetMe)
 		secured.GET("/projects", s.ListProjects)
 		secured.POST("/projects", s.CreateProject)
 		secured.PATCH("/projects/:id", s.UpdateProject)

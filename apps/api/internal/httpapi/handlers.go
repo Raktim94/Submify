@@ -148,7 +148,22 @@ func (s *Server) Login(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"access_token": access, "refresh_token": refresh})
+	c.JSON(http.StatusOK, gin.H{
+		"access_token": access, "refresh_token": refresh, "api_key": user.APIKey,
+	})
+}
+
+func (s *Server) GetMe(c *gin.Context) {
+	u, err := s.store.FindUserByID(userIDFromContext(c))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"email": u.Email, "api_key": u.APIKey})
 }
 
 func (s *Server) Refresh(c *gin.Context) {
@@ -167,7 +182,14 @@ func (s *Server) Refresh(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"access_token": access, "refresh_token": refresh})
+	u, err := s.store.FindUserByID(claims.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"access_token": access, "refresh_token": refresh, "api_key": u.APIKey,
+	})
 }
 
 func (s *Server) Logout(c *gin.Context) {
@@ -180,7 +202,7 @@ func (s *Server) CreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	project, err := s.store.CreateProject(userIDFromContext(c), req.Name, projectAPIKey())
+	project, err := s.store.CreateProject(userIDFromContext(c), req.Name, projectAPIKey(), false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -236,13 +258,27 @@ func (s *Server) Submit(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
 		return
 	}
-	project, err := s.store.FindProjectByAPIKey(headerKey)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
+
+	var project db.Project
+	var err error
+	if u, e := s.store.FindUserByAPIKey(headerKey); e == nil {
+		project, err = s.store.EnsureDefaultInboxProject(u.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	} else if errors.Is(e, sql.ErrNoRows) {
+		project, err = s.store.FindProjectByAPIKey(headerKey)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
 		return
 	}
 

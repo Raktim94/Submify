@@ -1,10 +1,13 @@
+# PostgreSQL and MinIO data live in the HOST paths below (bind mounts), not inside the API image.
+# `docker compose restart` / `docker compose down` keeps this data. Only `docker compose down -v`
+# removes explicitly declared named volumes (not used here by default).
 services:
   db:
     image: postgres:16-alpine
     container_name: submify-db
     environment:
       POSTGRES_USER: submify
-      POSTGRES_PASSWORD: submify
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-submify}
       POSTGRES_DB: submify
     volumes:
       - /var/lib/submify/data/postgres:/var/lib/postgresql/data
@@ -30,9 +33,14 @@ services:
     container_name: submify-api
     environment:
       PORT: 8080
-      DATABASE_URL: postgres://submify:submify@db:5432/submify?sslmode=disable
+      DATABASE_URL: postgres://submify:${POSTGRES_PASSWORD:-submify}@db:5432/submify?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:2512}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      RATE_LIMIT_SENSITIVE_PUBLIC_RPM: ${RATE_LIMIT_SENSITIVE_PUBLIC_RPM:-25}
+      RATE_LIMIT_SUBMIT_IP_RPM: ${RATE_LIMIT_SUBMIT_IP_RPM:-90}
+      RATE_LIMIT_SUBMIT_KEY_RPM: ${RATE_LIMIT_SUBMIT_KEY_RPM:-180}
+      RATE_LIMIT_AUTH_USER_RPM: ${RATE_LIMIT_AUTH_USER_RPM:-600}
       APP_VERSION: ${APP_VERSION:-0.1.0}
       GITHUB_REPO: ${GITHUB_REPO:-nodedr/submify}
       UPDATE_CHECK_MINUTES: ${UPDATE_CHECK_MINUTES:-360}

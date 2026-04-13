@@ -28,6 +28,9 @@ export default function LoginPage() {
     const data = await res.json();
     localStorage.setItem('submify_access_token', data.access_token);
     localStorage.setItem('submify_refresh_token', data.refresh_token);
+    if (typeof data.api_key === 'string') {
+      localStorage.setItem('submify_user_api_key', data.api_key);
+    }
     router.push('/dashboard');
   }
 

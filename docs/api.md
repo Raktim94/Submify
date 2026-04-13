@@ -5,7 +5,14 @@
 
 All JSON bodies use `Content-Type: application/json` unless noted.
 
-**Rate limiting:** `10` requests per minute per client IP (returns `429` with `{"error":"rate limit exceeded (10 req/min)"}`).
+**Rate limiting** (all return `429` with a JSON `error` string):
+
+| Scope | Default (env) | Notes |
+|-------|----------------|-------|
+| `GET /system/bootstrap-status`, `GET /system/health` | *unlimited* | Monitoring / first-load friendly |
+| `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `/system/setup` | `25` RPM / IP | `RATE_LIMIT_SENSITIVE_PUBLIC_RPM` — slows brute force |
+| `POST /submit/...` | `90` RPM / IP **and** `180` RPM / API key | `RATE_LIMIT_SUBMIT_IP_RPM`, `RATE_LIMIT_SUBMIT_KEY_RPM` |
+| Authenticated routes (Bearer) | `600` RPM / **user id** | `RATE_LIMIT_AUTH_USER_RPM` — dashboard users not capped like anonymous |
 
 **CORS:** Allowed origins come from `ALLOWED_ORIGINS` (comma-separated). Browser requests from another origin must list that origin here.
 
@@ -56,14 +63,16 @@ Or `503` if DB or (when configured) S3 check fails.
 **Response:** `200`
 
 ```json
-{ "access_token": "...", "refresh_token": "..." }
+{ "access_token": "...", "refresh_token": "...", "api_key": "..." }
 ```
+
+`api_key` is the account’s **primary** form ingest key (embed on websites). One key per user; data is isolated by user in the shared PostgreSQL database.
 
 ### `POST /auth/refresh`
 
 **Body:** `{ "refresh_token": "..." }`
 
-**Response:** `200` `{ "access_token": "...", "refresh_token": "..." }`
+**Response:** `200` `{ "access_token": "...", "refresh_token": "...", "api_key": "..." }`
 
 ### `POST /auth/logout`
 
@@ -71,7 +80,10 @@ Stateless logout (always `200`): `{ "status": "logged out" }`
 
 ### `POST /submit/{project_key}`
 
-Public form endpoint. **`project_key` in the URL must exactly equal the `x-api-key` header** (both are the project’s `public_api_key` UUID string).
+Public form endpoint. **`project_key` in the URL must exactly equal the `x-api-key` header.**
+
+- **Recommended:** use the logged-in account’s **`api_key`** (from login / `GET /auth/me`). Submissions are stored in that user’s **default inbox** project (created at setup). Other accounts cannot read them.
+- **Legacy:** a **project** `public_api_key` still works; submissions attach to that project only.
 
 **Headers:**
 
@@ -115,6 +127,10 @@ Alternative: a flat JSON object (stored as submission `data`):
 
 Requires completed setup (`SetupGuard`). Without setup, secured routes return `503` `{ "error": "system setup required" }`.
 
+### `GET /auth/me`
+
+**Response:** `200` `{ "email": "...", "api_key": "..." }`
+
 ### `GET /projects`
 
 **Response:** `200` `{ "projects": [ Project, ... ] }`
@@ -132,7 +148,7 @@ Requires completed setup (`SetupGuard`). Without setup, secured routes return `5
 **Body (optional fields):**
 
 - `name` — rename
-- `regenerate_key` — if `true`, issues a new `public_api_key` (update clients using the submit URL)
+- `regenerate_key` — if `true`, issues a new **project** `public_api_key` (only affects clients still using that legacy project key, not the account `api_key`)
 
 **Response:** `200` `{ "status": "updated" }`
 

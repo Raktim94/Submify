@@ -27,3 +27,9 @@ export async function getBootstrapStatus(): Promise<{ setup_required: boolean }>
   const res = await fetch(`${API_BASE}/system/bootstrap-status`, { cache: 'no-store' });
   return res.json();
 }
+
+export type MeResponse = { email: string; api_key: string };
+
+export async function getMe(): Promise<MeResponse> {
+  return api<MeResponse>('/auth/me');
+}

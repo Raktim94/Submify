@@ -34,7 +34,9 @@ docker compose --profile tunnel up -d
 
 ## Persistence
 
-Volumes are mounted at:
+Data is stored on the **host** (bind mounts), not inside the API container image:
 
-- `/var/lib/submify/data/postgres`
-- `/var/lib/submify/data/rustfs`
+- `/var/lib/submify/data/postgres` — PostgreSQL files survive `docker compose restart` and `docker compose down`
+- `/var/lib/submify/data/rustfs` — object storage (MinIO) data
+
+Set a strong `POSTGRES_PASSWORD` in production (same value is interpolated into the API `DATABASE_URL` in Compose). Avoid `docker compose down -v` unless you intend to delete **named** volumes (this stack uses bind mounts by default, but `-v` is still risky if you add named volumes later).
