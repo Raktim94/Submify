@@ -274,7 +274,7 @@ func (s *Store) UpdateUserIntegrations(userID, telegramToken, telegramChatID, s3
 	return err
 }
 
-const projectSelect = `id, user_id, name, api_key, api_secret, COALESCE(allowed_origins, '')`
+const projectSelect = `id, user_id, name, api_key, api_secret, COALESCE(allowed_origins, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {
 	s = strings.TrimSpace(s)

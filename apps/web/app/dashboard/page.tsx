@@ -322,7 +322,7 @@ export default function DashboardPage() {
             <div className="mb-4">
               <h2 className="font-display text-lg font-bold text-slate-900">App updates</h2>
               <p className="mt-1 text-sm leading-relaxed text-slate-500">
-                The server checks <strong className="text-slate-700">GitHub</strong> for releases (set{' '}
+                The server checks <strong className="text-slate-700">GitHub</strong> for the latest release or tag (set{' '}
                 <code className="rounded bg-slate-100 px-1 text-xs">GITHUB_REPO</code> to your fork). Optional{' '}
                 <code className="rounded bg-slate-100 px-1 text-xs">GITHUB_TOKEN</code> avoids rate limits. Use the button
                 only if Docker socket and project folder are mounted into the API container.
@@ -351,12 +351,12 @@ export default function DashboardPage() {
                     <dt className="text-sm text-slate-500">Summary</dt>
                     <dd className="max-w-[14rem] text-right text-sm text-slate-800">
                       {summary.update_available ? (
-                        <span className="font-medium text-indigo-700">A newer release exists.</span>
+                        <span className="font-medium text-indigo-700">A newer GitHub version exists.</span>
                       ) : summary.latest_version?.trim() ? (
-                        <span className="text-emerald-700">Up to date with the latest published release.</span>
+                        <span className="text-emerald-700">Up to date with the latest GitHub release/tag.</span>
                       ) : (
                         <span className="text-slate-600">
-                          Could not load remote version (network, rate limit, or no releases). Your install still runs.
+                          Could not load remote version (network, rate limit, or no tags/releases yet). Your install still runs.
                         </span>
                       )}
                     </dd>

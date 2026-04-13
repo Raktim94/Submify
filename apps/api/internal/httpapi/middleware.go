@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -43,6 +44,7 @@ func (s *Server) AuthGuard() gin.HandlerFunc {
 		token := strings.TrimSpace(header[7:])
 		claims, err := s.tokens.Parse(token, "access")
 		if err != nil {
+			log.Printf("auth reject: remote=%s path=%s reason=%v", c.ClientIP(), c.Request.URL.Path, err)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
