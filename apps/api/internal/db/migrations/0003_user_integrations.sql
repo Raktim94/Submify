@@ -9,7 +9,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS s3_secret_key TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS s3_bucket TEXT;
 
 UPDATE users
-SET full_name = COALESCE(NULLIF(TRIM(full_name), ''), split_part(email, 1, '@'))
+SET full_name = COALESCE(NULLIF(TRIM(full_name), ''), split_part(email, '@', 1))
 WHERE full_name IS NULL OR TRIM(COALESCE(full_name, '')) = '';
 
 UPDATE users SET phone = COALESCE(phone, '') WHERE phone IS NULL;
