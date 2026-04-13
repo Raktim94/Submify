@@ -454,6 +454,32 @@ func (s *Store) CountSubmissions(projectID string) (int, error) {
 	return count, err
 }
 
+// LatestSubmissionSnapshot is the newest submission across all projects owned by a user (for dashboard alerts).
+type LatestSubmissionSnapshot struct {
+	CreatedAt   time.Time `json:"at"`
+	ProjectID   string    `json:"project_id"`
+	ProjectName string    `json:"project_name"`
+}
+
+// LatestSubmissionSnapshotForUser returns nil, nil when the user has no submissions yet.
+func (s *Store) LatestSubmissionSnapshotForUser(userID string) (*LatestSubmissionSnapshot, error) {
+	var snap LatestSubmissionSnapshot
+	err := s.DB.QueryRow(`
+		SELECT s.created_at, s.project_id, p.name
+		FROM submissions s
+		INNER JOIN projects p ON p.id = s.project_id AND p.user_id = $1::uuid
+		ORDER BY s.created_at DESC
+		LIMIT 1
+	`, userID).Scan(&snap.CreatedAt, &snap.ProjectID, &snap.ProjectName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &snap, nil
+}
+
 func (s *Store) InsertSubmission(projectID string, data, files json.RawMessage, clientIP, userAgent string) (Submission, error) {
 	var sub Submission
 	var ipNS, uaNS sql.NullString

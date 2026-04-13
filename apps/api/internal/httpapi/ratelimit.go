@@ -96,8 +96,9 @@ func (s *Server) SubmitRateLimitMiddleware() gin.HandlerFunc {
 			return
 		}
 		key := strings.TrimSpace(c.GetHeader("x-api-key"))
-		if key != "" && !s.submitLimitKey.Allow("key:"+key) {
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded (submit, per API key)"})
+		// Second bucket: per x-api-key (project public key), so one noisy form cannot exhaust the whole host.
+		if key != "" && !s.submitLimitKey.Allow("pk:"+key) {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded (submit, per project key)"})
 			return
 		}
 		c.Next()

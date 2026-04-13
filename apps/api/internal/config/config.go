@@ -25,6 +25,8 @@ type Config struct {
 	TrustedProxies            []string
 	AppVersion                   string
 	GitHubRepo                   string
+	// GitHubToken optional PAT for higher API rate limits (private repos need repo scope).
+	GitHubToken                  string
 	UpdateCheckInterval          time.Duration
 	AllowUpdateTrigger           bool
 	UpdateCommand                string
@@ -58,6 +60,7 @@ func Load() Config {
 		TrustedProxies:              trusted,
 		AppVersion:                  getEnv("APP_VERSION", "0.1.0"),
 		GitHubRepo:                  getEnv("GITHUB_REPO", "nodedr/submify"),
+		GitHubToken:                 getEnv("GITHUB_TOKEN", ""),
 		UpdateCheckInterval:         time.Duration(getEnvInt("UPDATE_CHECK_MINUTES", 360)) * time.Minute,
 		AllowUpdateTrigger:          getEnvBool("ALLOW_UPDATE_TRIGGER", false),
 		UpdateCommand:               getEnv("UPDATE_COMMAND", "docker compose pull && docker compose up -d"),

@@ -74,6 +74,24 @@ export async function getMe(): Promise<MeResponse> {
   return api<MeResponse>('/auth/me');
 }
 
+export type DashboardSummary = {
+  update_available: boolean;
+  latest_version: string;
+  current_version: string;
+  update_trigger_enabled?: boolean;
+  latest_submission: {
+    at: string;
+    project_id: string;
+    project_name: string;
+  } | null;
+};
+
+/** Pass refresh=true on first load so the API contacts GitHub when needed (rate-limited server-side). */
+export async function getDashboardSummary(refresh = false): Promise<DashboardSummary> {
+  const q = refresh ? '?refresh=1' : '';
+  return api<DashboardSummary>(`/dashboard/summary${q}`);
+}
+
 export async function registerAccount(body: {
   full_name: string;
   phone: string;

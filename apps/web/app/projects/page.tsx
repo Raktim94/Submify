@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { Nav } from '../../components/nav';
-import { api, getMe } from '../../lib/api';
+import { api } from '../../lib/api';
 
 type Project = {
   id: string;
@@ -111,7 +111,6 @@ function ProjectCard({
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [name, setName] = useState('');
-  const [userKey, setUserKey] = useState('');
   const [submitEndpoint, setSubmitEndpoint] = useState('/api/submit');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
@@ -124,12 +123,6 @@ export default function ProjectsPage() {
   useEffect(() => {
     setSubmitEndpoint(`${window.location.origin}/api/submit`);
     void load().catch(() => setProjects([]));
-    getMe()
-      .then((me) => {
-        setUserKey(me.api_key);
-        localStorage.setItem('submify_user_api_key', me.api_key);
-      })
-      .catch(() => setUserKey(localStorage.getItem('submify_user_api_key') || ''));
   }, []);
 
   async function create(e: FormEvent) {
@@ -216,46 +209,27 @@ export default function ProjectsPage() {
         </section>
 
         <section className="mb-8 rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 to-white p-6 shadow-md sm:p-8">
-          <h2 className="font-display text-sm font-semibold uppercase tracking-wide text-indigo-800">How keys work</h2>
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wide text-indigo-800">How to submit forms</h2>
           <ul className="mt-4 space-y-3 text-sm leading-relaxed text-slate-700 sm:text-base">
             <li>
-              <strong className="text-slate-900">Account API key</strong> (below) — same as on the{' '}
-              <Link className="text-brand-700 underline" href="/dashboard">
-                Dashboard
-              </Link>
-              . Send it as <code className="rounded bg-white px-1.5 py-0.5 text-xs">x-api-key</code> on{' '}
-              <code className="rounded bg-white px-1.5 py-0.5 text-xs">POST /api/submit</code>; submissions go to your
-              default project.
+              <strong className="text-slate-900">Create a project</strong> (below). Each project gets a{' '}
+              <strong className="text-slate-900">public key</strong> (<code className="rounded bg-white px-1.5 py-0.5 text-xs">pk_live_…</code>)
+              and a <strong className="text-slate-900">secret key</strong> (
+              <code className="rounded bg-white px-1.5 py-0.5 text-xs">sk_live_…</code>) — that pair is what you use for
+              that site or client.
             </li>
             <li>
-              <strong className="text-slate-900">Project keys</strong> — each project has a public key (
-              <code className="rounded bg-white px-1.5 py-0.5 text-xs">pk_live_…</code>) and a secret (
-              <code className="rounded bg-white px-1.5 py-0.5 text-xs">sk_live_…</code>) for HMAC signing. Use the same
-              endpoint for every project: <code className="rounded bg-white px-1.5 py-0.5 text-xs">/api/submit</code>{' '}
-              (full URL is your current site origin + that path).
+              <code className="rounded bg-white px-1.5 py-0.5 text-xs">POST</code> JSON to the submit URL above with header{' '}
+              <code className="rounded bg-white px-1.5 py-0.5 text-xs">x-api-key: &lt;public key&gt;</code>. Optional: send{' '}
+              <code className="rounded bg-white px-1.5 py-0.5 text-xs">x-signature</code> (HMAC of the body with the secret)
+              from a server you trust — never put the secret in public browser code.
+            </li>
+            <li>
+              Every project shares the same path (<code className="rounded bg-white px-1.5 py-0.5 text-xs">/api/submit</code>
+              ); the <strong className="text-slate-900">public key</strong> decides which inbox receives the submission.
             </li>
           </ul>
         </section>
-
-        {userKey && (
-          <section className="mb-8 rounded-2xl border border-indigo-200 bg-white p-6 shadow-lg shadow-indigo-100/40 sm:p-8">
-            <h2 className="font-display text-lg font-bold text-indigo-950">Primary API key</h2>
-            <p className="mt-2 text-sm text-indigo-900/80">
-              Embed this value in the <code className="rounded bg-indigo-100/80 px-1.5 py-0.5 text-xs">x-api-key</code> header
-              from any frontend or server.
-            </p>
-            <code className="mt-4 block break-all rounded-xl border border-indigo-100 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-900 sm:text-sm">
-              {userKey}
-            </code>
-            <button
-              type="button"
-              className="mt-4 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
-              onClick={() => navigator.clipboard.writeText(userKey)}
-            >
-              Copy primary key
-            </button>
-          </section>
-        )}
 
         <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
           <h2 className="font-display text-lg font-bold text-slate-900">Create a project</h2>

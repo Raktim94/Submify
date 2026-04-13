@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -121,6 +123,51 @@ func (s *Server) Health(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up"})
+}
+
+// DashboardSummary returns update metadata plus the user's most recent submission (for dashboard notifications).
+func (s *Server) DashboardSummary(c *gin.Context) {
+	force := c.Query("refresh") == "1" || c.Query("refresh") == "true"
+	s.refreshGitHubVersion(force)
+
+	uid := userIDFromContext(c)
+	snap, err := s.store.LatestSubmissionSnapshotForUser(uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var latestSub interface{}
+	if snap != nil {
+		latestSub = gin.H{
+			"at":           snap.CreatedAt.UTC().Format(time.RFC3339),
+			"project_id":   snap.ProjectID,
+			"project_name": snap.ProjectName,
+		}
+	}
+
+	cfg, err := s.store.GetSystemConfig()
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusOK, gin.H{
+				"update_available":       false,
+				"latest_version":         "",
+				"current_version":        s.cfg.AppVersion,
+				"update_trigger_enabled": s.cfg.AllowUpdateTrigger,
+				"latest_submission":      latestSub,
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"update_available":       cfg.UpdateAvail,
+		"latest_version":         cfg.LatestVersion,
+		"current_version":        s.cfg.AppVersion,
+		"update_trigger_enabled": s.cfg.AllowUpdateTrigger,
+		"latest_submission":      latestSub,
+	})
 }
 
 func (s *Server) Login(c *gin.Context) {
@@ -292,22 +339,6 @@ func (s *Server) UpdateProject(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "updated", "project": p})
 }
 
-func originAllowedForProject(p db.Project, origin string) bool {
-	if len(p.AllowedOrigins) == 0 {
-		return true
-	}
-	if strings.TrimSpace(origin) == "" {
-		return true
-	}
-	o := strings.TrimSpace(origin)
-	for _, allowed := range p.AllowedOrigins {
-		if strings.EqualFold(strings.TrimSpace(allowed), o) {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *Server) Submit(c *gin.Context) {
 	max := s.cfg.SubmitMaxBodyBytes
 	if max < 1024 {
@@ -333,30 +364,24 @@ func (s *Server) Submit(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing x-api-key"})
 		return
 	}
-
-	var project db.Project
-	if u, e := s.store.FindUserByAPIKey(headerKey); e == nil {
-		project, err = s.store.EnsureDefaultInboxProject(u.ID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	} else if errors.Is(e, sql.ErrNoRows) {
-		project, err = s.store.FindProjectByPublicKey(headerKey)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	} else {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
+	// Reject garbage before DB; only pk_live_* or legacy UUID-shaped keys proceed.
+	if !isPlausiblePublicAPIKey(headerKey) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid x-api-key"})
 		return
 	}
 
-	if !originAllowedForProject(project, c.GetHeader("Origin")) {
+	project, err := s.store.FindProjectByPublicKey(headerKey)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unknown or revoked x-api-key"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	reqOrigin := requestOriginOrReferer(c)
+	if !OriginMatchesAllowlist(project.AllowedOrigins, reqOrigin) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "origin not allowed for this project"})
 		return
 	}
@@ -409,6 +434,8 @@ func (s *Server) Submit(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	log.Printf("submit: project_id=%s submission_id=%s ip=%s ua_len=%d", project.ID, sub.ID, ip, len(ua))
 
 	if owner, err := s.store.FindUserByID(project.UserID); err == nil {
 		notifyTelegram(project, owner, dataBytes, filesBytes)

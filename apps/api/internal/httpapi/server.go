@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,6 +31,8 @@ type Server struct {
 	submitLimitIP          *KeyedRateLimiter
 	submitLimitKey         *KeyedRateLimiter
 	authedUserLimiter      *KeyedRateLimiter
+	updateCheckMu          sync.Mutex
+	lastGitHubPollAt       time.Time
 }
 
 func NewServer(cfg config.Config, store *db.Store) *Server {
@@ -41,7 +44,7 @@ func NewServer(cfg config.Config, store *db.Store) *Server {
 		cfg:                    cfg,
 		store:                  store,
 		tokens:                 auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTLMinutes, cfg.RefreshTokenTTLHours),
-		checker:                update.NewChecker(cfg.GitHubRepo, cfg.AppVersion),
+		checker:                update.NewChecker(cfg.GitHubRepo, cfg.AppVersion, cfg.GitHubToken),
 		sensitivePublicLimiter: NewKeyedRateLimiter(cfg.RateLimitSensitivePublicRPM, sensBurst),
 		submitLimitIP:          NewKeyedRateLimiter(cfg.RateLimitSubmitIPRPM, subIPBurst),
 		submitLimitKey:         NewKeyedRateLimiter(cfg.RateLimitSubmitKeyRPM, subKeyBurst),
@@ -95,6 +98,7 @@ func (s *Server) Router() *gin.Engine {
 		secured.POST("/uploads/presign", s.PresignUpload)
 		secured.GET("/projects/:id/export", s.Export)
 		secured.GET("/system/update-status", s.UpdateStatus)
+		secured.GET("/dashboard/summary", s.DashboardSummary)
 		secured.POST("/system/update-trigger", s.TriggerUpdate)
 		secured.PUT("/users/me/integrations", s.UpdateUserIntegrations)
 	}
@@ -104,16 +108,26 @@ func (s *Server) Router() *gin.Engine {
 
 func (s *Server) StartBackgroundJobs() {
 	go func() {
+		s.refreshGitHubVersion(true)
 		ticker := time.NewTicker(s.cfg.UpdateCheckInterval)
 		defer ticker.Stop()
-		for {
-			s.checkAndPersistUpdate()
-			<-ticker.C
+		for range ticker.C {
+			s.refreshGitHubVersion(true)
 		}
 	}()
 }
 
-func (s *Server) checkAndPersistUpdate() {
+// refreshGitHubVersion fetches latest release/tag from GitHub and persists to system_configs.
+// When force is false, calls are throttled to at most once per 90s to avoid rate limits on dashboard refreshes.
+func (s *Server) refreshGitHubVersion(force bool) {
+	const minInterval = 90 * time.Second
+	s.updateCheckMu.Lock()
+	defer s.updateCheckMu.Unlock()
+	if !force && !s.lastGitHubPollAt.IsZero() && time.Since(s.lastGitHubPollAt) < minInterval {
+		return
+	}
+	s.lastGitHubPollAt = time.Now()
+
 	ready, err := s.store.BootstrapComplete()
 	if err != nil || !ready {
 		return
@@ -146,6 +160,8 @@ func (s *Server) TriggerUpdate(c *gin.Context) {
 }
 
 func (s *Server) UpdateStatus(c *gin.Context) {
+	force := c.Query("refresh") == "1" || c.Query("refresh") == "true"
+	s.refreshGitHubVersion(force)
 	cfg, err := s.store.GetSystemConfig()
 	if err != nil {
 		if err == sql.ErrNoRows {

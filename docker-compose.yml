@@ -70,6 +70,8 @@ services:
       RATE_LIMIT_AUTH_USER_RPM: ${RATE_LIMIT_AUTH_USER_RPM:-600}
       APP_VERSION: ${APP_VERSION:-0.1.0}
       GITHUB_REPO: ${GITHUB_REPO:-nodedr/submify}
+      # Optional: GitHub PAT for higher rate limits or private repos (https://github.com/settings/tokens).
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       UPDATE_CHECK_MINUTES: ${UPDATE_CHECK_MINUTES:-360}
       # Set false on hosts without Docker socket (or if you do not want the dashboard to control Docker).
       ALLOW_UPDATE_TRIGGER: ${ALLOW_UPDATE_TRIGGER:-true}
