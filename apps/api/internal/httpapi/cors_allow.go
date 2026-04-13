@@ -27,6 +27,9 @@ func OriginAllowed(origin string, r *http.Request, cfg config.Config) bool {
 	if cfg.CorsAllowSameHostOrigin && originMatchesRequestHost(origin, r) {
 		return true
 	}
+	if cfg.CorsAllowSameHostOrigin && originMatchesRequestHostnameOnly(origin, r) {
+		return true
+	}
 	if !cfg.CorsRelaxPrivateNetworks {
 		return false
 	}
@@ -77,6 +80,91 @@ func originMatchesRequestHost(origin string, r *http.Request) bool {
 	}
 
 	return oh == rh && op == rp
+}
+
+// originMatchesRequestHostnameOnly allows when the Origin hostname matches any public host
+// the proxy forwarded (Host, X-Forwarded-Host, Forwarded), ignoring port. Helps Cloudflare Tunnel
+// and chains where edge :443 maps to origin :2512 but Host headers omit or differ on port.
+func originMatchesRequestHostnameOnly(origin string, r *http.Request) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	oh := strings.ToLower(u.Hostname())
+	if oh == "" {
+		return false
+	}
+	for _, h := range collectRequestHostnames(r) {
+		if h == oh {
+			return true
+		}
+	}
+	return false
+}
+
+// collectRequestHostnames returns lowercase hostnames from Host, X-Forwarded-Host, Forwarded, X-Original-Host.
+func collectRequestHostnames(r *http.Request) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	add := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		host, _, err := net.SplitHostPort(raw)
+		if err != nil {
+			host = raw
+		}
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" {
+			return
+		}
+		if _, ok := seen[host]; ok {
+			return
+		}
+		seen[host] = struct{}{}
+		out = append(out, host)
+	}
+
+	add(r.Host)
+
+	for _, part := range strings.Split(r.Header.Get("X-Forwarded-Host"), ",") {
+		add(strings.TrimSpace(part))
+	}
+
+	for _, h := range hostsFromForwardedHeader(r.Header.Get("Forwarded")) {
+		add(h)
+	}
+
+	add(r.Header.Get("X-Original-Host"))
+
+	return out
+}
+
+func hostsFromForwardedHeader(forwarded string) []string {
+	if forwarded == "" {
+		return nil
+	}
+	var hosts []string
+	for _, segment := range strings.Split(forwarded, ",") {
+		segment = strings.TrimSpace(segment)
+		for _, kv := range strings.Split(segment, ";") {
+			kv = strings.TrimSpace(kv)
+			low := strings.ToLower(kv)
+			if !strings.HasPrefix(low, "host=") {
+				continue
+			}
+			v := strings.TrimSpace(kv[5:])
+			v = strings.Trim(v, `"`)
+			if v != "" {
+				hosts = append(hosts, v)
+			}
+		}
+	}
+	return hosts
 }
 
 func forwardedProto(r *http.Request) string {

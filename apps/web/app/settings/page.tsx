@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Nav } from '../../components/nav';
 import { getMe, updateIntegrations, type MeResponse } from '../../lib/api';
 
@@ -14,9 +15,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     getMe()
-      .then((m) => {
-        setMe(m);
-      })
+      .then((m) => setMe(m))
       .catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load profile'));
   }, []);
 
@@ -83,113 +82,204 @@ export default function SettingsPage() {
 
   if (loadError) {
     return (
-      <main className="mx-auto max-w-4xl p-6">
-        <Nav />
-        <p className="text-red-700">{loadError}</p>
+      <main className="min-h-screen bg-slate-50 px-4 py-8">
+        <div className="mx-auto max-w-4xl">
+          <Nav />
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">{loadError}</p>
+        </div>
       </main>
     );
   }
 
   if (!me) {
     return (
-      <main className="mx-auto max-w-4xl p-6">
-        <Nav />
-        <p className="text-slate-600">Loading…</p>
+      <main className="min-h-screen bg-slate-50 px-4 py-8">
+        <div className="mx-auto max-w-4xl">
+          <Nav />
+          <p className="text-slate-600">Loading your settings…</p>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-4xl p-6">
-      <Nav />
-      <h1 className="mb-2 text-3xl font-bold">Settings</h1>
-      <p className="mb-6 text-slate-600">
-        Telegram and S3 are optional. Add them when you want chat notifications or presigned uploads for large files; leave
-        fields empty otherwise. Secret fields left blank keep your existing stored values.
-      </p>
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-indigo-50/40">
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+        <Nav />
 
-      <form
-        key={`${me.telegram_configured}-${me.s3_configured}-${me.telegram_chat_id}-${me.s3_endpoint}-${me.s3_bucket}`}
-        className="space-y-8"
-        onSubmit={onSubmit}
-      >
-        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold">Telegram (optional)</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Status: {me.telegram_configured ? 'configured' : 'not configured'}. Paste a bot token from BotFather and your
-            chat ID to receive submission alerts.
+        <header className="mb-8">
+          <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Settings</h1>
+          <p className="mt-2 max-w-3xl text-base leading-relaxed text-slate-600 sm:text-lg">
+            Everything here is <strong className="font-medium text-slate-800">optional</strong>. Submify works with plain JSON
+            form posts only. Add <strong className="font-medium text-slate-800">Telegram</strong> if you want instant
+            notifications when someone submits, and <strong className="font-medium text-slate-800">S3-compatible storage</strong>{' '}
+            only if you need presigned uploads for large files. Leave secrets blank to keep existing values; use the remove
+            buttons to wipe stored credentials.
           </p>
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <input
-              className="w-full"
-              name="telegram_chat_id"
-              placeholder="Telegram chat ID"
-              defaultValue={me.telegram_chat_id}
-            />
-            <input
-              className="w-full"
-              value={telegramToken}
-              onChange={(e) => setTelegramToken(e.target.value)}
-              placeholder={me.telegram_configured ? 'New bot token (leave blank to keep)' : 'Telegram bot token'}
-              type="password"
-              autoComplete="off"
-            />
-          </div>
-          <button type="button" className="mt-3 bg-slate-600 hover:bg-slate-800" onClick={clearTelegram}>
-            Remove Telegram
-          </button>
+        </header>
+
+        <section className="mb-8 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-6 sm:p-8">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wide text-indigo-900">Before you start</h2>
+          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-indigo-950/90">
+            <li>
+              After saving, <Link className="font-medium text-brand-700 underline" href="/dashboard">Dashboard</Link> shows
+              whether Telegram / S3 is configured (no secrets are shown again).
+            </li>
+            <li>
+              Endpoint URLs for MinIO in Docker are often internal, e.g.{' '}
+              <code className="rounded bg-white px-1.5 py-0.5 text-xs">http://rustfs:9000</code> — use the hostname your API
+              container can reach.
+            </li>
+          </ul>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold">S3-compatible storage (optional)</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Status: {me.s3_configured ? 'configured' : 'not configured'}. Needed for large presigned uploads; standard JSON
-            submissions work without this.
-          </p>
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <input
-              className="w-full"
-              name="s3_endpoint"
-              placeholder="S3 endpoint (e.g. http://rustfs:9000)"
-              defaultValue={me.s3_endpoint}
-            />
-            <input className="w-full" name="s3_bucket" placeholder="Bucket name" defaultValue={me.s3_bucket} />
-            <input
-              className="w-full"
-              value={s3Access}
-              onChange={(e) => setS3Access(e.target.value)}
-              placeholder={me.s3_configured ? 'Access key (leave blank to keep)' : 'Access key'}
-              type="password"
-              autoComplete="off"
-            />
-            <input
-              className="w-full"
-              value={s3Secret}
-              onChange={(e) => setS3Secret(e.target.value)}
-              placeholder={me.s3_configured ? 'Secret key (leave blank to keep)' : 'Secret key'}
-              type="password"
-              autoComplete="off"
-            />
-          </div>
-          <button type="button" className="mt-3 bg-slate-600 hover:bg-slate-800" onClick={clearS3}>
-            Clear S3 credentials
-          </button>
-        </section>
-
-        <button type="submit" className="w-full md:w-auto">
-          Save changes
-        </button>
-      </form>
-
-      {status && (
-        <p
-          className={`mt-4 rounded p-3 text-sm ${
-            status.startsWith('Save failed') || status.includes('Failed') ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'
-          }`}
+        <form
+          key={`${me.telegram_configured}-${me.s3_configured}-${me.telegram_chat_id}-${me.s3_endpoint}-${me.s3_bucket}`}
+          className="space-y-8"
+          onSubmit={onSubmit}
         >
-          {status}
-        </p>
-      )}
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-xl font-bold text-slate-900">Telegram notifications</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Status:{' '}
+                  <span className={me.telegram_configured ? 'font-semibold text-emerald-700' : 'font-medium text-slate-600'}>
+                    {me.telegram_configured ? 'Connected' : 'Not configured'}
+                  </span>
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 space-y-3 text-sm leading-relaxed text-slate-700">
+              <p>
+                <strong className="text-slate-900">1.</strong> Open Telegram, talk to{' '}
+                <strong className="text-slate-900">@BotFather</strong>, run <code className="rounded bg-slate-100 px-1">/newbot</code>, and copy
+                the <strong className="text-slate-900">HTTP API token</strong>.
+              </p>
+              <p>
+                <strong className="text-slate-900">2.</strong> Get your <strong className="text-slate-900">chat ID</strong>{' '}
+                (e.g. message <code className="rounded bg-slate-100 px-1">@userinfobot</code> or add the bot to a group and use
+                a group ID if you prefer).
+              </p>
+              <p>
+                <strong className="text-slate-900">3.</strong> Paste both below and click <em>Save changes</em> at the bottom.
+                Leave the token empty if you only want to update the chat ID.
+              </p>
+            </div>
+            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Chat ID</span>
+                <input
+                  className="w-full rounded-xl border-slate-300 px-4 py-3"
+                  name="telegram_chat_id"
+                  placeholder="e.g. -1001234567890"
+                  defaultValue={me.telegram_chat_id}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Bot token</span>
+                <input
+                  className="w-full rounded-xl border-slate-300 px-4 py-3"
+                  value={telegramToken}
+                  onChange={(e) => setTelegramToken(e.target.value)}
+                  placeholder={me.telegram_configured ? 'New token (leave blank to keep)' : 'Paste token from BotFather'}
+                  type="password"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
+              onClick={clearTelegram}
+            >
+              Remove Telegram
+            </button>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+            <div className="mb-4">
+              <h2 className="font-display text-xl font-bold text-slate-900">S3-compatible storage</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Status:{' '}
+                <span className={me.s3_configured ? 'font-semibold text-emerald-700' : 'font-medium text-slate-600'}>
+                  {me.s3_configured ? 'Configured' : 'Not configured'}
+                </span>
+              </p>
+            </div>
+            <div className="space-y-3 text-sm leading-relaxed text-slate-700">
+              <p>
+                Use this when you want <strong className="text-slate-900">large file uploads</strong> via presigned URLs.
+                Regular small JSON submissions do <strong className="text-slate-900">not</strong> require S3.
+              </p>
+              <p>
+                Enter your <strong className="text-slate-900">endpoint</strong> (MinIO/RustFS/AWS S3 API URL),{' '}
+                <strong className="text-slate-900">bucket</strong>, and <strong className="text-slate-900">access key / secret</strong>.
+                Match the same region and credentials you use elsewhere.
+              </p>
+            </div>
+            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="block md:col-span-2">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Endpoint URL</span>
+                <input
+                  className="w-full rounded-xl border-slate-300 px-4 py-3"
+                  name="s3_endpoint"
+                  placeholder="https://s3.example.com or http://rustfs:9000"
+                  defaultValue={me.s3_endpoint}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Bucket</span>
+                <input className="w-full rounded-xl border-slate-300 px-4 py-3" name="s3_bucket" placeholder="Bucket name" defaultValue={me.s3_bucket} />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Access key</span>
+                <input
+                  className="w-full rounded-xl border-slate-300 px-4 py-3"
+                  value={s3Access}
+                  onChange={(e) => setS3Access(e.target.value)}
+                  placeholder={me.s3_configured ? 'Leave blank to keep' : 'Access key'}
+                  type="password"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Secret key</span>
+                <input
+                  className="w-full rounded-xl border-slate-300 px-4 py-3"
+                  value={s3Secret}
+                  onChange={(e) => setS3Secret(e.target.value)}
+                  placeholder={me.s3_configured ? 'Leave blank to keep' : 'Secret key'}
+                  type="password"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
+              onClick={clearS3}
+            >
+              Clear S3 credentials
+            </button>
+          </section>
+
+          <button type="submit" className="w-full rounded-xl bg-brand-500 py-3.5 text-base font-semibold text-white shadow-lg hover:bg-brand-700 sm:w-auto sm:px-12">
+            Save changes
+          </button>
+        </form>
+
+        {status ? (
+          <p
+            className={`mt-6 rounded-xl px-4 py-3 text-sm ${
+              status.startsWith('Save failed') || status.includes('Failed') ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-emerald-200 bg-emerald-50 text-emerald-900'
+            }`}
+            role="status"
+          >
+            {status}
+          </p>
+        ) : null}
+      </div>
     </main>
   );
 }

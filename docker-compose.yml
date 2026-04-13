@@ -42,6 +42,12 @@ services:
     build:
       context: ./apps/api
     container_name: submify-api
+    # Root + docker.sock: required so "Update & restart" can run docker compose on the host (Linux).
+    user: "0:0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Project directory on host (compose file + context for pull/up). Must be this repo root.
+      - .:/stack:rw
     environment:
       PORT: 8080
       DATABASE_URL: postgres://submify:${POSTGRES_PASSWORD:-submify}@db:5432/submify?sslmode=disable
@@ -54,6 +60,8 @@ services:
       # When true (default), Origin is allowed if it matches the public Host (and port) of this request — works with
       # Cloudflare Tunnel / nginx without listing every hostname in ALLOWED_ORIGINS. Set false to require explicit lists only.
       CORS_ALLOW_SAME_HOST_ORIGIN: ${CORS_ALLOW_SAME_HOST_ORIGIN:-true}
+      # Allow browsers on any site to POST to /api/submit with x-api-key (embedded forms). Set false to lock down.
+      CORS_PUBLIC_SUBMIT_ANY_ORIGIN: ${CORS_PUBLIC_SUBMIT_ANY_ORIGIN:-true}
       CORS_ORIGIN_HOST_SUFFIXES: ${CORS_ORIGIN_HOST_SUFFIXES:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       RATE_LIMIT_SENSITIVE_PUBLIC_RPM: ${RATE_LIMIT_SENSITIVE_PUBLIC_RPM:-25}
@@ -63,8 +71,10 @@ services:
       APP_VERSION: ${APP_VERSION:-0.1.0}
       GITHUB_REPO: ${GITHUB_REPO:-nodedr/submify}
       UPDATE_CHECK_MINUTES: ${UPDATE_CHECK_MINUTES:-360}
-      ALLOW_UPDATE_TRIGGER: ${ALLOW_UPDATE_TRIGGER:-false}
-      UPDATE_COMMAND: "${UPDATE_COMMAND:-docker compose pull && docker compose up -d}"
+      # Set false on hosts without Docker socket (or if you do not want the dashboard to control Docker).
+      ALLOW_UPDATE_TRIGGER: ${ALLOW_UPDATE_TRIGGER:-true}
+      # Override in .env if needed. Uses /stack = project root mounted from this compose file directory.
+      UPDATE_COMMAND: 'sh -c "cd /stack && docker compose pull && docker compose up -d"'
       UPLOAD_MAX_SIZE_BYTES: ${UPLOAD_MAX_SIZE_BYTES:-26214400}
       UPLOAD_ALLOWED_MIME: ${UPLOAD_ALLOWED_MIME:-image/png,image/jpeg,application/pdf,text/plain}
       PRESIGN_EXPIRY_MINUTES: ${PRESIGN_EXPIRY_MINUTES:-10}

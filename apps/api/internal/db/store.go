@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nodedr/submify/apps/api/internal/keys"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -31,11 +33,13 @@ type User struct {
 }
 
 type Project struct {
-	ID           string    `json:"id"`
-	UserID       string    `json:"user_id"`
-	Name         string    `json:"name"`
-	PublicAPIKey string    `json:"public_api_key"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	UserID         string    `json:"user_id"`
+	Name           string    `json:"name"`
+	APIKey         string    `json:"api_key"`
+	APISecret      string    `json:"api_secret"`
+	AllowedOrigins []string  `json:"allowed_origins,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type Submission struct {
@@ -43,6 +47,8 @@ type Submission struct {
 	ProjectID string          `json:"project_id"`
 	Data      json.RawMessage `json:"data"`
 	Files     json.RawMessage `json:"files"`
+	ClientIP  *string         `json:"client_ip,omitempty"`
+	UserAgent *string         `json:"user_agent,omitempty"`
 	CreatedAt time.Time       `json:"created_at"`
 }
 
@@ -119,20 +125,27 @@ func (s *Store) CreateInitialSystemConfig(cfg SystemConfig) error {
 	}
 
 	userID := uuid.NewString()
-	apiKey := uuid.NewString()
-	internalProjectKey := uuid.NewString()
-
-	if _, err := tx.Exec(`
-		INSERT INTO users(id, email, password_hash, api_key, full_name, phone)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, userID, cfg.AdminEmail, cfg.AdminHash, apiKey, cfg.AdminEmail, ""); err != nil {
+	userAPIKey := uuid.NewString()
+	pk, err := keys.NewAPIKey()
+	if err != nil {
+		return err
+	}
+	sk, err := keys.NewAPISecret()
+	if err != nil {
 		return err
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO projects(id, user_id, name, public_api_key, is_default)
-		VALUES (gen_random_uuid(), $1, 'Default', $2, TRUE)
-	`, userID, internalProjectKey); err != nil {
+		INSERT INTO users(id, email, password_hash, api_key, full_name, phone)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, userID, cfg.AdminEmail, cfg.AdminHash, userAPIKey, cfg.AdminEmail, ""); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO projects(id, user_id, name, api_key, api_secret, is_default)
+		VALUES (gen_random_uuid(), $1, 'Default', $2, $3, TRUE)
+	`, userID, pk, sk); err != nil {
 		return err
 	}
 
@@ -208,20 +221,27 @@ func (s *Store) RegisterUser(fullName, phone, email, passwordHash string) (User,
 	defer tx.Rollback()
 
 	userID := uuid.NewString()
-	apiKey := uuid.NewString()
-	internalProjectKey := uuid.NewString()
-
-	if _, err := tx.Exec(`
-		INSERT INTO users(id, email, password_hash, api_key, full_name, phone)
-		VALUES ($1,$2,$3,$4,$5,$6)
-	`, userID, email, passwordHash, apiKey, fullName, phone); err != nil {
+	userAPIKey := uuid.NewString()
+	pk, err := keys.NewAPIKey()
+	if err != nil {
+		return User{}, err
+	}
+	sk, err := keys.NewAPISecret()
+	if err != nil {
 		return User{}, err
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO projects(id, user_id, name, public_api_key, is_default)
-		VALUES (gen_random_uuid(), $1, 'Default', $2, TRUE)
-	`, userID, internalProjectKey); err != nil {
+		INSERT INTO users(id, email, password_hash, api_key, full_name, phone)
+		VALUES ($1,$2,$3,$4,$5,$6)
+	`, userID, email, passwordHash, userAPIKey, fullName, phone); err != nil {
+		return User{}, err
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO projects(id, user_id, name, api_key, api_secret, is_default)
+		VALUES (gen_random_uuid(), $1, 'Default', $2, $3, TRUE)
+	`, userID, pk, sk); err != nil {
 		return User{}, err
 	}
 
@@ -254,23 +274,73 @@ func (s *Store) UpdateUserIntegrations(userID, telegramToken, telegramChatID, s3
 	return err
 }
 
-func (s *Store) CreateProject(userID, name, apiKey string, isDefault bool) (Project, error) {
+const projectSelect = `id, user_id, name, api_key, api_secret, COALESCE(allowed_origins, '')`
+
+func parseOriginsJSON(s string) ([]string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func projectFromRow(row *sql.Row) (Project, error) {
 	var p Project
-	err := s.DB.QueryRow(`
-		INSERT INTO projects(id,user_id,name,public_api_key,is_default)
-		VALUES (gen_random_uuid(),$1,$2,$3,$4)
-		RETURNING id,user_id,name,public_api_key,created_at
-	`, userID, name, apiKey, isDefault).Scan(&p.ID, &p.UserID, &p.Name, &p.PublicAPIKey, &p.CreatedAt)
-	return p, err
+	var originsRaw string
+	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.CreatedAt)
+	if err != nil {
+		return Project{}, err
+	}
+	origins, err := parseOriginsJSON(originsRaw)
+	if err != nil {
+		return Project{}, err
+	}
+	p.AllowedOrigins = origins
+	return p, nil
+}
+
+func projectFromRows(rows *sql.Rows) (Project, error) {
+	var p Project
+	var originsRaw string
+	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.CreatedAt)
+	if err != nil {
+		return Project{}, err
+	}
+	origins, err := parseOriginsJSON(originsRaw)
+	if err != nil {
+		return Project{}, err
+	}
+	p.AllowedOrigins = origins
+	return p, nil
+}
+
+func (s *Store) CreateProject(userID, name string, isDefault bool) (Project, error) {
+	pk, err := keys.NewAPIKey()
+	if err != nil {
+		return Project{}, err
+	}
+	sk, err := keys.NewAPISecret()
+	if err != nil {
+		return Project{}, err
+	}
+	row := s.DB.QueryRow(`
+		INSERT INTO projects(id,user_id,name,api_key,api_secret,is_default)
+		VALUES (gen_random_uuid(),$1,$2,$3,$4,$5)
+		RETURNING `+projectSelect+`
+	`, userID, name, pk, sk, isDefault)
+	return projectFromRow(row)
 }
 
 func (s *Store) DefaultInboxProject(userID string) (Project, error) {
-	var p Project
-	err := s.DB.QueryRow(`
-		SELECT id,user_id,name,public_api_key,created_at
+	row := s.DB.QueryRow(`
+		SELECT `+projectSelect+`
 		FROM projects WHERE user_id=$1 AND is_default=TRUE LIMIT 1
-	`, userID).Scan(&p.ID, &p.UserID, &p.Name, &p.PublicAPIKey, &p.CreatedAt)
-	return p, err
+	`, userID)
+	return projectFromRow(row)
 }
 
 func (s *Store) EnsureDefaultInboxProject(userID string) (Project, error) {
@@ -281,11 +351,14 @@ func (s *Store) EnsureDefaultInboxProject(userID string) (Project, error) {
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Project{}, err
 	}
-	return s.CreateProject(userID, "Default", uuid.NewString(), true)
+	return s.CreateProject(userID, "Default", true)
 }
 
 func (s *Store) ListProjects(userID string) ([]Project, error) {
-	rows, err := s.DB.Query(`SELECT id,user_id,name,public_api_key,created_at FROM projects WHERE user_id=$1 ORDER BY is_default DESC, created_at DESC`, userID)
+	rows, err := s.DB.Query(`
+		SELECT `+projectSelect+`
+		FROM projects WHERE user_id=$1 ORDER BY is_default DESC, created_at DESC
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -293,8 +366,8 @@ func (s *Store) ListProjects(userID string) ([]Project, error) {
 
 	projects := []Project{}
 	for rows.Next() {
-		var p Project
-		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.PublicAPIKey, &p.CreatedAt); err != nil {
+		p, err := projectFromRows(rows)
+		if err != nil {
 			return nil, err
 		}
 		projects = append(projects, p)
@@ -314,8 +387,30 @@ func (s *Store) UpdateProjectName(userID, projectID, name string) error {
 	return nil
 }
 
-func (s *Store) RegenerateAPIKey(userID, projectID, newKey string) error {
-	res, err := s.DB.Exec(`UPDATE projects SET public_api_key=$1 WHERE id=$2 AND user_id=$3`, newKey, projectID, userID)
+func (s *Store) RegenerateProjectKeys(userID, projectID, newAPIKey, newAPISecret string) error {
+	res, err := s.DB.Exec(`UPDATE projects SET api_key=$1, api_secret=$2 WHERE id=$3 AND user_id=$4`, newAPIKey, newAPISecret, projectID, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) UpdateProjectAllowedOrigins(userID, projectID string, origins []string) error {
+	var payload interface{}
+	if len(origins) == 0 {
+		payload = nil
+	} else {
+		b, err := json.Marshal(origins)
+		if err != nil {
+			return err
+		}
+		payload = string(b)
+	}
+	res, err := s.DB.Exec(`UPDATE projects SET allowed_origins=$1 WHERE id=$2 AND user_id=$3`, payload, projectID, userID)
 	if err != nil {
 		return err
 	}
@@ -327,15 +422,30 @@ func (s *Store) RegenerateAPIKey(userID, projectID, newKey string) error {
 }
 
 func (s *Store) ProjectOwnedBy(userID, projectID string) (Project, error) {
-	var p Project
-	err := s.DB.QueryRow(`SELECT id,user_id,name,public_api_key,created_at FROM projects WHERE id=$1 AND user_id=$2`, projectID, userID).Scan(&p.ID, &p.UserID, &p.Name, &p.PublicAPIKey, &p.CreatedAt)
-	return p, err
+	row := s.DB.QueryRow(`SELECT `+projectSelect+` FROM projects WHERE id=$1 AND user_id=$2`, projectID, userID)
+	return projectFromRow(row)
 }
 
-func (s *Store) FindProjectByAPIKey(apiKey string) (Project, error) {
-	var p Project
-	err := s.DB.QueryRow(`SELECT id,user_id,name,public_api_key,created_at FROM projects WHERE public_api_key=$1`, apiKey).Scan(&p.ID, &p.UserID, &p.Name, &p.PublicAPIKey, &p.CreatedAt)
-	return p, err
+// FindProjectByPublicKey resolves a project by pk_live_* key, or legacy UUID string (normalized to pk_live_ + hex).
+func (s *Store) FindProjectByPublicKey(header string) (Project, error) {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return Project{}, sql.ErrNoRows
+	}
+	row := s.DB.QueryRow(`SELECT `+projectSelect+` FROM projects WHERE api_key=$1`, header)
+	p, err := projectFromRow(row)
+	if err == nil {
+		return p, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return Project{}, err
+	}
+	if id, err := uuid.Parse(header); err == nil {
+		normalized := "pk_live_" + strings.ReplaceAll(id.String(), "-", "")
+		row2 := s.DB.QueryRow(`SELECT `+projectSelect+` FROM projects WHERE api_key=$1`, normalized)
+		return projectFromRow(row2)
+	}
+	return Project{}, sql.ErrNoRows
 }
 
 func (s *Store) CountSubmissions(projectID string) (int, error) {
@@ -344,19 +454,28 @@ func (s *Store) CountSubmissions(projectID string) (int, error) {
 	return count, err
 }
 
-func (s *Store) InsertSubmission(projectID string, data, files json.RawMessage) (Submission, error) {
+func (s *Store) InsertSubmission(projectID string, data, files json.RawMessage, clientIP, userAgent string) (Submission, error) {
 	var sub Submission
+	var ipNS, uaNS sql.NullString
 	err := s.DB.QueryRow(`
-		INSERT INTO submissions(id,project_id,data,files)
-		VALUES (gen_random_uuid(),$1,$2,$3)
-		RETURNING id,project_id,data,files,created_at
-	`, projectID, data, files).Scan(&sub.ID, &sub.ProjectID, &sub.Data, &sub.Files, &sub.CreatedAt)
+		INSERT INTO submissions(id,project_id,data,files,client_ip,user_agent)
+		VALUES (gen_random_uuid(),$1,$2,$3,NULLIF($4,''),NULLIF($5,''))
+		RETURNING id,project_id,data,files,client_ip,user_agent,created_at
+	`, projectID, data, files, clientIP, userAgent).Scan(&sub.ID, &sub.ProjectID, &sub.Data, &sub.Files, &ipNS, &uaNS, &sub.CreatedAt)
+	if ipNS.Valid {
+		s := ipNS.String
+		sub.ClientIP = &s
+	}
+	if uaNS.Valid {
+		s := uaNS.String
+		sub.UserAgent = &s
+	}
 	return sub, err
 }
 
 func (s *Store) ListSubmissions(projectID string, limit, offset int) ([]Submission, error) {
 	rows, err := s.DB.Query(`
-		SELECT id,project_id,data,files,created_at
+		SELECT id,project_id,data,files,client_ip,user_agent,created_at
 		FROM submissions
 		WHERE project_id=$1
 		ORDER BY created_at DESC
@@ -370,8 +489,17 @@ func (s *Store) ListSubmissions(projectID string, limit, offset int) ([]Submissi
 	items := []Submission{}
 	for rows.Next() {
 		var sub Submission
-		if err := rows.Scan(&sub.ID, &sub.ProjectID, &sub.Data, &sub.Files, &sub.CreatedAt); err != nil {
+		var ipNS, uaNS sql.NullString
+		if err := rows.Scan(&sub.ID, &sub.ProjectID, &sub.Data, &sub.Files, &ipNS, &uaNS, &sub.CreatedAt); err != nil {
 			return nil, err
+		}
+		if ipNS.Valid {
+			s := ipNS.String
+			sub.ClientIP = &s
+		}
+		if uaNS.Valid {
+			s := uaNS.String
+			sub.UserAgent = &s
 		}
 		items = append(items, sub)
 	}

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/jung-kurt/gofpdf"
 	"github.com/nodedr/submify/apps/api/internal/auth"
 	"github.com/nodedr/submify/apps/api/internal/config"
@@ -62,6 +61,10 @@ func (s *Server) Router() *gin.Engine {
 	}
 	r.Use(SubmifyCORS(s.cfg))
 
+	submitPub := r.Group("/api")
+	submitPub.Use(s.SubmitRateLimitMiddleware())
+	submitPub.POST("/submit", s.Submit)
+
 	api := r.Group("/api/v1")
 	{
 		api.GET("/system/bootstrap-status", s.BootstrapStatus)
@@ -76,12 +79,6 @@ func (s *Server) Router() *gin.Engine {
 		sens.POST("/auth/refresh", s.Refresh)
 		sens.POST("/system/setup", s.SetupSystem)
 		sens.POST("/auth/logout", s.Logout)
-	}
-
-	sub := api.Group("")
-	sub.Use(s.SubmitRateLimitMiddleware())
-	{
-		sub.POST("/submit/:project_key", s.Submit)
 	}
 
 	secured := api.Group("")
@@ -152,16 +149,22 @@ func (s *Server) UpdateStatus(c *gin.Context) {
 	cfg, err := s.store.GetSystemConfig()
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusOK, gin.H{"update_available": false, "latest_version": "", "current_version": s.cfg.AppVersion})
+			c.JSON(http.StatusOK, gin.H{
+				"update_available":        false,
+				"latest_version":          "",
+				"current_version":         s.cfg.AppVersion,
+				"update_trigger_enabled":  s.cfg.AllowUpdateTrigger,
+			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"update_available": cfg.UpdateAvail,
-		"latest_version":  cfg.LatestVersion,
-		"current_version": s.cfg.AppVersion,
+		"update_available":       cfg.UpdateAvail,
+		"latest_version":         cfg.LatestVersion,
+		"current_version":        s.cfg.AppVersion,
+		"update_trigger_enabled": s.cfg.AllowUpdateTrigger,
 	})
 }
 
@@ -169,15 +172,11 @@ func buildTelegramMessage(project db.Project, data []byte, files []byte) string 
 	return "New submission for " + project.Name + "\nData: " + string(data) + "\nFiles: " + string(files)
 }
 
-func projectAPIKey() string {
-	return uuid.NewString()
-}
-
 func writeExcel(rows []db.Submission) ([]byte, error) {
 	f := excelize.NewFile()
 	sheet := "Submissions"
 	f.SetSheetName("Sheet1", sheet)
-	headers := []string{"ID", "ProjectID", "Data", "Files", "CreatedAt"}
+	headers := []string{"ID", "ProjectID", "Data", "Files", "ClientIP", "UserAgent", "CreatedAt"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet, cell, h)
@@ -188,7 +187,17 @@ func writeExcel(rows []db.Submission) ([]byte, error) {
 		f.SetCellValue(sheet, "B"+strconv.Itoa(idx), row.ProjectID)
 		f.SetCellValue(sheet, "C"+strconv.Itoa(idx), string(row.Data))
 		f.SetCellValue(sheet, "D"+strconv.Itoa(idx), string(row.Files))
-		f.SetCellValue(sheet, "E"+strconv.Itoa(idx), row.CreatedAt.Format(time.RFC3339))
+		ip := ""
+		if row.ClientIP != nil {
+			ip = *row.ClientIP
+		}
+		ua := ""
+		if row.UserAgent != nil {
+			ua = *row.UserAgent
+		}
+		f.SetCellValue(sheet, "E"+strconv.Itoa(idx), ip)
+		f.SetCellValue(sheet, "F"+strconv.Itoa(idx), ua)
+		f.SetCellValue(sheet, "G"+strconv.Itoa(idx), row.CreatedAt.Format(time.RFC3339))
 	}
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
@@ -205,6 +214,12 @@ func writePDF(rows []db.Submission) ([]byte, error) {
 	for _, row := range rows {
 		line := row.ID + " | " + row.CreatedAt.Format(time.RFC3339)
 		pdf.MultiCell(0, 5, line, "", "L", false)
+		if row.ClientIP != nil {
+			pdf.MultiCell(0, 5, "IP: "+*row.ClientIP, "", "L", false)
+		}
+		if row.UserAgent != nil {
+			pdf.MultiCell(0, 5, "UA: "+*row.UserAgent, "", "L", false)
+		}
 		pdf.MultiCell(0, 5, "Data: "+string(row.Data), "", "L", false)
 		pdf.MultiCell(0, 5, "Files: "+string(row.Files), "", "L", false)
 		pdf.Ln(2)

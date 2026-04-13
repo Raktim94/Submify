@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nodedr/submify/apps/api/internal/auth"
 	"github.com/nodedr/submify/apps/api/internal/db"
+	"github.com/nodedr/submify/apps/api/internal/keys"
 	"github.com/nodedr/submify/apps/api/internal/storage"
 )
 
@@ -29,8 +32,9 @@ type createProjectRequest struct {
 }
 
 type updateProjectRequest struct {
-	Name          string `json:"name"`
-	RegenerateKey bool   `json:"regenerate_key"`
+	Name             string    `json:"name"`
+	RegenerateKey    bool      `json:"regenerate_key"`
+	AllowedOrigins   *[]string `json:"allowed_origins"`
 }
 
 type presignRequest struct {
@@ -210,7 +214,7 @@ func (s *Server) CreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	project, err := s.store.CreateProject(userIDFromContext(c), req.Name, projectAPIKey(), false)
+	project, err := s.store.CreateProject(userIDFromContext(c), req.Name, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -247,7 +251,17 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		}
 	}
 	if req.RegenerateKey {
-		if err := s.store.RegenerateAPIKey(userID, id, projectAPIKey()); err != nil {
+		pk, err := keys.NewAPIKey()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		sk, err := keys.NewAPISecret()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.store.RegenerateProjectKeys(userID, id, pk, sk); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -256,19 +270,71 @@ func (s *Server) UpdateProject(c *gin.Context) {
 			return
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+	if req.AllowedOrigins != nil {
+		if err := s.store.UpdateProjectAllowedOrigins(userID, id, *req.AllowedOrigins); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	p, err := s.store.ProjectOwnedBy(userID, id)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "updated", "project": p})
+}
+
+func originAllowedForProject(p db.Project, origin string) bool {
+	if len(p.AllowedOrigins) == 0 {
+		return true
+	}
+	if strings.TrimSpace(origin) == "" {
+		return true
+	}
+	o := strings.TrimSpace(origin)
+	for _, allowed := range p.AllowedOrigins {
+		if strings.EqualFold(strings.TrimSpace(allowed), o) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) Submit(c *gin.Context) {
-	projectKey := c.Param("project_key")
-	headerKey := c.GetHeader("x-api-key")
-	if headerKey == "" || headerKey != projectKey {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
+	max := s.cfg.SubmitMaxBodyBytes
+	if max < 1024 {
+		max = 1024 * 1024
+	}
+	rawBody, err := io.ReadAll(io.LimitReader(c.Request.Body, max+1))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not read body"})
+		return
+	}
+	if int64(len(rawBody)) > max {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "payload too large"})
+		return
+	}
+	t := bytes.TrimSpace(rawBody)
+	if len(t) == 0 || bytes.Equal(t, []byte("null")) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "empty submission"})
+		return
+	}
+
+	headerKey := strings.TrimSpace(c.GetHeader("x-api-key"))
+	if headerKey == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing x-api-key"})
 		return
 	}
 
 	var project db.Project
-	var err error
 	if u, e := s.store.FindUserByAPIKey(headerKey); e == nil {
 		project, err = s.store.EnsureDefaultInboxProject(u.ID)
 		if err != nil {
@@ -276,7 +342,7 @@ func (s *Server) Submit(c *gin.Context) {
 			return
 		}
 	} else if errors.Is(e, sql.ErrNoRows) {
-		project, err = s.store.FindProjectByAPIKey(headerKey)
+		project, err = s.store.FindProjectByPublicKey(headerKey)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
@@ -290,6 +356,25 @@ func (s *Server) Submit(c *gin.Context) {
 		return
 	}
 
+	if !originAllowedForProject(project, c.GetHeader("Origin")) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "origin not allowed for this project"})
+		return
+	}
+
+	sig := strings.TrimSpace(c.GetHeader("x-signature"))
+	if sig != "" {
+		if !verifyHMACSHA256Hex(project.APISecret, rawBody, sig) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+			return
+		}
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(rawBody, &raw); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	count, err := s.store.CountSubmissions(project.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -297,12 +382,6 @@ func (s *Server) Submit(c *gin.Context) {
 	}
 	if count >= 5000 {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "submission limit reached (5000). export and delete old data."})
-		return
-	}
-
-	var raw map[string]interface{}
-	if err := c.ShouldBindJSON(&raw); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -322,7 +401,10 @@ func (s *Server) Submit(c *gin.Context) {
 	dataBytes, _ := json.Marshal(dataPart)
 	filesBytes, _ := json.Marshal(filesPart)
 
-	sub, err := s.store.InsertSubmission(project.ID, dataBytes, filesBytes)
+	ip := clientIPFromRequest(c)
+	ua := strings.TrimSpace(c.GetHeader("User-Agent"))
+
+	sub, err := s.store.InsertSubmission(project.ID, dataBytes, filesBytes, ip, ua)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

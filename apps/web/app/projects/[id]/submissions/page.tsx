@@ -9,6 +9,8 @@ type Submission = {
   id: string;
   data: Record<string, unknown>;
   files: unknown[];
+  client_ip?: string;
+  user_agent?: string;
   created_at: string;
 };
 
@@ -59,6 +61,13 @@ export default function SubmissionsPage() {
               Select
             </label>
             <p className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</p>
+            {(item.client_ip || item.user_agent) && (
+              <p className="mt-1 text-xs text-slate-600">
+                {item.client_ip ? `IP: ${item.client_ip}` : ''}
+                {item.client_ip && item.user_agent ? ' · ' : ''}
+                {item.user_agent ? `UA: ${item.user_agent}` : ''}
+              </p>
+            )}
             <pre className="mt-2 overflow-x-auto rounded bg-slate-50 p-3 text-xs">{JSON.stringify(item.data, null, 2)}</pre>
             <pre className="mt-2 overflow-x-auto rounded bg-slate-50 p-3 text-xs">{JSON.stringify(item.files, null, 2)}</pre>
           </div>

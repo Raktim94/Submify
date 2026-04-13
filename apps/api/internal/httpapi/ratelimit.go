@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -94,7 +95,7 @@ func (s *Server) SubmitRateLimitMiddleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded (submit, per IP)"})
 			return
 		}
-		key := c.Param("project_key")
+		key := strings.TrimSpace(c.GetHeader("x-api-key"))
 		if key != "" && !s.submitLimitKey.Allow("key:"+key) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded (submit, per API key)"})
 			return

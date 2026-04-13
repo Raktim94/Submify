@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,10 +11,33 @@ import (
 )
 
 // SubmifyCORS sets Access-Control-* using OriginAllowed (same-host tunnel-safe, env lists, LAN relax).
+// POST /api/submit allows any browser Origin so embedded forms on external sites work with x-api-key.
 func SubmifyCORS(cfg config.Config) gin.HandlerFunc {
 	maxAge := int((12 * time.Hour).Seconds())
+	publicSubmitHeaders := "Authorization, Content-Type, x-api-key, x-signature"
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
+		path := c.Request.URL.Path
+
+		// Public JSON submit from arbitrary websites (CORS + x-api-key). No cookies; credentials off.
+		if cfg.CorsPublicSubmitAnyOrigin && path == "/api/submit" {
+			h := c.Writer.Header()
+			if origin != "" {
+				h.Set("Access-Control-Allow-Origin", origin)
+				h.Set("Vary", "Origin")
+			}
+			h.Set("Access-Control-Allow-Credentials", "false")
+			if c.Request.Method == http.MethodOptions {
+				h.Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+				h.Set("Access-Control-Allow-Headers", publicSubmitHeaders)
+				h.Set("Access-Control-Max-Age", strconv.Itoa(maxAge))
+				c.AbortWithStatus(http.StatusNoContent)
+				return
+			}
+			c.Next()
+			return
+		}
+
 		if origin == "" {
 			c.Next()
 			return
@@ -31,7 +55,7 @@ func SubmifyCORS(cfg config.Config) gin.HandlerFunc {
 
 		if c.Request.Method == http.MethodOptions {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
-			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, x-api-key")
+			h.Set("Access-Control-Allow-Headers", publicSubmitHeaders)
 			h.Set("Access-Control-Max-Age", strconv.Itoa(maxAge))
 			c.AbortWithStatus(http.StatusNoContent)
 			return

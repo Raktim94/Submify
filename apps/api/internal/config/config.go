@@ -20,7 +20,9 @@ type Config struct {
 	// CorsAllowSameHostOrigin allows any Origin whose host:port matches this request (after X-Forwarded-*).
 	// Enables Cloudflare Tunnel / CasaOS-style single public URL without listing ALLOWED_ORIGINS per hostname.
 	CorsAllowSameHostOrigin bool
-	TrustedProxies          []string
+	// CorsPublicSubmitAnyOrigin allows any browser Origin for POST /api/submit (uses x-api-key, not cookies).
+	CorsPublicSubmitAnyOrigin bool
+	TrustedProxies            []string
 	AppVersion                   string
 	GitHubRepo                   string
 	UpdateCheckInterval          time.Duration
@@ -35,6 +37,8 @@ type Config struct {
 	RateLimitSubmitIPRPM         int
 	RateLimitSubmitKeyRPM        int
 	RateLimitAuthedUserRPM       int
+	// SubmitMaxBodyBytes caps JSON body size for POST /api/submit.
+	SubmitMaxBodyBytes int64
 }
 
 func Load() Config {
@@ -50,6 +54,7 @@ func Load() Config {
 		CorsRelaxPrivateNetworks:    getEnvBool("CORS_RELAX_PRIVATE_NETWORKS", true),
 		CorsOriginHostSuffixes:      splitCSV(getEnv("CORS_ORIGIN_HOST_SUFFIXES", "")),
 		CorsAllowSameHostOrigin:     getEnvBool("CORS_ALLOW_SAME_HOST_ORIGIN", true),
+		CorsPublicSubmitAnyOrigin:   getEnvBool("CORS_PUBLIC_SUBMIT_ANY_ORIGIN", true),
 		TrustedProxies:              trusted,
 		AppVersion:                  getEnv("APP_VERSION", "0.1.0"),
 		GitHubRepo:                  getEnv("GITHUB_REPO", "nodedr/submify"),
@@ -65,6 +70,7 @@ func Load() Config {
 		RateLimitSubmitIPRPM:        getEnvInt("RATE_LIMIT_SUBMIT_IP_RPM", 90),
 		RateLimitSubmitKeyRPM:       getEnvInt("RATE_LIMIT_SUBMIT_KEY_RPM", 180),
 		RateLimitAuthedUserRPM:      getEnvInt("RATE_LIMIT_AUTH_USER_RPM", 600),
+		SubmitMaxBodyBytes:          int64(getEnvInt("SUBMIT_MAX_BODY_BYTES", 1024*1024)),
 	}
 }
 
