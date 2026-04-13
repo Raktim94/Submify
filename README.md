@@ -12,17 +12,18 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
 2. [What you get](#what-you-get)
 3. [Requirements](#requirements)
 4. [Installation (Docker Compose)](#installation-docker-compose)
-5. [Configuration and environment variables](#configuration-and-environment-variables)
-6. [First-time setup (`/setup`)](#first-time-setup-setup)
-7. [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel)
-8. [API overview](#api-overview)
-9. [Connecting a client website (forms)](#connecting-a-client-website-forms)
-10. [Presigned uploads (optional)](#presigned-uploads-optional)
-11. [Dashboard workflow](#dashboard-workflow)
-12. [Limits and security defaults](#limits-and-security-defaults)
-13. [Operations: logs, backup, updates](#operations-logs-backup-updates)
-14. [Troubleshooting](#troubleshooting)
-15. [Codebase review (health check)](#codebase-review-health-check)
+5. [URLs and ports (browser vs containers)](#urls-and-ports-browser-vs-containers)
+6. [Configuration and environment variables](#configuration-and-environment-variables)
+7. [First-time setup (`/setup`)](#first-time-setup-setup)
+8. [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel)
+9. [API overview](#api-overview)
+10. [Connecting a client website (forms)](#connecting-a-client-website-forms)
+11. [Presigned uploads (optional)](#presigned-uploads-optional)
+12. [Dashboard workflow](#dashboard-workflow)
+13. [Limits and security defaults](#limits-and-security-defaults)
+14. [Operations: logs, backup, updates](#operations-logs-backup-updates)
+15. [Troubleshooting](#troubleshooting)
+16. [Codebase review (health check)](#codebase-review-health-check)
 
 ---
 
@@ -97,8 +98,7 @@ docker compose ps
 
 ### 4. Open the app
 
-- **Dashboard:** `http://<host>:2512`
-- **API base:** `http://<host>:2512/api/v1`
+See **[URLs and ports (browser vs containers)](#urls-and-ports-browser-vs-containers)** below for the full picture.
 
 ### 5. View logs
 
@@ -119,6 +119,37 @@ docker compose logs -f api
 ```
 
 The last command streams API container logs (Ctrl+C to stop). Omit it if you only need a one-shot deploy.
+
+---
+
+## URLs and ports (browser vs containers)
+
+Use the **host** machine’s address (your VPS IP, `localhost` on the same box, or your domain if DNS points here). **Nginx** is the only service that publishes a port in the default `docker-compose.yml`: **2512**.
+
+### What you use in the browser (host)
+
+| What | URL |
+|------|-----|
+| **Web UI** (Next.js dashboard) | `http://<your-server-ip>:2512` — e.g. `http://localhost:2512` on the same machine |
+| **API** | Same host, under **`/api/v1`** — e.g. `http://<your-server-ip>:2512/api/v1` |
+
+You **do not** open port **8080** on the host for normal use. **2512** is the public entrypoint (on **nginx**).
+
+### Why API logs say `:8080`
+
+`submify api listening on :8080` refers to the **inside** of the `submify-api` container. Traffic flow:
+
+`Browser → :2512 (nginx) → /api/… → api:8080` and `… → / → web:3000`.
+
+### Quick checks
+
+- **Dashboard:** `http://YOUR_IP:2512`
+- **Health:** `http://YOUR_IP:2512/api/v1/system/health`
+- **API base** for clients and forms: `http://YOUR_IP:2512/api/v1` (or `https://…` if you terminate TLS in front)
+
+### Firewall
+
+Allow **TCP 2512** from the networks that should reach the UI/API. If you put HTTPS on **80** or **443** in front of this stack, allow those instead (or in addition).
 
 ---
 
@@ -342,6 +373,17 @@ Adjust `~/Submify` if your clone lives elsewhere.
 - `/var/lib/submify/data/rustfs`
 
 Back up these directories on a schedule appropriate to your RPO/RTO.
+
+**Log size:** Each service uses Docker **`json-file`** logging with rotation (**10 MB** per file, **3** files per container by default). That caps how much log data grows on disk; tune in `docker-compose.yml` under `x-logging` if needed.
+
+**Disk after many rebuilds:** New `docker compose up --build` layers live in Docker’s image/build cache, **not** in PostgreSQL. They can fill the host disk over time. Run periodically:
+
+```bash
+chmod +x scripts/prune-docker.sh
+./scripts/prune-docker.sh
+```
+
+Or add a weekly cron job (see comments in the script). The script runs `docker builder prune` and `docker system prune` / `docker image prune` — it does **not** remove volumes or your bind-mounted DB paths. Never run `docker volume prune` or `docker system prune --volumes` unless you intend to delete data.
 
 ---
 

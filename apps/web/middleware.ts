@@ -7,24 +7,8 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const setupUrl = new URL('/api/v1/system/bootstrap-status', req.url);
-  try {
-    const res = await fetch(setupUrl, { cache: 'no-store' });
-    if (!res.ok) {
-      return NextResponse.next();
-    }
-    const payload = await res.json();
-    const setupRequired = Boolean(payload.setup_required);
-
-    if (setupRequired && pathname !== '/setup') {
-      return NextResponse.redirect(new URL('/setup', req.url));
-    }
-
-    if (!setupRequired && pathname === '/setup') {
-      return NextResponse.redirect(new URL('/login', req.url));
-    }
-  } catch {
-    return NextResponse.next();
+  if (pathname === '/setup') {
+    return NextResponse.redirect(new URL('/', req.url));
   }
 
   return NextResponse.next();

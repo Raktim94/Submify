@@ -9,30 +9,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nodedr/submify/apps/api/internal/auth"
 	"github.com/nodedr/submify/apps/api/internal/db"
 	"github.com/nodedr/submify/apps/api/internal/storage"
 )
-
-type setupRequest struct {
-	S3Endpoint     string `json:"s3_endpoint" binding:"required"`
-	S3AccessKey    string `json:"s3_access_key" binding:"required"`
-	S3SecretKey    string `json:"s3_secret_key" binding:"required"`
-	S3Bucket       string `json:"s3_bucket" binding:"required"`
-	TelegramToken  string `json:"telegram_bot_token" binding:"required"`
-	TelegramChatID string `json:"telegram_chat_id" binding:"required"`
-	AdminEmail     string `json:"admin_email" binding:"required,email"`
-	AdminPassword  string `json:"admin_password" binding:"required,min=8"`
-}
-
-type updateConfigRequest struct {
-	S3Endpoint     string `json:"s3_endpoint" binding:"required"`
-	S3AccessKey    string `json:"s3_access_key" binding:"required"`
-	S3SecretKey    string `json:"s3_secret_key" binding:"required"`
-	S3Bucket       string `json:"s3_bucket" binding:"required"`
-	TelegramToken  string `json:"telegram_bot_token" binding:"required"`
-	TelegramChatID string `json:"telegram_chat_id" binding:"required"`
-}
 
 type loginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
@@ -63,65 +44,79 @@ type bulkDeleteRequest struct {
 	SubmissionIDs []string `json:"submission_ids" binding:"required"`
 }
 
+type registerRequest struct {
+	FullName string `json:"full_name" binding:"required"`
+	Phone    string `json:"phone" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
+}
+
+type userIntegrationsRequest struct {
+	TelegramBotToken *string `json:"telegram_bot_token"`
+	TelegramChatID   *string `json:"telegram_chat_id"`
+	S3Endpoint       *string `json:"s3_endpoint"`
+	S3AccessKey      *string `json:"s3_access_key"`
+	S3SecretKey      *string `json:"s3_secret_key"`
+	S3Bucket         *string `json:"s3_bucket"`
+}
+
 func (s *Server) BootstrapStatus(c *gin.Context) {
-	complete, err := s.store.BootstrapComplete()
+	has, err := s.store.HasAnyUser()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"setup_required": !complete})
+	c.JSON(http.StatusOK, gin.H{"setup_required": !has})
 }
 
 func (s *Server) SetupSystem(c *gin.Context) {
-	var req setupRequest
+	c.JSON(http.StatusGone, gin.H{
+		"error": "This endpoint is retired. Create an account with POST /api/v1/auth/register (name, phone, email, password). Optional Telegram and S3 are configured in the dashboard after login.",
+	})
+}
+
+func (s *Server) Register(c *gin.Context) {
+	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	hash, err := auth.HashPassword(req.AdminPassword)
+	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	err = s.store.CreateInitialSystemConfig(db.SystemConfig{
-		S3Endpoint:     req.S3Endpoint,
-		S3AccessKey:    req.S3AccessKey,
-		S3SecretKey:    req.S3SecretKey,
-		S3Bucket:       req.S3Bucket,
-		TelegramToken:  req.TelegramToken,
-		TelegramChatID: req.TelegramChatID,
-		AdminEmail:     req.AdminEmail,
-		AdminHash:      hash,
-	})
+	u, err := s.store.RegisterUser(strings.TrimSpace(req.FullName), strings.TrimSpace(req.Phone), strings.TrimSpace(req.Email), hash)
 	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+			return
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "unique") {
+			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusCreated, gin.H{"status": "setup complete"})
+	access, refresh, err := s.tokens.GeneratePair(u.ID, u.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"access_token": access, "refresh_token": refresh, "api_key": u.APIKey,
+		"email": u.Email, "full_name": u.FullName, "phone": u.Phone,
+	})
 }
 
 func (s *Server) Health(c *gin.Context) {
 	if err := s.store.DB.Ping(); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "degraded", "db": "down", "s3": "unknown"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "degraded", "db": "down"})
 		return
 	}
-
-	s3Status := "not_configured"
-	complete, err := s.store.BootstrapComplete()
-	if err == nil && complete {
-		cfg, cfgErr := s.store.GetSystemConfig()
-		if cfgErr == nil {
-			if err := storage.CheckBucket(c.Request.Context(), cfg.S3Endpoint, cfg.S3AccessKey, cfg.S3SecretKey, cfg.S3Bucket); err != nil {
-				s3Status = "down"
-				c.JSON(http.StatusServiceUnavailable, gin.H{"status": "degraded", "db": "up", "s3": s3Status})
-				return
-			}
-			s3Status = "up"
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up", "s3": s3Status})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up"})
 }
 
 func (s *Server) Login(c *gin.Context) {
@@ -150,6 +145,7 @@ func (s *Server) Login(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": access, "refresh_token": refresh, "api_key": user.APIKey,
+		"full_name": user.FullName, "phone": user.Phone,
 	})
 }
 
@@ -163,7 +159,18 @@ func (s *Server) GetMe(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"email": u.Email, "api_key": u.APIKey})
+	c.JSON(http.StatusOK, gin.H{
+		"email":               u.Email,
+		"api_key":             u.APIKey,
+		"full_name":           u.FullName,
+		"phone":               u.Phone,
+		"telegram_chat_id":    strings.TrimSpace(u.TelegramChatID),
+		"s3_endpoint":         strings.TrimSpace(u.S3Endpoint),
+		"s3_bucket":           strings.TrimSpace(u.S3Bucket),
+		"telegram_configured": strings.TrimSpace(u.TelegramBotToken) != "" && strings.TrimSpace(u.TelegramChatID) != "",
+		"s3_configured": strings.TrimSpace(u.S3Endpoint) != "" && strings.TrimSpace(u.S3Bucket) != "" &&
+			strings.TrimSpace(u.S3AccessKey) != "" && strings.TrimSpace(u.S3SecretKey) != "",
+	})
 }
 
 func (s *Server) Refresh(c *gin.Context) {
@@ -189,6 +196,7 @@ func (s *Server) Refresh(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": access, "refresh_token": refresh, "api_key": u.APIKey,
+		"full_name": u.FullName, "phone": u.Phone,
 	})
 }
 
@@ -320,8 +328,8 @@ func (s *Server) Submit(c *gin.Context) {
 		return
 	}
 
-	if cfg, err := s.store.GetSystemConfig(); err == nil {
-		notifyTelegram(project, cfg, dataBytes, filesBytes)
+	if owner, err := s.store.FindUserByID(project.UserID); err == nil {
+		notifyTelegram(project, owner, dataBytes, filesBytes)
 	}
 
 	c.JSON(http.StatusCreated, sub)
@@ -345,12 +353,17 @@ func (s *Server) PresignUpload(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 		return
 	}
-	cfg, err := s.store.GetSystemConfig()
+	u, err := s.store.FindUserByID(userIDFromContext(c))
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "storage unavailable"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	result, err := storage.PresignUpload(c.Request.Context(), makePresignInput(cfg, req.ProjectID, req.Filename, s.cfg.PresignExpiryMinutes))
+	if strings.TrimSpace(u.S3Endpoint) == "" || strings.TrimSpace(u.S3Bucket) == "" ||
+		strings.TrimSpace(u.S3AccessKey) == "" || strings.TrimSpace(u.S3SecretKey) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "configure S3-compatible storage in Settings (optional until you need large file uploads)"})
+		return
+	}
+	result, err := storage.PresignUpload(c.Request.Context(), makePresignInputFromUser(u, req.ProjectID, req.Filename, s.cfg.PresignExpiryMinutes))
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "storage unavailable"})
 		return
@@ -434,21 +447,37 @@ func (s *Server) Export(c *gin.Context) {
 	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes)
 }
 
-func (s *Server) UpdateSystemConfig(c *gin.Context) {
-	var req updateConfigRequest
+func mergeIntegrationField(current string, patch *string) string {
+	if patch == nil {
+		return current
+	}
+	return strings.TrimSpace(*patch)
+}
+
+func (s *Server) UpdateUserIntegrations(c *gin.Context) {
+	var req userIntegrationsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	cfg := db.SystemConfig{
-		S3Endpoint:     req.S3Endpoint,
-		S3AccessKey:    req.S3AccessKey,
-		S3SecretKey:    req.S3SecretKey,
-		S3Bucket:       req.S3Bucket,
-		TelegramToken:  req.TelegramToken,
-		TelegramChatID: req.TelegramChatID,
+	u, err := s.store.FindUserByID(userIDFromContext(c))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	if err := s.store.UpdateSystemConfig(cfg); err != nil {
+	if err := s.store.UpdateUserIntegrations(
+		u.ID,
+		mergeIntegrationField(u.TelegramBotToken, req.TelegramBotToken),
+		mergeIntegrationField(u.TelegramChatID, req.TelegramChatID),
+		mergeIntegrationField(u.S3Endpoint, req.S3Endpoint),
+		mergeIntegrationField(u.S3AccessKey, req.S3AccessKey),
+		mergeIntegrationField(u.S3SecretKey, req.S3SecretKey),
+		mergeIntegrationField(u.S3Bucket, req.S3Bucket),
+	); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

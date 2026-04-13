@@ -1,6 +1,15 @@
 # PostgreSQL and MinIO data live in the HOST paths below (bind mounts), not inside the API image.
 # `docker compose restart` / `docker compose down` keeps this data. Only `docker compose down -v`
 # removes explicitly declared named volumes (not used here by default).
+#
+# Image layers from old builds do not live in the DB volume; they use Docker’s image store.
+# Run scripts/prune-docker.sh periodically (e.g. cron) to reclaim disk — it never touches volumes.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
@@ -11,6 +20,7 @@ services:
       POSTGRES_DB: submify
     volumes:
       - /var/lib/submify/data/postgres:/var/lib/postgresql/data
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U submify"]
       interval: 10s
@@ -26,6 +36,7 @@ services:
       MINIO_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:-submify123}
     volumes:
       - /var/lib/submify/data/rustfs:/data
+    logging: *default-logging
 
   api:
     build:
@@ -49,6 +60,8 @@ services:
       UPLOAD_MAX_SIZE_BYTES: ${UPLOAD_MAX_SIZE_BYTES:-26214400}
       UPLOAD_ALLOWED_MIME: ${UPLOAD_ALLOWED_MIME:-image/png,image/jpeg,application/pdf,text/plain}
       PRESIGN_EXPIRY_MINUTES: ${PRESIGN_EXPIRY_MINUTES:-10}
+      GIN_MODE: release
+    logging: *default-logging
     depends_on:
       db:
         condition: service_healthy
@@ -61,6 +74,7 @@ services:
     container_name: submify-web
     environment:
       NEXT_PUBLIC_API_BASE: /api/v1
+    logging: *default-logging
     depends_on:
       api:
         condition: service_started
@@ -72,6 +86,7 @@ services:
       - "2512:2512"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    logging: *default-logging
     depends_on:
       api:
         condition: service_started
@@ -87,6 +102,7 @@ services:
     depends_on:
       nginx:
         condition: service_started
+    logging: *default-logging
     profiles:
       - tunnel
 

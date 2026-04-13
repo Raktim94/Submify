@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Nav } from '../../components/nav';
 import { api, getMe } from '../../lib/api';
 
@@ -8,14 +9,19 @@ export default function DashboardPage() {
   const [health, setHealth] = useState<any>(null);
   const [update, setUpdate] = useState<any>(null);
   const [userKey, setUserKey] = useState('');
+  const [welcomeName, setWelcomeName] = useState('');
 
   useEffect(() => {
+    setWelcomeName(localStorage.getItem('submify_user_name') || '');
     api('/system/health').then(setHealth).catch(() => setHealth({ status: 'degraded' }));
     api('/system/update-status').then(setUpdate).catch(() => setUpdate({ update_available: false }));
     getMe()
       .then((me) => {
         setUserKey(me.api_key);
         localStorage.setItem('submify_user_api_key', me.api_key);
+        localStorage.setItem('submify_user_name', me.full_name);
+        localStorage.setItem('submify_user_phone', me.phone);
+        setWelcomeName(me.full_name);
       })
       .catch(() => {
         const k = localStorage.getItem('submify_user_api_key') || '';
@@ -27,6 +33,19 @@ export default function DashboardPage() {
     <main className="mx-auto max-w-5xl p-6">
       <Nav />
       <h1 className="mb-4 text-3xl font-bold">Dashboard</h1>
+      {welcomeName ? (
+        <p className="mb-4 text-slate-600">
+          Signed in as <span className="font-medium text-slate-800">{welcomeName}</span>. Open{' '}
+          <Link className="text-brand-700 underline" href="/projects">
+            Projects
+          </Link>{' '}
+          to view submissions (up to 5000 per project), or{' '}
+          <Link className="text-brand-700 underline" href="/settings">
+            Settings
+          </Link>{' '}
+          for optional Telegram and S3.
+        </p>
+      ) : null}
       <section className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
         <h2 className="font-semibold text-indigo-900">Your form API key</h2>
         <p className="mt-1 text-sm text-indigo-800">

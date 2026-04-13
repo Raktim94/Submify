@@ -15,11 +15,19 @@ type Store struct {
 }
 
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	APIKey       string    `json:"api_key"`
-	PasswordHash string    `json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	Email            string    `json:"email"`
+	FullName         string    `json:"full_name"`
+	Phone            string    `json:"phone"`
+	APIKey           string    `json:"api_key"`
+	PasswordHash     string    `json:"-"`
+	TelegramBotToken string    `json:"-"`
+	TelegramChatID   string    `json:"-"`
+	S3Endpoint       string    `json:"-"`
+	S3AccessKey      string    `json:"-"`
+	S3SecretKey      string    `json:"-"`
+	S3Bucket         string    `json:"-"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type Project struct {
@@ -76,6 +84,15 @@ func (s *Store) BootstrapComplete() (bool, error) {
 	return count > 0, nil
 }
 
+// HasAnyUser is true once at least one account exists (registration or legacy setup).
+func (s *Store) HasAnyUser() (bool, error) {
+	var n int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 func (s *Store) CreateInitialSystemConfig(cfg SystemConfig) error {
 	complete, err := s.BootstrapComplete()
 	if err != nil {
@@ -106,9 +123,9 @@ func (s *Store) CreateInitialSystemConfig(cfg SystemConfig) error {
 	internalProjectKey := uuid.NewString()
 
 	if _, err := tx.Exec(`
-		INSERT INTO users(id, email, password_hash, api_key)
-		VALUES ($1, $2, $3, $4)
-	`, userID, cfg.AdminEmail, cfg.AdminHash, apiKey); err != nil {
+		INSERT INTO users(id, email, password_hash, api_key, full_name, phone)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, userID, cfg.AdminEmail, cfg.AdminHash, apiKey, cfg.AdminEmail, ""); err != nil {
 		return err
 	}
 
@@ -152,22 +169,89 @@ func (s *Store) SetUpdateStatus(available bool, latestVersion string) error {
 	return err
 }
 
-func (s *Store) FindUserByEmail(email string) (User, error) {
+func scanUser(row *sql.Row) (User, error) {
 	var u User
-	err := s.DB.QueryRow(`SELECT id,email,password_hash,api_key,created_at FROM users WHERE email=$1`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.APIKey, &u.CreatedAt)
+	err := row.Scan(
+		&u.ID, &u.Email, &u.PasswordHash, &u.APIKey,
+		&u.FullName, &u.Phone,
+		&u.TelegramBotToken, &u.TelegramChatID,
+		&u.S3Endpoint, &u.S3AccessKey, &u.S3SecretKey, &u.S3Bucket,
+		&u.CreatedAt,
+	)
 	return u, err
+}
+
+const userSelect = `id,email,password_hash,api_key,
+COALESCE(full_name,''),COALESCE(phone,''),
+COALESCE(telegram_bot_token,''),COALESCE(telegram_chat_id,''),
+COALESCE(s3_endpoint,''),COALESCE(s3_access_key,''),COALESCE(s3_secret_key,''),COALESCE(s3_bucket,''),
+created_at`
+
+func (s *Store) FindUserByEmail(email string) (User, error) {
+	return scanUser(s.DB.QueryRow(`SELECT `+userSelect+` FROM users WHERE email=$1`, email))
 }
 
 func (s *Store) FindUserByID(id string) (User, error) {
-	var u User
-	err := s.DB.QueryRow(`SELECT id,email,password_hash,api_key,created_at FROM users WHERE id=$1`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.APIKey, &u.CreatedAt)
-	return u, err
+	return scanUser(s.DB.QueryRow(`SELECT `+userSelect+` FROM users WHERE id=$1`, id))
 }
 
 func (s *Store) FindUserByAPIKey(key string) (User, error) {
-	var u User
-	err := s.DB.QueryRow(`SELECT id,email,password_hash,api_key,created_at FROM users WHERE api_key=$1`, key).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.APIKey, &u.CreatedAt)
-	return u, err
+	return scanUser(s.DB.QueryRow(`SELECT `+userSelect+` FROM users WHERE api_key=$1`, key))
+}
+
+// RegisterUser creates the first (or additional) account with a default inbox project and ensures system_configs row 1 exists for update metadata.
+func (s *Store) RegisterUser(fullName, phone, email, passwordHash string) (User, error) {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback()
+
+	userID := uuid.NewString()
+	apiKey := uuid.NewString()
+	internalProjectKey := uuid.NewString()
+
+	if _, err := tx.Exec(`
+		INSERT INTO users(id, email, password_hash, api_key, full_name, phone)
+		VALUES ($1,$2,$3,$4,$5,$6)
+	`, userID, email, passwordHash, apiKey, fullName, phone); err != nil {
+		return User{}, err
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO projects(id, user_id, name, public_api_key, is_default)
+		VALUES (gen_random_uuid(), $1, 'Default', $2, TRUE)
+	`, userID, internalProjectKey); err != nil {
+		return User{}, err
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO system_configs (id, s3_endpoint, s3_access_key, s3_secret_key, s3_bucket, telegram_bot_token, telegram_chat_id, admin_email, admin_password_hash, update_available, latest_version)
+		VALUES (1, '', '', '', '', '', '', $1, $2, FALSE, '')
+		ON CONFLICT (id) DO NOTHING
+	`, email, passwordHash); err != nil {
+		return User{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return User{}, err
+	}
+	return s.FindUserByID(userID)
+}
+
+// UpdateUserIntegrations stores optional Telegram and S3 settings for large uploads and notifications.
+func (s *Store) UpdateUserIntegrations(userID, telegramToken, telegramChatID, s3Endpoint, s3Access, s3Secret, s3Bucket string) error {
+	_, err := s.DB.Exec(`
+		UPDATE users SET
+			telegram_bot_token = NULLIF($2, ''),
+			telegram_chat_id = NULLIF($3, ''),
+			s3_endpoint = NULLIF($4, ''),
+			s3_access_key = NULLIF($5, ''),
+			s3_secret_key = NULLIF($6, ''),
+			s3_bucket = NULLIF($7, '')
+		WHERE id = $1::uuid
+	`, userID, telegramToken, telegramChatID, s3Endpoint, s3Access, s3Secret, s3Bucket)
+	return err
 }
 
 func (s *Store) CreateProject(userID, name, apiKey string, isDefault bool) (Project, error) {

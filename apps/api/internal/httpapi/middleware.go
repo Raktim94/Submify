@@ -20,13 +20,13 @@ func SecurityHeaders() gin.HandlerFunc {
 
 func (s *Server) SetupGuard() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		complete, err := s.store.BootstrapComplete()
+		ok, err := s.store.HasAnyUser()
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		if !complete {
-			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "system setup required"})
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "no accounts yet; register first"})
 			return
 		}
 		c.Next()

@@ -54,7 +54,9 @@ func NewServer(cfg config.Config, store *db.Store) *Server {
 func (s *Server) Router() *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(gin.Logger())
+	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/api/v1/system/health", "/api/v1/system/bootstrap-status"},
+	}))
 	r.Use(SecurityHeaders())
 	if err := r.SetTrustedProxies(s.cfg.TrustedProxies); err != nil {
 		log.Printf("SetTrustedProxies: %v", err)
@@ -76,6 +78,7 @@ func (s *Server) Router() *gin.Engine {
 	sens := api.Group("")
 	sens.Use(KeyedRateLimitMiddleware(s.sensitivePublicLimiter, clientIPKey, "rate limit exceeded (login or setup); try again shortly"))
 	{
+		sens.POST("/auth/register", s.Register)
 		sens.POST("/auth/login", s.Login)
 		sens.POST("/auth/refresh", s.Refresh)
 		sens.POST("/system/setup", s.SetupSystem)
@@ -103,7 +106,7 @@ func (s *Server) Router() *gin.Engine {
 		secured.GET("/projects/:id/export", s.Export)
 		secured.GET("/system/update-status", s.UpdateStatus)
 		secured.POST("/system/update-trigger", s.TriggerUpdate)
-		secured.PUT("/system/config", s.UpdateSystemConfig)
+		secured.PUT("/users/me/integrations", s.UpdateUserIntegrations)
 	}
 
 	return r
@@ -220,16 +223,19 @@ func writePDF(rows []db.Submission) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func notifyTelegram(project db.Project, cfg db.SystemConfig, data []byte, files []byte) {
-	telegram.NotifyAsync(cfg.TelegramToken, cfg.TelegramChatID, buildTelegramMessage(project, data, files))
+func notifyTelegram(project db.Project, owner db.User, data []byte, files []byte) {
+	if strings.TrimSpace(owner.TelegramBotToken) == "" || strings.TrimSpace(owner.TelegramChatID) == "" {
+		return
+	}
+	telegram.NotifyAsync(owner.TelegramBotToken, owner.TelegramChatID, buildTelegramMessage(project, data, files))
 }
 
-func makePresignInput(cfg db.SystemConfig, projectID, filename string, expiry int) storage.PresignInput {
+func makePresignInputFromUser(u db.User, projectID, filename string, expiry int) storage.PresignInput {
 	return storage.PresignInput{
-		Endpoint:      cfg.S3Endpoint,
-		AccessKey:     cfg.S3AccessKey,
-		SecretKey:     cfg.S3SecretKey,
-		Bucket:        cfg.S3Bucket,
+		Endpoint:      u.S3Endpoint,
+		AccessKey:     u.S3AccessKey,
+		SecretKey:     u.S3SecretKey,
+		Bucket:        u.S3Bucket,
 		ProjectID:     projectID,
 		Filename:      filename,
 		ExpiryMinutes: expiry,
