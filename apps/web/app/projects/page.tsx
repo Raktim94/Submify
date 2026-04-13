@@ -113,6 +113,8 @@ export default function ProjectsPage() {
   const [name, setName] = useState('');
   const [userKey, setUserKey] = useState('');
   const [submitEndpoint, setSubmitEndpoint] = useState('/api/submit');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
 
   async function load() {
     const data = await api<{ projects: Project[] }>('/projects');
@@ -121,7 +123,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     setSubmitEndpoint(`${window.location.origin}/api/submit`);
-    load();
+    void load().catch(() => setProjects([]));
     getMe()
       .then((me) => {
         setUserKey(me.api_key);
@@ -132,10 +134,22 @@ export default function ProjectsPage() {
 
   async function create(e: FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
-    await api('/projects', { method: 'POST', body: JSON.stringify({ name }) });
-    setName('');
-    await load();
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setCreateError('Enter a project name.');
+      return;
+    }
+    setCreateError('');
+    setCreating(true);
+    try {
+      await api<Project>('/projects', { method: 'POST', body: JSON.stringify({ name: trimmed }) });
+      setName('');
+      await load();
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Could not create project');
+    } finally {
+      setCreating(false);
+    }
   }
 
   async function regenerateProject(id: string) {
@@ -250,18 +264,36 @@ export default function ProjectsPage() {
             pair for <code className="rounded bg-slate-100 px-1 text-xs">POST /api/submit</code> and a{' '}
             <strong className="text-slate-800">Submissions</strong> inbox for that project.
           </p>
-          <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={create}>
+          <form
+            className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"
+            onSubmit={create}
+            aria-busy={creating}
+          >
             <input
               className="min-w-0 flex-1 rounded-xl border-slate-300 px-4 py-3"
               placeholder="New project name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (createError) setCreateError('');
+              }}
               aria-label="Project name"
+              disabled={creating}
+              autoComplete="off"
             />
-            <button type="submit" className="rounded-xl px-6 py-3 font-semibold">
-              Create project
+            <button
+              type="submit"
+              disabled={creating}
+              className="shrink-0 rounded-xl bg-brand-500 px-6 py-3 font-semibold text-white shadow-sm hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {creating ? 'Creating…' : 'Create project'}
             </button>
           </form>
+          {createError ? (
+            <p className="mt-3 text-sm text-red-700" role="alert">
+              {createError}
+            </p>
+          ) : null}
         </section>
 
         <section>
