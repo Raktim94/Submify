@@ -2,12 +2,12 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api/v1';
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('submify_access_token') : null;
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...(init?.headers || {}),
-  };
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (init?.headers) {
+    new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+  }
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers.set('Authorization', `Bearer ${token}`);
   }
 
   const res = await fetch(`${API_BASE}${path}`, {
