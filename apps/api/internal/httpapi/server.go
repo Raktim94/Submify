@@ -134,7 +134,12 @@ func (s *Server) refreshGitHubVersion(force bool) {
 	}
 	available, latest, err := s.checker.CheckLatest()
 	if err != nil {
-		log.Printf("update check failed for repo %q: %v (set GITHUB_REPO to your fork; add GITHUB_TOKEN if the repo is private or you hit rate limits)", s.cfg.GitHubRepo, err)
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "no tags") || strings.Contains(errMsg, "no release or tag found") {
+			log.Printf("update check failed for repo %q: %v", s.cfg.GitHubRepo, err)
+		} else {
+			log.Printf("update check failed for repo %q: %v (set GITHUB_REPO to your fork; add GITHUB_TOKEN if the repo is private or you hit rate limits)", s.cfg.GitHubRepo, err)
+		}
 		return
 	}
 	if err := s.store.SetUpdateStatus(available, latest); err != nil {
