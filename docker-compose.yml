@@ -84,7 +84,7 @@ services:
       ALLOW_UPDATE_TRIGGER: ${ALLOW_UPDATE_TRIGGER:-true}
       # Override in .env if needed. This runs your in-app update flow inside the mounted project.
       # Note: logs -f is backgrounded so the update job can finish and report status in dashboard.
-      UPDATE_COMMAND: 'cd /stack && git pull && docker compose pull && docker compose up --build -d && chmod +x scripts/prune-docker.sh && ./scripts/prune-docker.sh && (docker compose logs --tail 3000 -f api > /tmp/submify-update-api.log 2>&1 &)'
+      UPDATE_COMMAND: 'cd /stack && git -c safe.directory=/stack pull && docker compose pull && docker compose up --build -d && chmod +x scripts/prune-docker.sh && ./scripts/prune-docker.sh && (docker compose logs --tail 3000 -f api > /tmp/submify-update-api.log 2>&1 &)'
       UPDATE_TIMEOUT_MINUTES: ${UPDATE_TIMEOUT_MINUTES:-30}
       UPLOAD_MAX_SIZE_BYTES: ${UPLOAD_MAX_SIZE_BYTES:-26214400}
       UPLOAD_ALLOWED_MIME: ${UPLOAD_ALLOWED_MIME:-image/png,image/jpeg,application/pdf,text/plain}
