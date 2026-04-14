@@ -21,7 +21,6 @@ import (
 	"github.com/nodedr/submify/apps/api/internal/auth"
 	"github.com/nodedr/submify/apps/api/internal/config"
 	"github.com/nodedr/submify/apps/api/internal/db"
-	"github.com/nodedr/submify/apps/api/internal/storage"
 	"github.com/nodedr/submify/apps/api/internal/telegram"
 	"github.com/nodedr/submify/apps/api/internal/update"
 	"github.com/xuri/excelize/v2"
@@ -630,14 +629,3 @@ func notifyTelegram(project db.Project, data []byte, files []byte) {
 	telegram.NotifyAsync(project.TelegramBotToken, project.TelegramChatID, buildTelegramMessage(project, data, files))
 }
 
-func makePresignInputFromUser(u db.User, projectID, filename string, expiry int) storage.PresignInput {
-	return storage.PresignInput{
-		Endpoint:      u.S3Endpoint,
-		AccessKey:     u.S3AccessKey,
-		SecretKey:     u.S3SecretKey,
-		Bucket:        u.S3Bucket,
-		ProjectID:     projectID,
-		Filename:      filename,
-		ExpiryMinutes: expiry,
-	}
-}

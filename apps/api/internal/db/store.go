@@ -42,6 +42,11 @@ type Project struct {
 	TelegramBotToken string  `json:"-"`
 	TelegramChatID   string  `json:"telegram_chat_id"`
 	TelegramConfigured bool  `json:"telegram_configured"`
+	S3Endpoint       string  `json:"s3_endpoint"`
+	S3AccessKey      string  `json:"-"`
+	S3SecretKey      string  `json:"-"`
+	S3Bucket         string  `json:"s3_bucket"`
+	S3Configured     bool    `json:"s3_configured"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -277,7 +282,7 @@ func (s *Store) UpdateUserIntegrations(userID, telegramToken, telegramChatID, s3
 	return err
 }
 
-const projectSelect = `id, user_id, name, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), created_at`
+const projectSelect = `id, user_id, name, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {
 	s = strings.TrimSpace(s)
@@ -294,7 +299,7 @@ func parseOriginsJSON(s string) ([]string, error) {
 func projectFromRow(row *sql.Row) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -304,13 +309,15 @@ func projectFromRow(row *sql.Row) (Project, error) {
 	}
 	p.AllowedOrigins = origins
 	p.TelegramConfigured = strings.TrimSpace(p.TelegramBotToken) != "" && strings.TrimSpace(p.TelegramChatID) != ""
+	p.S3Configured = strings.TrimSpace(p.S3Endpoint) != "" && strings.TrimSpace(p.S3Bucket) != "" &&
+		strings.TrimSpace(p.S3AccessKey) != "" && strings.TrimSpace(p.S3SecretKey) != ""
 	return p, nil
 }
 
 func projectFromRows(rows *sql.Rows) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.CreatedAt)
+	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -320,6 +327,8 @@ func projectFromRows(rows *sql.Rows) (Project, error) {
 	}
 	p.AllowedOrigins = origins
 	p.TelegramConfigured = strings.TrimSpace(p.TelegramBotToken) != "" && strings.TrimSpace(p.TelegramChatID) != ""
+	p.S3Configured = strings.TrimSpace(p.S3Endpoint) != "" && strings.TrimSpace(p.S3Bucket) != "" &&
+		strings.TrimSpace(p.S3AccessKey) != "" && strings.TrimSpace(p.S3SecretKey) != ""
 	return p, nil
 }
 
@@ -433,6 +442,25 @@ func (s *Store) UpdateProjectTelegram(userID, projectID, telegramToken, telegram
 		    telegram_chat_id = NULLIF($2, '')
 		WHERE id=$3 AND user_id=$4
 	`, strings.TrimSpace(telegramToken), strings.TrimSpace(telegramChatID), projectID, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) UpdateProjectStorage(userID, projectID, endpoint, accessKey, secretKey, bucket string) error {
+	res, err := s.DB.Exec(`
+		UPDATE projects
+		SET s3_endpoint = NULLIF($1, ''),
+		    s3_access_key = NULLIF($2, ''),
+		    s3_secret_key = NULLIF($3, ''),
+		    s3_bucket = NULLIF($4, '')
+		WHERE id=$5 AND user_id=$6
+	`, strings.TrimSpace(endpoint), strings.TrimSpace(accessKey), strings.TrimSpace(secretKey), strings.TrimSpace(bucket), projectID, userID)
 	if err != nil {
 		return err
 	}

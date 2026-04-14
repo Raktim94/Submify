@@ -264,8 +264,11 @@ export default function DashboardPage() {
               or bulk delete rows (up to <strong className="text-slate-900">5,000</strong> per project).
             </li>
             <li>
-              Optional: <Link className="font-medium text-brand-700 underline" href="/settings">Settings</Link> for Telegram
-              alerts or S3 for large file uploads.
+              Configure Telegram and S3 per project from{' '}
+              <Link className="font-medium text-brand-700 underline" href="/projects">
+                Projects
+              </Link>
+              .
             </li>
           </ol>
         </section>

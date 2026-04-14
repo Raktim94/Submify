@@ -14,54 +14,99 @@ type Project = {
   allowed_origins?: string[];
   telegram_chat_id: string;
   telegram_configured: boolean;
+  s3_endpoint: string;
+  s3_bucket: string;
+  s3_configured: boolean;
   created_at: string;
 };
+
+type CopyField = 'public' | 'secret' | null;
+
+function MaskedKeyValue({ label }: { label: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 font-mono text-xs text-slate-800">••••••••••••••••••••••••••••</p>
+    </div>
+  );
+}
 
 function ProjectCard({
   project: p,
   onRegenerate,
   onSaveOrigins,
   onSaveTelegram,
-  onClearTelegram
+  onClearTelegram,
+  onSaveS3,
+  onClearS3
 }: {
   project: Project;
   onRegenerate: () => void;
   onSaveOrigins: (raw: string) => Promise<void>;
   onSaveTelegram: (chatID: string, token: string) => Promise<void>;
   onClearTelegram: () => Promise<void>;
+  onSaveS3: (endpoint: string, bucket: string, accessKey: string, secretKey: string) => Promise<void>;
+  onClearS3: () => Promise<void>;
 }) {
   const [originsDraft, setOriginsDraft] = useState(() => JSON.stringify(p.allowed_origins ?? [], null, 2));
   const [telegramChatDraft, setTelegramChatDraft] = useState(() => p.telegram_chat_id ?? '');
   const [telegramTokenDraft, setTelegramTokenDraft] = useState('');
+  const [s3EndpointDraft, setS3EndpointDraft] = useState(() => p.s3_endpoint ?? '');
+  const [s3BucketDraft, setS3BucketDraft] = useState(() => p.s3_bucket ?? '');
+  const [s3AccessDraft, setS3AccessDraft] = useState('');
+  const [s3SecretDraft, setS3SecretDraft] = useState('');
+  const [copied, setCopied] = useState<CopyField>(null);
   const originsKey = JSON.stringify(p.allowed_origins ?? []);
+
+  async function copyKey(which: Exclude<CopyField, null>) {
+    const value = which === 'public' ? p.api_key : p.api_secret;
+    await navigator.clipboard.writeText(value);
+    setCopied(which);
+    window.setTimeout(() => setCopied(null), 1200);
+  }
+
   useEffect(() => {
     setOriginsDraft(JSON.stringify(p.allowed_origins ?? [], null, 2));
     setTelegramChatDraft(p.telegram_chat_id ?? '');
     setTelegramTokenDraft('');
-  }, [p.id, p.api_key, originsKey, p.telegram_chat_id]);
+    setS3EndpointDraft(p.s3_endpoint ?? '');
+    setS3BucketDraft(p.s3_bucket ?? '');
+    setS3AccessDraft('');
+    setS3SecretDraft('');
+  }, [p.id, p.api_key, originsKey, p.telegram_chat_id, p.s3_endpoint, p.s3_bucket]);
 
   return (
-    <li className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-200 hover:shadow-md sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1 space-y-3">
+    <li className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1 space-y-4">
           <div>
-            <h3 className="font-display text-lg font-semibold text-slate-900">{p.name}</h3>
+            <h3 className="font-display text-xl font-semibold text-slate-900">{p.name}</h3>
             <p className="mt-1 text-xs text-slate-500">Created {new Date(p.created_at).toLocaleString()}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  p.telegram_configured ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                Telegram: {p.telegram_configured ? 'Configured' : 'Not set'}
+              </span>
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  p.s3_configured ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                S3: {p.s3_configured ? 'Configured' : 'Not set'}
+              </span>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Public API key</p>
-            <code className="mt-1 block break-all rounded-lg bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800">
-              {p.api_key}
-            </code>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <MaskedKeyValue label="Public API key (hidden)" />
+            <MaskedKeyValue label="Secret API key (hidden)" />
           </div>
+
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Secret API key</p>
-            <p className="mt-1 text-xs text-amber-800">
-              For HMAC signing and server-side use only — do not embed in public frontends.
-            </p>
-            <code className="mt-1 block break-all rounded-lg bg-amber-50 px-3 py-2 font-mono text-xs text-slate-900">
-              {p.api_secret}
-            </code>
+            <p className="mt-1 text-xs text-amber-800">Only use server-side for HMAC signing.</p>
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Allowed origins (optional)</p>
@@ -122,21 +167,75 @@ function ProjectCard({
               </button>
             </div>
           </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-600">S3 storage (per project)</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Presigned uploads for this project will use these credentials.
+            </p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <input
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 sm:col-span-2"
+                value={s3EndpointDraft}
+                onChange={(e) => setS3EndpointDraft(e.target.value)}
+                placeholder="Endpoint URL (e.g. http://rustfs:9000)"
+                aria-label="Project S3 endpoint"
+              />
+              <input
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800"
+                value={s3BucketDraft}
+                onChange={(e) => setS3BucketDraft(e.target.value)}
+                placeholder="Bucket"
+                aria-label="Project S3 bucket"
+              />
+              <input
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800"
+                value={s3AccessDraft}
+                onChange={(e) => setS3AccessDraft(e.target.value)}
+                placeholder={p.s3_configured ? 'New access key (blank = keep)' : 'Access key'}
+                type="password"
+                aria-label="Project S3 access key"
+              />
+              <input
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 sm:col-span-2"
+                value={s3SecretDraft}
+                onChange={(e) => setS3SecretDraft(e.target.value)}
+                placeholder={p.s3_configured ? 'New secret key (blank = keep)' : 'Secret key'}
+                type="password"
+                aria-label="Project S3 secret key"
+              />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+                onClick={() => void onSaveS3(s3EndpointDraft, s3BucketDraft, s3AccessDraft, s3SecretDraft)}
+              >
+                Save S3
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-900 hover:bg-rose-50"
+                onClick={() => void onClearS3()}
+              >
+                Clear S3
+              </button>
+            </div>
+          </div>
         </div>
         <div className="flex flex-col gap-2 sm:shrink-0">
           <button
             type="button"
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
-            onClick={() => navigator.clipboard.writeText(p.api_key)}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 transition hover:bg-slate-50 active:scale-[0.99]"
+            onClick={() => void copyKey('public')}
           >
-            Copy public key
+            {copied === 'public' ? 'Copied public key' : 'Copy public key'}
           </button>
           <button
             type="button"
-            className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-2.5 text-sm font-medium text-amber-950 hover:bg-amber-100"
-            onClick={() => navigator.clipboard.writeText(p.api_secret)}
+            className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-2.5 text-sm font-medium text-amber-950 transition hover:bg-amber-100 active:scale-[0.99]"
+            onClick={() => void copyKey('secret')}
           >
-            Copy secret key
+            {copied === 'secret' ? 'Copied secret key' : 'Copy secret key'}
           </button>
           <button
             type="button"
@@ -239,6 +338,30 @@ export default function ProjectsPage() {
     await api(`/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ telegram_chat_id: '', telegram_bot_token: '' })
+    });
+    await load();
+  }
+
+  async function saveProjectS3(id: string, endpoint: string, bucket: string, accessKey: string, secretKey: string) {
+    const payload: { s3_endpoint: string; s3_bucket: string; s3_access_key?: string; s3_secret_key?: string } = {
+      s3_endpoint: endpoint.trim(),
+      s3_bucket: bucket.trim()
+    };
+    const trimmedAccess = accessKey.trim();
+    const trimmedSecret = secretKey.trim();
+    if (trimmedAccess) payload.s3_access_key = trimmedAccess;
+    if (trimmedSecret) payload.s3_secret_key = trimmedSecret;
+    await api(`/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+    await load();
+  }
+
+  async function clearProjectS3(id: string) {
+    await api(`/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ s3_endpoint: '', s3_bucket: '', s3_access_key: '', s3_secret_key: '' })
     });
     await load();
   }
@@ -373,6 +496,8 @@ export default function ProjectsPage() {
                   onSaveOrigins={(raw) => saveOrigins(p.id, raw)}
                   onSaveTelegram={(chatID, token) => saveProjectTelegram(p.id, chatID, token)}
                   onClearTelegram={() => clearProjectTelegram(p.id)}
+                  onSaveS3={(endpoint, bucket, access, secret) => saveProjectS3(p.id, endpoint, bucket, access, secret)}
+                  onClearS3={() => clearProjectS3(p.id)}
                 />
               ))}
             </ul>

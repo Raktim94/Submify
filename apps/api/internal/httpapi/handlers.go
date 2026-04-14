@@ -38,6 +38,10 @@ type updateProjectRequest struct {
 	AllowedOrigins   *[]string `json:"allowed_origins"`
 	TelegramBotToken *string   `json:"telegram_bot_token"`
 	TelegramChatID   *string   `json:"telegram_chat_id"`
+	S3Endpoint       *string   `json:"s3_endpoint"`
+	S3AccessKey      *string   `json:"s3_access_key"`
+	S3SecretKey      *string   `json:"s3_secret_key"`
+	S3Bucket         *string   `json:"s3_bucket"`
 }
 
 type presignRequest struct {
@@ -351,6 +355,29 @@ func (s *Server) UpdateProject(c *gin.Context) {
 			return
 		}
 	}
+	if req.S3Endpoint != nil || req.S3AccessKey != nil || req.S3SecretKey != nil || req.S3Bucket != nil {
+		currentProject, err := s.store.ProjectOwnedBy(userID, id)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		mergedEndpoint := mergeIntegrationField(currentProject.S3Endpoint, req.S3Endpoint)
+		mergedAccess := mergeIntegrationField(currentProject.S3AccessKey, req.S3AccessKey)
+		mergedSecret := mergeIntegrationField(currentProject.S3SecretKey, req.S3SecretKey)
+		mergedBucket := mergeIntegrationField(currentProject.S3Bucket, req.S3Bucket)
+		if err := s.store.UpdateProjectStorage(userID, id, mergedEndpoint, mergedAccess, mergedSecret, mergedBucket); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	p, err := s.store.ProjectOwnedBy(userID, id)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -480,7 +507,8 @@ func (s *Server) PresignUpload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "mime type not allowed"})
 		return
 	}
-	if _, err := s.store.ProjectOwnedBy(userIDFromContext(c), req.ProjectID); err != nil {
+	project, err := s.store.ProjectOwnedBy(userIDFromContext(c), req.ProjectID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 		return
 	}
@@ -489,12 +517,30 @@ func (s *Server) PresignUpload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if strings.TrimSpace(u.S3Endpoint) == "" || strings.TrimSpace(u.S3Bucket) == "" ||
-		strings.TrimSpace(u.S3AccessKey) == "" || strings.TrimSpace(u.S3SecretKey) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "configure S3-compatible storage in Settings (optional until you need large file uploads)"})
+	// Prefer project-specific S3 credentials; fallback to user-level credentials for backward compatibility.
+	s3Endpoint := strings.TrimSpace(project.S3Endpoint)
+	s3Bucket := strings.TrimSpace(project.S3Bucket)
+	s3Access := strings.TrimSpace(project.S3AccessKey)
+	s3Secret := strings.TrimSpace(project.S3SecretKey)
+	if s3Endpoint == "" || s3Bucket == "" || s3Access == "" || s3Secret == "" {
+		s3Endpoint = strings.TrimSpace(u.S3Endpoint)
+		s3Bucket = strings.TrimSpace(u.S3Bucket)
+		s3Access = strings.TrimSpace(u.S3AccessKey)
+		s3Secret = strings.TrimSpace(u.S3SecretKey)
+	}
+	if s3Endpoint == "" || s3Bucket == "" || s3Access == "" || s3Secret == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "configure S3 storage for this project in Projects (or set legacy user-level S3 settings)"})
 		return
 	}
-	result, err := storage.PresignUpload(c.Request.Context(), makePresignInputFromUser(u, req.ProjectID, req.Filename, s.cfg.PresignExpiryMinutes))
+	result, err := storage.PresignUpload(c.Request.Context(), storage.PresignInput{
+		Endpoint:      s3Endpoint,
+		AccessKey:     s3Access,
+		SecretKey:     s3Secret,
+		Bucket:        s3Bucket,
+		ProjectID:     req.ProjectID,
+		Filename:      req.Filename,
+		ExpiryMinutes: s.cfg.PresignExpiryMinutes,
+	})
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "storage unavailable"})
 		return
