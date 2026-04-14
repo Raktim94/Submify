@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
+import { SubmifyLogo } from '@/components/submify-logo';
 import { useRouter } from 'next/navigation';
 import { registerAccount } from '../../lib/api';
 
@@ -35,8 +36,8 @@ export default function RegisterPage() {
     <main className="relative min-h-screen bg-gradient-to-b from-slate-50 via-white to-violet-50/40">
       <div className="mx-auto flex max-w-md flex-col px-6 pb-12 pt-8">
         <div className="mb-8 flex items-center justify-between gap-3 text-sm">
-          <Link href="/" className="font-display font-bold text-slate-900 hover:text-brand-700">
-            Submify
+          <Link href="/" className="inline-flex items-center hover:opacity-90" aria-label="Submify home">
+            <SubmifyLogo className="h-7 w-auto sm:h-8" />
           </Link>
           <div className="flex gap-3">
             <Link href="/docs" className="font-medium text-slate-600 hover:text-indigo-700">

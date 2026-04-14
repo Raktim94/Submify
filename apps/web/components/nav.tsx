@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { SubmifyLogo } from '@/components/submify-logo';
 import { usePathname, useRouter } from 'next/navigation';
 
 const appLinks = [
@@ -33,10 +34,11 @@ export function Nav() {
       <div className="relative flex flex-wrap items-center gap-2 p-3">
         <Link
           href="/"
-          className="font-display mr-1 shrink-0 rounded-lg px-2 py-1.5 text-lg font-bold tracking-tight text-brand-700 transition hover:bg-brand-50"
+          className="mr-1 inline-flex shrink-0 items-center rounded-lg px-2 py-1 transition hover:bg-brand-50"
           title="Marketing home & documentation"
+          aria-label="Submify home"
         >
-          Submify
+          <SubmifyLogo className="h-7 w-auto sm:h-8" />
         </Link>
         <Link
           href="/docs"

@@ -2,7 +2,7 @@
 
 import { LandingStory } from '@/components/landing/landing-story';
 import { SiteHeader } from '@/components/landing/site-header';
-import { SubmifyGeminiHero } from '@/components/landing/submify-gemini-hero';
+import { SubmifyHero } from '@/components/landing/submify-hero';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -81,7 +81,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen text-slate-800">
       <SiteHeader signedIn={signedIn} />
-      <SubmifyGeminiHero />
+      <SubmifyHero signedIn={signedIn} />
 
       <div className="relative overflow-hidden bg-gradient-to-b from-slate-50 via-white to-indigo-50/30">
         <div

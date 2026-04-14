@@ -46,6 +46,21 @@ function cellString(v: unknown): string {
   return String(v);
 }
 
+/** Display label for a JSON field key (per-submission headings). */
+function fieldLabel(key: string): string {
+  const s = key.trim();
+  if (!s) return key;
+  const spaced = s.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+  return spaced
+    .split(/\s+/)
+    .map((w) => (w.length ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(' ');
+}
+
+function sortedDataKeysForRow(data: unknown): string[] {
+  return Object.keys(dataAsFlatRecord(data)).sort((a, b) => a.localeCompare(b));
+}
+
 function filesSummary(files: unknown): string {
   if (files === null || files === undefined) return '';
   if (Array.isArray(files)) return files.length === 0 ? '—' : `${files.length} file(s)`;
@@ -183,7 +198,7 @@ export default function SubmissionsPage() {
           <Link href="/export" className="font-medium text-amber-900 underline">
             Export
           </Link>
-          . The table below shows up to <strong>200</strong> rows per load; download CSV for this page anytime.
+          . The list below shows up to <strong>200</strong> submissions per load; download CSV for this page anytime.
         </p>
 
         {loading ? (
@@ -198,6 +213,19 @@ export default function SubmissionsPage() {
         ) : (
           <>
             <div className="mb-4 flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600"
+                  aria-label="Select all submissions on this page"
+                  id="select-all-submissions"
+                />
+                <label htmlFor="select-all-submissions" className="cursor-pointer select-none">
+                  All
+                </label>
+              </div>
               <button
                 type="button"
                 className="rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-900 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -215,7 +243,10 @@ export default function SubmissionsPage() {
                 Download CSV (this page)
               </button>
               <span className="text-sm text-slate-500">
-                {items.length} row{items.length === 1 ? '' : 's'} · {dataKeys.length} field column{dataKeys.length === 1 ? '' : 's'}
+                {items.length} submission{items.length === 1 ? '' : 's'}
+                {dataKeys.length > 0
+                  ? ` · ${dataKeys.length} distinct field name${dataKeys.length === 1 ? '' : 's'} in CSV export`
+                  : ''}
               </span>
             </div>
 
@@ -235,78 +266,65 @@ export default function SubmissionsPage() {
                 </Link>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-lg shadow-slate-200/50">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[640px] border-collapse text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50">
-                        <th className="w-10 border-r border-slate-200 bg-slate-50 px-2 py-3">
-                          <input
-                            type="checkbox"
-                            checked={allSelected}
-                            onChange={toggleSelectAll}
-                            className="h-4 w-4 rounded border-slate-300 text-brand-600"
-                            aria-label="Select all"
-                          />
-                        </th>
-                        <th className="whitespace-nowrap px-3 py-3 font-semibold text-slate-800">Submitted</th>
-                        <th className="whitespace-nowrap px-3 py-3 font-semibold text-slate-800">IP</th>
-                        {dataKeys.map((key) => (
-                          <th key={key} className="min-w-[8rem] whitespace-nowrap px-3 py-3 font-semibold text-slate-800">
-                            {key}
-                          </th>
-                        ))}
-                        <th className="whitespace-nowrap px-3 py-3 font-semibold text-slate-800">Files</th>
-                        <th className="whitespace-nowrap px-3 py-3 font-semibold text-slate-800">Raw</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((item) => {
-                        const flat = dataAsFlatRecord(item.data);
-                        return (
-                          <tr key={item.id} className="border-b border-slate-100 hover:bg-indigo-50/40">
-                            <td className="border-r border-slate-100 bg-white px-2 py-2 align-top">
-                              <input
-                                type="checkbox"
-                                checked={!!selected[item.id]}
-                                onChange={(e) =>
-                                  setSelected((prev) => ({ ...prev, [item.id]: e.target.checked }))
-                                }
-                                className="h-4 w-4 rounded border-slate-300 text-brand-600"
-                                aria-label={`Select ${item.id}`}
-                              />
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 align-top text-slate-700">
-                              {new Date(item.created_at).toLocaleString()}
-                            </td>
-                            <td className="max-w-[9rem] truncate px-3 py-2 align-top text-slate-600" title={item.client_ip}>
+              <ul className="space-y-4">
+                {items.map((item) => {
+                  const flat = dataAsFlatRecord(item.data);
+                  const rowKeys = sortedDataKeysForRow(item.data);
+                  return (
+                    <li
+                      key={item.id}
+                      className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md shadow-slate-200/40"
+                    >
+                      <div className="flex flex-wrap items-start gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:items-center">
+                        <input
+                          type="checkbox"
+                          checked={!!selected[item.id]}
+                          onChange={(e) => setSelected((prev) => ({ ...prev, [item.id]: e.target.checked }))}
+                          className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-brand-600 sm:mt-0"
+                          aria-label={`Select submission ${item.id}`}
+                        />
+                        <div className="min-w-0 flex-1 sm:flex sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-1">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Submitted</p>
+                            <p className="text-sm font-medium text-slate-800">{new Date(item.created_at).toLocaleString()}</p>
+                          </div>
+                          <div className="mt-2 sm:mt-0">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">IP</p>
+                            <p className="text-sm text-slate-700" title={item.client_ip}>
                               {item.client_ip ?? '—'}
-                            </td>
-                            {dataKeys.map((key) => (
-                              <td key={key} className="max-w-[14rem] px-3 py-2 align-top text-slate-800">
-                                <span className="line-clamp-4 break-words" title={flat[key]}>
-                                  {flat[key] === '' ? '—' : flat[key]}
-                                </span>
-                              </td>
+                            </p>
+                          </div>
+                          <div className="mt-2 sm:mt-0">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Files</p>
+                            <p className="text-sm text-slate-700">{filesSummary(item.files)}</p>
+                          </div>
+                        </div>
+                        <details className="w-full text-sm sm:w-auto sm:min-w-[4rem]">
+                          <summary className="cursor-pointer font-medium text-indigo-700 hover:text-indigo-900">Raw JSON</summary>
+                          <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-100 sm:max-w-md">
+                            {JSON.stringify({ data: normalizeDataObject(item.data), files: item.files }, null, 2)}
+                          </pre>
+                        </details>
+                      </div>
+
+                      <div className="px-4 py-4">
+                        {rowKeys.length === 0 ? (
+                          <p className="text-sm text-slate-500">No form fields in this submission.</p>
+                        ) : (
+                          <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {rowKeys.map((key) => (
+                              <div key={key} className="min-w-0 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+                                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{fieldLabel(key)}</dt>
+                                <dd className="mt-1 break-words text-sm text-slate-900">{flat[key] === '' ? '—' : flat[key]}</dd>
+                              </div>
                             ))}
-                            <td className="whitespace-nowrap px-3 py-2 align-top text-slate-600">{filesSummary(item.files)}</td>
-                            <td className="px-2 py-1 align-top">
-                              <details className="text-xs">
-                                <summary className="cursor-pointer font-medium text-indigo-700 hover:text-indigo-900">
-                                  JSON
-                                </summary>
-                                <pre className="mt-2 max-h-48 max-w-xs overflow-auto rounded-lg bg-slate-900 p-2 text-[11px] text-slate-100">
-                                  {JSON.stringify({ data: normalizeDataObject(item.data), files: item.files }, null, 2)}
-                                </pre>
-                              </details>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                          </dl>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </>
         )}

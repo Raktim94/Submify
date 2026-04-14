@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { SubmifyLogo } from '@/components/submify-logo';
 import { useEffect, useState } from 'react';
 
 const nav = [
@@ -41,8 +42,12 @@ export function DocsChrome({ children }: { children: React.ReactNode }) {
       <header className="relative z-20 border-b border-slate-200/80 bg-white/85 backdrop-blur-lg">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex flex-wrap items-center gap-3">
-            <Link href="/" className="font-display text-xl font-bold tracking-tight text-slate-900 transition hover:text-brand-700">
-              Submify
+            <Link
+              href="/"
+              className="inline-flex items-center transition-opacity hover:opacity-90"
+              aria-label="Submify home"
+            >
+              <SubmifyLogo className="h-8 w-auto sm:h-9" />
             </Link>
             <span className="hidden rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-800 sm:inline">
               Documentation

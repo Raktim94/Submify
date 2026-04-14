@@ -1,67 +1,56 @@
 'use client';
 
 import Link from 'next/link';
+import { SubmifyLogo } from '@/components/submify-logo';
 
 export function SiteHeader({ signedIn }: { signedIn: boolean }) {
   return (
-    <header className="relative z-50 border-b border-slate-200/80 bg-white/90 shadow-sm shadow-slate-200/40 backdrop-blur-xl">
-      {signedIn ? (
-        <div className="border-b border-slate-200/60 bg-gradient-to-r from-slate-50 via-emerald-50/40 to-teal-50/30">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6">
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-              <span
-                className="mt-0.5 inline-flex h-2 w-2 shrink-0 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.25)]"
-                aria-hidden
-              />
-              <p className="text-sm leading-snug text-slate-800">
-                <span className="font-semibold text-slate-900">Signed in.</span>{' '}
-                Continue to the dashboard, browse docs, or explore the site — logging out is optional.
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-slate-800"
-              >
-                Dashboard
-              </Link>
-              <Link
-                href="/docs"
-                className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-indigo-300 hover:bg-slate-50"
-              >
-                Documentation
-              </Link>
-            </div>
-          </div>
+    <header className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/95 shadow-sm shadow-slate-200/30 backdrop-blur-md">
+      <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3 sm:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Link href="/" className="inline-flex shrink-0 items-center transition-opacity hover:opacity-90" aria-label="Submify home">
+            <SubmifyLogo className="h-8 w-auto sm:h-9" priority />
+          </Link>
+          {signedIn ? (
+            <span className="hidden items-center gap-1.5 text-xs text-slate-500 sm:inline-flex" title="You have an active session">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+              <span className="truncate">Signed in</span>
+            </span>
+          ) : null}
         </div>
-      ) : null}
 
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-        <Link
-          href="/"
-          className="font-display text-xl font-bold tracking-tight text-slate-900 transition hover:text-indigo-700 sm:text-2xl"
-        >
-          Submify
-        </Link>
-        <nav className="flex flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Primary">
+        <nav className="flex shrink-0 flex-wrap items-center justify-end gap-1 sm:gap-2" aria-label="Primary">
           <Link
             href="/docs"
             className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
           >
             Docs
           </Link>
-          <Link
-            href="/login"
-            className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/register"
-            className="relative overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:shadow-lg"
-          >
-            Create account
-          </Link>
+          {signedIn ? (
+            <>
+              <Link
+                href="/dashboard"
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+              >
+                Dashboard
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/register"
+                className="rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:shadow-lg"
+              >
+                Create account
+              </Link>
+            </>
+          )}
         </nav>
       </div>
     </header>
