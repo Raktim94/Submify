@@ -154,6 +154,7 @@ func (s *Server) DashboardSummary(c *gin.Context) {
 				"current_version":        s.cfg.AppVersion,
 				"update_trigger_enabled": s.cfg.AllowUpdateTrigger,
 				"latest_submission":      latestSub,
+				"update_run":             s.getUpdateRunStatus(),
 			})
 			return
 		}
@@ -166,6 +167,7 @@ func (s *Server) DashboardSummary(c *gin.Context) {
 		"current_version":        s.cfg.AppVersion,
 		"update_trigger_enabled": s.cfg.AllowUpdateTrigger,
 		"latest_submission":      latestSub,
+		"update_run":             s.getUpdateRunStatus(),
 	})
 }
 

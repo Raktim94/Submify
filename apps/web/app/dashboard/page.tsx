@@ -408,9 +408,10 @@ export default function DashboardPage() {
                   ) : (
                     <p className="mb-3 text-xs leading-relaxed text-slate-500">
                       <strong className="text-slate-700">Update &amp; restart</strong> runs{' '}
-                      <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.7rem]">docker compose pull</code> and{' '}
-                      <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.7rem]">up -d</code> in the mounted project
-                      directory. Expect a short outage while containers recreate.
+                      <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.7rem]">git pull</code>,{' '}
+                      <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.7rem]">docker compose pull</code>,{' '}
+                      <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.7rem]">docker compose up --build -d</code>,
+                      prune cleanup, and a recent API logs snapshot from the mounted project directory.
                     </p>
                   )}
                   <button
@@ -424,7 +425,7 @@ export default function DashboardPage() {
                         await api<{ status: string }>('/system/update-trigger', { method: 'POST' });
                         setUpdateAction('done');
                         setUpdateActionMsg(
-                          'Update started. Images are pulling and containers will restart — refresh this page in a minute.'
+                          'Update started. This may take a few minutes while git/docker steps complete.'
                         );
                         getDashboardSummary(true).then(setSummary).catch(() => {});
                       } catch (e) {
@@ -447,6 +448,28 @@ export default function DashboardPage() {
                     >
                       {updateActionMsg}
                     </p>
+                  ) : null}
+                  {summary.update_run ? (
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-xs text-slate-700">
+                      <p>
+                        <strong>Last update run:</strong>{' '}
+                        {summary.update_run.running
+                          ? 'Running...'
+                          : summary.update_run.success
+                            ? 'Success'
+                            : summary.update_run.message
+                              ? 'Failed'
+                              : 'Not started'}
+                      </p>
+                      {summary.update_run.message ? <p className="mt-1">{summary.update_run.message}</p> : null}
+                      {summary.update_run.started_at ? <p className="mt-1">Started: {summary.update_run.started_at}</p> : null}
+                      {summary.update_run.ended_at ? <p>Ended: {summary.update_run.ended_at}</p> : null}
+                      {summary.update_run.output ? (
+                        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-slate-900 p-2 text-[11px] text-slate-100">
+                          {summary.update_run.output}
+                        </pre>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               </>

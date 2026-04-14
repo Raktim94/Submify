@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -37,6 +38,17 @@ type Server struct {
 	authedUserLimiter      *KeyedRateLimiter
 	updateCheckMu          sync.Mutex
 	lastGitHubPollAt       time.Time
+	updateRunMu            sync.Mutex
+	updateRun              UpdateRunState
+}
+
+type UpdateRunState struct {
+	Running   bool
+	StartedAt time.Time
+	EndedAt   time.Time
+	Success   bool
+	Message   string
+	Output    string
 }
 
 func NewServer(cfg config.Config, store *db.Store) *Server {
@@ -156,16 +168,31 @@ func (s *Server) TriggerUpdate(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "update trigger disabled in this environment"})
 		return
 	}
-
-	cmd := exec.Command("sh", "-c", s.cfg.UpdateCommand)
-	if strings.Contains(strings.ToLower(s.cfg.UpdateCommand), "powershell") {
-		cmd = exec.Command("powershell", "-Command", s.cfg.UpdateCommand)
-	}
-	if err := cmd.Start(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	cmdText := strings.TrimSpace(s.cfg.UpdateCommand)
+	if cmdText == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "UPDATE_COMMAND is empty"})
 		return
 	}
-	c.JSON(http.StatusAccepted, gin.H{"status": "update started"})
+	s.updateRunMu.Lock()
+	if s.updateRun.Running {
+		s.updateRunMu.Unlock()
+		c.JSON(http.StatusConflict, gin.H{"error": "an update is already running"})
+		return
+	}
+	now := time.Now().UTC()
+	s.updateRun = UpdateRunState{
+		Running:   true,
+		StartedAt: now,
+		Message:   "update started",
+	}
+	s.updateRunMu.Unlock()
+
+	timeout := time.Duration(max(s.cfg.UpdateTimeoutMinutes, 1)) * time.Minute
+	go s.runUpdateCommand(cmdText, timeout)
+	c.JSON(http.StatusAccepted, gin.H{
+		"status":     "update started",
+		"started_at": now.Format(time.RFC3339),
+	})
 }
 
 func (s *Server) UpdateStatus(c *gin.Context) {
@@ -190,7 +217,64 @@ func (s *Server) UpdateStatus(c *gin.Context) {
 		"latest_version":         cfg.LatestVersion,
 		"current_version":        s.cfg.AppVersion,
 		"update_trigger_enabled": s.cfg.AllowUpdateTrigger,
+		"update_run":             s.getUpdateRunStatus(),
 	})
+}
+
+func (s *Server) runUpdateCommand(command string, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	if strings.Contains(strings.ToLower(command), "powershell") {
+		cmd = exec.CommandContext(ctx, "powershell", "-Command", command)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-lc", command)
+	}
+	output, err := cmd.CombinedOutput()
+	outText := strings.TrimSpace(string(output))
+	if len(outText) > 4000 {
+		outText = outText[len(outText)-4000:]
+	}
+
+	s.updateRunMu.Lock()
+	defer s.updateRunMu.Unlock()
+	s.updateRun.Running = false
+	s.updateRun.EndedAt = time.Now().UTC()
+	s.updateRun.Output = outText
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			s.updateRun.Success = false
+			s.updateRun.Message = fmt.Sprintf("update timed out after %s", timeout)
+		} else {
+			s.updateRun.Success = false
+			s.updateRun.Message = err.Error()
+		}
+		return
+	}
+
+	s.updateRun.Success = true
+	s.updateRun.Message = "update completed successfully"
+	go s.refreshGitHubVersion(true)
+}
+
+func (s *Server) getUpdateRunStatus() gin.H {
+	s.updateRunMu.Lock()
+	defer s.updateRunMu.Unlock()
+
+	status := gin.H{
+		"running": s.updateRun.Running,
+		"success": s.updateRun.Success,
+		"message": s.updateRun.Message,
+		"output":  s.updateRun.Output,
+	}
+	if !s.updateRun.StartedAt.IsZero() {
+		status["started_at"] = s.updateRun.StartedAt.Format(time.RFC3339)
+	}
+	if !s.updateRun.EndedAt.IsZero() {
+		status["ended_at"] = s.updateRun.EndedAt.Format(time.RFC3339)
+	}
+	return status
 }
 
 func buildTelegramMessage(project db.Project, data []byte, files []byte) string {

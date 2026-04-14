@@ -143,6 +143,14 @@ export type DashboardSummary = {
   latest_version: string;
   current_version: string;
   update_trigger_enabled?: boolean;
+  update_run?: {
+    running: boolean;
+    success: boolean;
+    message: string;
+    output?: string;
+    started_at?: string;
+    ended_at?: string;
+  };
   latest_submission: {
     at: string;
     project_id: string;
