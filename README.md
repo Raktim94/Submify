@@ -316,7 +316,27 @@ You can call Submify from **your** backend with the same `POST /submit/{key}` co
 
 This repository’s **Next.js app** (`apps/web`) includes an optional **contact form** that posts to a **Route Handler**, which forwards to **`https://api.nodedr.com/api/submit`** with **`x-api-key`** (and optional **`x-signature`** HMAC when `NODEDR_SUBMIT_SECRET_KEY` is set). Keys stay **server-side** — never use `NEXT_PUBLIC_*` for them.
 
-**Using an AI coding assistant (Cursor, Copilot, ChatGPT, etc.)?** This repo ships a **ready-made prompt** you can paste into chat to recreate or extend the same pattern in another codebase. Open the web UI at **`/docs/contact-proxy`**, go to the **Reuse prompt** section, copy the full block, replace `[path/to/site-folder]` with your project path, and follow the note about **`/api/contact-submit`** in this monorepo (the generic prompt may say `/api/submit`, which here is reserved for the **Go** API—changing nginx or routes without understanding that can break submissions). When in doubt, keep the implementation that already exists under `apps/web` and only use the prompt for **new** sites.
+**Using an AI coding assistant (Cursor, Copilot, ChatGPT, etc.)?** Copy the **prompt you can reuse in chat** below (or the same block under **`/docs/contact-proxy`**, **main `/docs`**, or **Projects** in the web UI). Replace `[path/to/site-folder]` with your app path. **In this monorepo** the Next.js proxy is already at **`/api/contact-submit`** because **`POST /api/submit`** is reserved for the **Go** API—if you paste the generic prompt verbatim into an assistant, tell it to use **`/api/contact-submit`** for the Route Handler and `fetch` path here, or you can break nginx routing.
+
+#### Prompt you can reuse in chat
+
+Copy and adjust the bracketed parts:
+
+````text
+Prompt you can reuse in chat
+Copy and adjust the bracketed parts:
+
+In this repo's Next.js App Router site at [path/to/site-folder], implement contact form submission using the Nodedr submit API proxy pattern (same as SeattleDrainCleaningCo), not FormSubmit in the browser.
+Requirements:
+1. Add `src/app/api/submit/route.ts` that accepts POST JSON, validates with a shared Zod schema (honeypot field e.g. gotcha must be empty), builds the upstream JSON payload, and POSTs to `https://api.nodedr.com/api/submit` with `Content-Type: application/json`, header `x-api-key` set from server env (`NODEDR_SUBMIT_PUBLIC_KEY` or `NODEDR_PUBLIC_KEY`, value must be `pk_...`). If `NODEDR_SUBMIT_SECRET_KEY` (`sk_...`) is set, add `x-signature`: hex HMAC-SHA256 of the exact UTF-8 body string you send upstream.
+2. Add `src/lib/nodedrSubmitEnv.ts` (or equivalent) that reads those env vars at runtime (no `NEXT_PUBLIC_` for secrets).
+3. Add `src/lib/contactSubmitSchema.ts` shared between client and route; export the inferred type.
+4. Wire the contact form(s) to `fetch("/api/submit", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ ...fields, gotcha }) })`, show inline success/error, never expose keys to the client.
+5. Ensure CSP `connect-src` allows `'self'` for this fetch if the project uses CSP.
+6. Document env vars in `.env.example` (public key name only as a placeholder; never commit real `sk_`).
+Follow `f:/code/.cursor/rules/15-formsubmit-and-contact-forms.mdc` (Nodedr submit API section) and match file layout/naming to SeattleDrainCleaningCo unless this site's structure differs—then adapt minimally.
+That gives a future session enough context to recreate the pattern without re-explaining it.
+````
 
 | Item | Location |
 |------|----------|

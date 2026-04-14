@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { NODEDR_CONTACT_PROXY_REUSE_PROMPT } from '@/lib/nodedrContactProxyReusePrompt';
 
 export default function DocsPage() {
   return (
@@ -25,6 +26,23 @@ export default function DocsPage() {
           <code className="rounded bg-white px-1 font-mono text-xs">/api/submit</code> vs{' '}
           <code className="rounded bg-white px-1 font-mono text-xs">/api/contact-submit</code>.
         </p>
+
+        <details className="mt-6 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm open:shadow-md">
+          <summary className="cursor-pointer font-display text-sm font-semibold text-slate-900">
+            Prompt you can reuse in chat (copy for AI assistants)
+          </summary>
+          <pre className="mt-4 max-h-[min(50vh,24rem)] overflow-auto rounded-xl border border-slate-100 bg-slate-950 p-4 text-left text-[11px] leading-relaxed text-slate-100 sm:text-xs">
+            <code>{NODEDR_CONTACT_PROXY_REUSE_PROMPT}</code>
+          </pre>
+          <p className="mt-3 text-xs text-slate-600">
+            In <strong>this</strong> monorepo the Next.js proxy is <code className="rounded bg-slate-100 px-1">/api/contact-submit</code>;{' '}
+            <code className="rounded bg-slate-100 px-1">POST /api/submit</code> is the Go API (project keys). See{' '}
+            <Link href="/docs/contact-proxy" className="font-medium text-indigo-700 underline">
+              /docs/contact-proxy
+            </Link>{' '}
+            for context.
+          </p>
+        </details>
       </div>
 
       <section id="overview" className="animate-fade-in-up motion-reduce:animate-none">

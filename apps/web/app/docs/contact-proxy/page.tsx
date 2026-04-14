@@ -1,18 +1,5 @@
 import Link from 'next/link';
-
-const REUSE_PROMPT = `In this repo's Next.js App Router site at [path/to/site-folder], implement contact form submission using the Nodedr submit API proxy pattern (same as SeattleDrainCleaningCo), not FormSubmit in the browser.
-
-Requirements:
-1. Add src/app/api/submit/route.ts that accepts POST JSON, validates with a shared Zod schema (honeypot field e.g. gotcha must be empty), builds the upstream JSON payload, and POSTs to https://api.nodedr.com/api/submit with Content-Type: application/json, header x-api-key set from server env (NODEDR_SUBMIT_PUBLIC_KEY or NODEDR_PUBLIC_KEY, value must be pk_...). If NODEDR_SUBMIT_SECRET_KEY (sk_...) is set, add x-signature: hex HMAC-SHA256 of the exact UTF-8 body string you send upstream.
-2. Add src/lib/nodedrSubmitEnv.ts (or equivalent) that reads those env vars at runtime (no NEXT_PUBLIC_ for secrets).
-3. Add src/lib/contactSubmitSchema.ts shared between client and route; export the inferred type.
-4. Wire the contact form(s) to fetch("/api/submit", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ ...fields, gotcha }) }), show inline success/error, never expose keys to the client.
-5. Ensure CSP connect-src allows 'self' for this fetch if the project uses CSP.
-6. Document env vars in .env.example (public key name only as a placeholder; never commit real sk_).
-
-Follow the Nodedr submit API section in .cursor/rules/15-formsubmit-and-contact-forms.mdc and match file layout/naming to SeattleDrainCleaningCo unless this site's structure differs — then adapt minimally.
-
-Note: The Submify monorepo reserves POST /api/submit for the Go API; this project implements the proxy at /api/contact-submit instead — adjust the prompt path and fetch URL when copying into this repo.`;
+import { NODEDR_CONTACT_PROXY_REUSE_PROMPT } from '@/lib/nodedrContactProxyReusePrompt';
 
 export default function ContactProxyDocsPage() {
   return (
@@ -198,7 +185,7 @@ export default function ContactProxyDocsPage() {
           code.
         </p>
         <pre className="max-h-[min(70vh,32rem)] overflow-auto rounded-2xl border border-slate-200 bg-slate-950 p-5 text-[13px] leading-relaxed text-slate-100 shadow-inner">
-          <code>{REUSE_PROMPT}</code>
+          <code>{NODEDR_CONTACT_PROXY_REUSE_PROMPT}</code>
         </pre>
         <p className="mt-4 text-sm text-slate-600">
           Canonical rules reference: <code className="rounded bg-slate-100 px-1 font-mono">15-formsubmit-and-contact-forms.mdc</code>{' '}

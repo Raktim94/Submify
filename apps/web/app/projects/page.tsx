@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { Nav } from '../../components/nav';
 import { api } from '../../lib/api';
+import { NODEDR_CONTACT_PROXY_REUSE_PROMPT } from '../../lib/nodedrContactProxyReusePrompt';
 
 type Project = {
   id: string;
@@ -190,15 +191,22 @@ export default function ProjectsPage() {
             or bulk delete in Submissions before you hit the cap.
           </p>
           <p className="mt-4 max-w-3xl rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-relaxed text-slate-700">
-            <strong className="text-slate-900">AI builder?</strong> If an assistant is wiring a Next.js marketing contact form, use the
-            copy-paste prompt on{' '}
+            <strong className="text-slate-900">AI builder?</strong> Expand <strong>Prompt you can reuse in chat</strong> below and paste
+            it into Cursor (or any assistant). Read <strong>For AI builders</strong> on{' '}
             <Link className="font-medium text-brand-700 underline" href="/docs/contact-proxy">
-              Documentation → Next.js contact proxy
+              /docs/contact-proxy
             </Link>{' '}
-            and read <strong>For AI builders</strong> first — this stack uses <code className="text-xs">POST /api/submit</code> for the{' '}
-            <strong>Go API</strong> (your project keys below), not the same path as the optional Next.js Nodedr proxy (
-            <code className="text-xs">/api/contact-submit</code>). Mixing those up can break submissions.
+            first. This page uses <code className="text-xs">POST /api/submit</code> for the <strong>Go API</strong> (your project keys);
+            the optional Next.js Nodedr marketing proxy is <code className="text-xs">/api/contact-submit</code> — do not confuse them.
           </p>
+          <details className="mt-4 max-w-3xl rounded-2xl border border-indigo-200/80 bg-white px-4 py-3 shadow-sm open:shadow-md">
+            <summary className="cursor-pointer font-display text-sm font-semibold text-indigo-900">
+              Prompt you can reuse in chat (Nodedr submit API proxy)
+            </summary>
+            <pre className="mt-4 max-h-[min(60vh,28rem)] overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-4 text-left text-[10px] leading-relaxed text-slate-100 sm:text-xs">
+              <code>{NODEDR_CONTACT_PROXY_REUSE_PROMPT}</code>
+            </pre>
+          </details>
         </header>
 
         <section className="mb-8 rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 to-white p-6 shadow-md sm:p-8">
