@@ -58,9 +58,6 @@ export default function LoginPage() {
     }
     localStorage.setItem('submify_access_token', data.access_token);
     localStorage.setItem('submify_refresh_token', data.refresh_token);
-    if (typeof data.api_key === 'string') {
-      localStorage.setItem('submify_user_api_key', data.api_key);
-    }
     if (typeof data.full_name === 'string') {
       localStorage.setItem('submify_user_name', data.full_name);
     }

@@ -36,7 +36,6 @@ function clearSessionAndGoToLogin(): void {
   if (!isBrowser()) return;
   localStorage.removeItem('submify_access_token');
   localStorage.removeItem('submify_refresh_token');
-  localStorage.removeItem('submify_user_api_key');
   localStorage.removeItem('submify_user_name');
   localStorage.removeItem('submify_user_phone');
   if (window.location.pathname !== '/login') {

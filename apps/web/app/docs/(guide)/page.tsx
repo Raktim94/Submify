@@ -203,14 +203,10 @@ export default function DocsPage() {
       </section>
 
       <section id="dashboard">
-        <h2>Dashboard &amp; updates</h2>
+        <h2>Dashboard</h2>
         <p>
-          The <strong>Dashboard</strong> shows API health, optional <strong>GitHub</strong> version checks (via <code>GITHUB_REPO</code>
-          ), and recent activity. The server compares tags/releases to your running <code>APP_VERSION</code>.
-        </p>
-        <p>
-          <strong>In-dashboard updates</strong> (pull + restart) require Docker socket mounting and explicit enablement (
-          <code>ALLOW_UPDATE_TRIGGER</code>). Otherwise update on the host with <code>docker compose pull && docker compose up -d</code>.
+          The <strong>Dashboard</strong> shows API health and recent submission activity. Use it as your operational overview after
+          login.
         </p>
       </section>
 
@@ -223,13 +219,13 @@ export default function DocsPage() {
       </section>
 
       <section id="settings">
-        <h2>Telegram &amp; S3 (Settings)</h2>
+        <h2>Telegram &amp; S3 (Projects)</h2>
         <p>
-          <strong>Telegram</strong> — Optional bot token + chat ID for notifications on new submissions (configure after login).
+          <strong>Telegram</strong> — Optional bot token + chat ID for notifications on new submissions (configure per project).
         </p>
         <p>
-          <strong>S3-compatible storage</strong> — Optional endpoint, keys, and bucket for presigned uploads when you need large files;
-          small JSON submissions work without it.
+          <strong>S3-compatible storage</strong> — Optional endpoint, keys, and bucket for presigned uploads when you need large files
+          (configure per project).
         </p>
       </section>
 
@@ -279,24 +275,6 @@ export default function DocsPage() {
             </tr>
             <tr>
               <td>
-                <code>GITHUB_REPO</code>, <code>GITHUB_TOKEN</code>
-              </td>
-              <td>Update checks (<code>owner/name</code>); optional token for rate limits or private repos.</td>
-            </tr>
-            <tr>
-              <td>
-                <code>APP_VERSION</code>
-              </td>
-              <td>Running version string compared to GitHub tags/releases.</td>
-            </tr>
-            <tr>
-              <td>
-                <code>ALLOW_UPDATE_TRIGGER</code>
-              </td>
-              <td>Enable dashboard-triggered Docker updates when socket is mounted.</td>
-            </tr>
-            <tr>
-              <td>
                 <code>RATE_LIMIT_*</code>
               </td>
               <td>Tune RPM limits for public and authenticated routes.</td>
@@ -317,10 +295,6 @@ export default function DocsPage() {
           </li>
           <li>
             <strong>Submit rejected</strong> — Verify <code>x-api-key</code>, public key format, allowed origins, and payload size.
-          </li>
-          <li>
-            <strong>Update check shows no version</strong> — Repository needs at least one tag or release; set <code>GITHUB_REPO</code>{' '}
-            to <code>owner/name</code>.
           </li>
         </ul>
       </section>

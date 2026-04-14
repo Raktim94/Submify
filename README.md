@@ -169,11 +169,6 @@ Values used by the **API** container (see `docker-compose.yml` and `apps/api/int
 | `DATABASE_URL` | Compose default to `db` | PostgreSQL connection string |
 | `JWT_SECRET` | `change-this-in-production` | JWT HMAC secret |
 | `ALLOWED_ORIGINS` | `http://localhost:2512` | CORS allowlist (comma-separated) |
-| `APP_VERSION` | `0.1.0` | Reported version |
-| `GITHUB_REPO` | `nodedr/submify` | Used for update checks |
-| `UPDATE_CHECK_MINUTES` | `360` | Background update check interval |
-| `ALLOW_UPDATE_TRIGGER` | `false` | Allow `POST /system/update-trigger` |
-| `UPDATE_COMMAND` | `docker compose pull && docker compose up -d` | Command run when update is triggered |
 | `UPLOAD_MAX_SIZE_BYTES` | `26214400` (25 MiB) | Max upload size for presign |
 | `UPLOAD_ALLOWED_MIME` | `image/png,image/jpeg,application/pdf,text/plain` | Allowed MIME types for presign |
 | `PRESIGN_EXPIRY_MINUTES` | `10` | Presigned URL lifetime |
@@ -248,8 +243,6 @@ Summary:
 | Bulk delete | DELETE | `/api/v1/projects/{id}/submissions/bulk` | Bearer |
 | Presign | POST | `/api/v1/uploads/presign` | Bearer |
 | Export | GET | `/api/v1/projects/{id}/export?format=xlsx|pdf` | Bearer |
-| Updates | GET, POST | `/api/v1/system/update-status`, `/system/update-trigger` | Bearer |
-| Config | PUT | `/api/v1/system/config` | Bearer |
 
 ---
 
@@ -475,7 +468,6 @@ Review performed against the code in this repository (handlers, routes, middlewa
 - **Tenant isolation:** one PostgreSQL database with strict `user_id` / `project_id` checks on every mutating and listing path; another user’s JWT cannot read their rows.
 - **Persistence:** Postgres files live in the **host bind mount** (`/var/lib/submify/data/postgres` in the default Compose file), not in the API image — restarts keep data. Use a strong **`POSTGRES_PASSWORD`** in production.
 - Rate limits are **tiered** (health/bootstrap exempt; authed traffic per **user**). Adjust env vars if you still see `429` for legitimate load.
-- `GITHUB_REPO` defaults to `nodedr/submify`; set it if you rely on update checks against a fork.
 - Run `go test ./...` under `apps/api` to execute unit tests for password hashing, JWT, etc.
 
 ---

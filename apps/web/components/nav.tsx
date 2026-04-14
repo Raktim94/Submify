@@ -80,7 +80,6 @@ export function Nav() {
             onClick={() => {
               localStorage.removeItem('submify_access_token');
               localStorage.removeItem('submify_refresh_token');
-              localStorage.removeItem('submify_user_api_key');
               localStorage.removeItem('submify_user_name');
               localStorage.removeItem('submify_user_phone');
               router.push('/');

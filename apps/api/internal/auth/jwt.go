@@ -56,7 +56,10 @@ func (m *TokenManager) generate(userID, email, tokenType string, ttl time.Durati
 }
 
 func (m *TokenManager) Parse(token string, expectedType string) (*Claims, error) {
-	parsed, err := jwt.ParseWithClaims(token, &Claims{}, func(_ *jwt.Token) (interface{}, error) {
+	parsed, err := jwt.ParseWithClaims(token, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
 		return m.secret, nil
 	})
 	if err != nil {

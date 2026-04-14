@@ -185,11 +185,6 @@ func (s *Store) UpdateSystemConfig(cfg SystemConfig) error {
 	return err
 }
 
-func (s *Store) SetUpdateStatus(available bool, latestVersion string) error {
-	_, err := s.DB.Exec("UPDATE system_configs SET update_available=$1, latest_version=$2, updated_at=NOW() WHERE id=1", available, latestVersion)
-	return err
-}
-
 func scanUser(row *sql.Row) (User, error) {
 	var u User
 	err := row.Scan(

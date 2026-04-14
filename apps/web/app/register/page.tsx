@@ -23,7 +23,6 @@ export default function RegisterPage() {
       const data = await registerAccount({ full_name, phone, email, password });
       localStorage.setItem('submify_access_token', data.access_token);
       localStorage.setItem('submify_refresh_token', data.refresh_token);
-      localStorage.setItem('submify_user_api_key', data.api_key);
       localStorage.setItem('submify_user_name', data.full_name);
       localStorage.setItem('submify_user_phone', data.phone);
       router.push('/dashboard');

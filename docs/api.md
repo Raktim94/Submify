@@ -203,26 +203,10 @@ Requires valid S3-compatible storage in system config.
 
 **Response:** File download (`Content-Disposition: attachment`).
 
-### `GET /system/update-status`
+### `PUT /users/me/integrations`
 
-**Response:** `200`
+Update optional user-level integrations (legacy fallback values).
 
-```json
-{
-  "update_available": false,
-  "latest_version": "",
-  "current_version": "0.1.0"
-}
-```
-
-### `POST /system/update-trigger`
-
-Only if `ALLOW_UPDATE_TRIGGER=true`. **Response:** `202` `{ "status": "update started" }` or `409` if disabled.
-
-### `PUT /system/config`
-
-Update S3 and Telegram settings (not admin password).
-
-**Body:** `s3_endpoint`, `s3_access_key`, `s3_secret_key`, `s3_bucket`, `telegram_bot_token`, `telegram_chat_id`
+**Body (partial):** `s3_endpoint`, `s3_access_key`, `s3_secret_key`, `s3_bucket`, `telegram_bot_token`, `telegram_chat_id`
 
 **Response:** `200` `{ "status": "updated" }`

@@ -54,7 +54,6 @@ export default function DashboardPage() {
 
     getMe()
       .then((me) => {
-        localStorage.setItem('submify_user_api_key', me.api_key);
         localStorage.setItem('submify_user_name', me.full_name);
         localStorage.setItem('submify_user_phone', me.phone);
         setWelcomeName(me.full_name);
