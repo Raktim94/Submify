@@ -39,6 +39,9 @@ type Project struct {
 	APIKey         string    `json:"api_key"`
 	APISecret      string    `json:"api_secret"`
 	AllowedOrigins []string  `json:"allowed_origins,omitempty"`
+	TelegramBotToken string  `json:"-"`
+	TelegramChatID   string  `json:"telegram_chat_id"`
+	TelegramConfigured bool  `json:"telegram_configured"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -274,7 +277,7 @@ func (s *Store) UpdateUserIntegrations(userID, telegramToken, telegramChatID, s3
 	return err
 }
 
-const projectSelect = `id, user_id, name, api_key, api_secret, COALESCE(allowed_origins, ''), created_at`
+const projectSelect = `id, user_id, name, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {
 	s = strings.TrimSpace(s)
@@ -291,7 +294,7 @@ func parseOriginsJSON(s string) ([]string, error) {
 func projectFromRow(row *sql.Row) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -300,13 +303,14 @@ func projectFromRow(row *sql.Row) (Project, error) {
 		return Project{}, err
 	}
 	p.AllowedOrigins = origins
+	p.TelegramConfigured = strings.TrimSpace(p.TelegramBotToken) != "" && strings.TrimSpace(p.TelegramChatID) != ""
 	return p, nil
 }
 
 func projectFromRows(rows *sql.Rows) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.CreatedAt)
+	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -315,6 +319,7 @@ func projectFromRows(rows *sql.Rows) (Project, error) {
 		return Project{}, err
 	}
 	p.AllowedOrigins = origins
+	p.TelegramConfigured = strings.TrimSpace(p.TelegramBotToken) != "" && strings.TrimSpace(p.TelegramChatID) != ""
 	return p, nil
 }
 
@@ -411,6 +416,23 @@ func (s *Store) UpdateProjectAllowedOrigins(userID, projectID string, origins []
 		payload = string(b)
 	}
 	res, err := s.DB.Exec(`UPDATE projects SET allowed_origins=$1 WHERE id=$2 AND user_id=$3`, payload, projectID, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) UpdateProjectTelegram(userID, projectID, telegramToken, telegramChatID string) error {
+	res, err := s.DB.Exec(`
+		UPDATE projects
+		SET telegram_bot_token = NULLIF($1, ''),
+		    telegram_chat_id = NULLIF($2, '')
+		WHERE id=$3 AND user_id=$4
+	`, strings.TrimSpace(telegramToken), strings.TrimSpace(telegramChatID), projectID, userID)
 	if err != nil {
 		return err
 	}

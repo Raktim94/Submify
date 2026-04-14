@@ -411,7 +411,8 @@ export default function DashboardPage() {
                       <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.7rem]">git pull</code>,{' '}
                       <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.7rem]">docker compose pull</code>,{' '}
                       <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.7rem]">docker compose up --build -d</code>,
-                      prune cleanup, and a recent API logs snapshot from the mounted project directory.
+                      prune cleanup, then starts <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.7rem]">docker compose logs --tail 3000 -f api</code> in
+                      background.
                     </p>
                   )}
                   <button

@@ -12,23 +12,33 @@ type Project = {
   api_key: string;
   api_secret: string;
   allowed_origins?: string[];
+  telegram_chat_id: string;
+  telegram_configured: boolean;
   created_at: string;
 };
 
 function ProjectCard({
   project: p,
   onRegenerate,
-  onSaveOrigins
+  onSaveOrigins,
+  onSaveTelegram,
+  onClearTelegram
 }: {
   project: Project;
   onRegenerate: () => void;
   onSaveOrigins: (raw: string) => Promise<void>;
+  onSaveTelegram: (chatID: string, token: string) => Promise<void>;
+  onClearTelegram: () => Promise<void>;
 }) {
   const [originsDraft, setOriginsDraft] = useState(() => JSON.stringify(p.allowed_origins ?? [], null, 2));
+  const [telegramChatDraft, setTelegramChatDraft] = useState(() => p.telegram_chat_id ?? '');
+  const [telegramTokenDraft, setTelegramTokenDraft] = useState('');
   const originsKey = JSON.stringify(p.allowed_origins ?? []);
   useEffect(() => {
     setOriginsDraft(JSON.stringify(p.allowed_origins ?? [], null, 2));
-  }, [p.id, p.api_key, originsKey]);
+    setTelegramChatDraft(p.telegram_chat_id ?? '');
+    setTelegramTokenDraft('');
+  }, [p.id, p.api_key, originsKey, p.telegram_chat_id]);
 
   return (
     <li className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-200 hover:shadow-md sm:p-6">
@@ -73,6 +83,44 @@ function ProjectCard({
             >
               Save origins
             </button>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Telegram notifications (per project)</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Configure a dedicated bot + chat for this project so notifications never mix with other projects.
+            </p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <input
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800"
+                value={telegramChatDraft}
+                onChange={(e) => setTelegramChatDraft(e.target.value)}
+                placeholder="Chat ID (e.g. -1001234567890)"
+                aria-label="Project Telegram chat ID"
+              />
+              <input
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800"
+                value={telegramTokenDraft}
+                onChange={(e) => setTelegramTokenDraft(e.target.value)}
+                placeholder={p.telegram_configured ? 'New bot token (leave blank to keep)' : 'Bot token from @BotFather'}
+                aria-label="Project Telegram bot token"
+              />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+                onClick={() => void onSaveTelegram(telegramChatDraft, telegramTokenDraft)}
+              >
+                Save Telegram
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-900 hover:bg-rose-50"
+                onClick={() => void onClearTelegram()}
+              >
+                Clear Telegram
+              </button>
+            </div>
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:shrink-0">
@@ -170,6 +218,27 @@ export default function ProjectsPage() {
     await api(`/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ allowed_origins: parsed })
+    });
+    await load();
+  }
+
+  async function saveProjectTelegram(id: string, chatID: string, token: string) {
+    const payload: { telegram_chat_id: string; telegram_bot_token?: string } = {
+      telegram_chat_id: chatID.trim()
+    };
+    const trimmedToken = token.trim();
+    if (trimmedToken) payload.telegram_bot_token = trimmedToken;
+    await api(`/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+    await load();
+  }
+
+  async function clearProjectTelegram(id: string) {
+    await api(`/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ telegram_chat_id: '', telegram_bot_token: '' })
     });
     await load();
   }
@@ -302,6 +371,8 @@ export default function ProjectsPage() {
                   project={p}
                   onRegenerate={() => regenerateProject(p.id)}
                   onSaveOrigins={(raw) => saveOrigins(p.id, raw)}
+                  onSaveTelegram={(chatID, token) => saveProjectTelegram(p.id, chatID, token)}
+                  onClearTelegram={() => clearProjectTelegram(p.id)}
                 />
               ))}
             </ul>

@@ -623,11 +623,11 @@ func writePDF(rows []db.Submission) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func notifyTelegram(project db.Project, owner db.User, data []byte, files []byte) {
-	if strings.TrimSpace(owner.TelegramBotToken) == "" || strings.TrimSpace(owner.TelegramChatID) == "" {
+func notifyTelegram(project db.Project, data []byte, files []byte) {
+	if strings.TrimSpace(project.TelegramBotToken) == "" || strings.TrimSpace(project.TelegramChatID) == "" {
 		return
 	}
-	telegram.NotifyAsync(owner.TelegramBotToken, owner.TelegramChatID, buildTelegramMessage(project, data, files))
+	telegram.NotifyAsync(project.TelegramBotToken, project.TelegramChatID, buildTelegramMessage(project, data, files))
 }
 
 func makePresignInputFromUser(u db.User, projectID, filename string, expiry int) storage.PresignInput {

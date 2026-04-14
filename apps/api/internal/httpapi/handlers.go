@@ -36,6 +36,8 @@ type updateProjectRequest struct {
 	Name             string    `json:"name"`
 	RegenerateKey    bool      `json:"regenerate_key"`
 	AllowedOrigins   *[]string `json:"allowed_origins"`
+	TelegramBotToken *string   `json:"telegram_bot_token"`
+	TelegramChatID   *string   `json:"telegram_chat_id"`
 }
 
 type presignRequest struct {
@@ -328,6 +330,27 @@ func (s *Server) UpdateProject(c *gin.Context) {
 			return
 		}
 	}
+	if req.TelegramBotToken != nil || req.TelegramChatID != nil {
+		currentProject, err := s.store.ProjectOwnedBy(userID, id)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		mergedToken := mergeIntegrationField(currentProject.TelegramBotToken, req.TelegramBotToken)
+		mergedChatID := mergeIntegrationField(currentProject.TelegramChatID, req.TelegramChatID)
+		if err := s.store.UpdateProjectTelegram(userID, id, mergedToken, mergedChatID); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	p, err := s.store.ProjectOwnedBy(userID, id)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -438,9 +461,7 @@ func (s *Server) Submit(c *gin.Context) {
 
 	log.Printf("submit: project_id=%s submission_id=%s ip=%s ua_len=%d", project.ID, sub.ID, ip, len(ua))
 
-	if owner, err := s.store.FindUserByID(project.UserID); err == nil {
-		notifyTelegram(project, owner, dataBytes, filesBytes)
-	}
+	notifyTelegram(project, dataBytes, filesBytes)
 
 	c.JSON(http.StatusCreated, sub)
 }
