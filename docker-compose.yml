@@ -101,6 +101,9 @@ services:
     container_name: submify-web
     environment:
       NEXT_PUBLIC_API_BASE: /api/v1
+      # Optional: homepage contact form → Nodedr (see apps/web/.env.example, /docs/contact-proxy)
+      NODEDR_SUBMIT_PUBLIC_KEY: ${NODEDR_SUBMIT_PUBLIC_KEY:-}
+      NODEDR_SUBMIT_SECRET_KEY: ${NODEDR_SUBMIT_SECRET_KEY:-}
     logging: *default-logging
     depends_on:
       api:

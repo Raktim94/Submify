@@ -1,5 +1,6 @@
 'use client';
 
+import { ContactForm } from '@/components/landing/contact-form';
 import { LandingStory } from '@/components/landing/landing-story';
 import { SiteHeader } from '@/components/landing/site-header';
 import { SubmifyHero } from '@/components/landing/submify-hero';
@@ -210,6 +211,28 @@ export default function HomePage() {
               </article>
             );
             })}
+          </div>
+        </section>
+
+        {/* Contact — server proxy to Nodedr (configure NODEDR_SUBMIT_PUBLIC_KEY on web) */}
+        <section
+          className={`mt-24 scroll-mt-8 ${reveal}`}
+          style={{ animationDelay: '180ms' }}
+          id="contact"
+          aria-labelledby="contact-heading"
+        >
+          <div className="mx-auto max-w-3xl text-center">
+            <h2 id="contact-heading" className="font-display text-2xl font-bold text-slate-900 sm:text-3xl">
+              Contact
+            </h2>
+            <p className="mt-3 text-slate-600">
+              Messages go through our server — your Nodedr key stays off the client. Set{' '}
+              <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">NODEDR_SUBMIT_PUBLIC_KEY</code> on the web service
+              to enable delivery.
+            </p>
+          </div>
+          <div className="mt-10">
+            <ContactForm />
           </div>
         </section>
 

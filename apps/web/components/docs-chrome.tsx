@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
 import { useEffect, useState } from 'react';
 
-const nav = [
+const defaultNav = [
   { id: 'overview', label: 'Overview' },
   { id: 'architecture', label: 'Architecture' },
   { id: 'quick-start', label: 'Quick start' },
@@ -21,7 +21,17 @@ const nav = [
   { id: 'troubleshooting', label: 'Troubleshooting' }
 ];
 
-export function DocsChrome({ children }: { children: React.ReactNode }) {
+export type DocsSidebarItem = { id: string; label: string };
+
+export function DocsChrome({
+  children,
+  sidebarSections
+}: {
+  children: React.ReactNode;
+  /** When null, the in-page sidebar is hidden (e.g. standalone guide pages). */
+  sidebarSections?: DocsSidebarItem[] | null;
+}) {
+  const nav = sidebarSections === undefined ? defaultNav : sidebarSections;
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
@@ -52,6 +62,12 @@ export function DocsChrome({ children }: { children: React.ReactNode }) {
             <span className="hidden rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-800 sm:inline">
               Documentation
             </span>
+            <Link
+              href="/docs/contact-proxy"
+              className="hidden rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-800 md:inline-flex"
+            >
+              Next.js contact proxy
+            </Link>
           </div>
           <nav className="flex flex-wrap items-center gap-2" aria-label="Documentation navigation">
             <Link
@@ -85,47 +101,49 @@ export function DocsChrome({ children }: { children: React.ReactNode }) {
       </header>
 
       <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:gap-12 lg:px-6 lg:py-12">
-        <aside className="lg:w-56 lg:shrink-0">
-          <div className="lg:sticky lg:top-8">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">On this page</p>
-            <nav className="max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-200/90 bg-white/90 p-3 shadow-lg shadow-indigo-100/30 backdrop-blur-sm">
-              <ul className="space-y-0.5">
-                {nav.map((item) => (
-                  <li key={item.id}>
-                    <a
-                      href={`#${item.id}`}
-                      className="block rounded-lg px-2.5 py-2 text-sm text-slate-600 transition hover:bg-indigo-50 hover:text-indigo-900"
-                    >
-                      {item.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-            <label className="mt-4 block lg:hidden">
-              <span className="mb-1 block text-xs font-medium text-slate-500">Jump to section</span>
-              <select
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                onChange={(e) => {
-                  const id = e.target.value;
-                  if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-                }}
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Choose…
-                </option>
-                {nav.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
+        {nav && nav.length > 0 ? (
+          <aside className="lg:w-56 lg:shrink-0">
+            <div className="lg:sticky lg:top-8">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">On this page</p>
+              <nav className="max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-200/90 bg-white/90 p-3 shadow-lg shadow-indigo-100/30 backdrop-blur-sm">
+                <ul className="space-y-0.5">
+                  {nav.map((item) => (
+                    <li key={item.id}>
+                      <a
+                        href={`#${item.id}`}
+                        className="block rounded-lg px-2.5 py-2 text-sm text-slate-600 transition hover:bg-indigo-50 hover:text-indigo-900"
+                      >
+                        {item.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+              <label className="mt-4 block lg:hidden">
+                <span className="mb-1 block text-xs font-medium text-slate-500">Jump to section</span>
+                <select
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Choose…
                   </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </aside>
+                  {nav.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </aside>
+        ) : null}
 
-        <article className="doc-prose min-w-0 flex-1 pb-16">{children}</article>
+        <article className={`doc-prose min-w-0 flex-1 pb-16 ${!nav || nav.length === 0 ? 'max-w-4xl' : ''}`}>{children}</article>
       </div>
     </div>
   );

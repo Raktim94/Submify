@@ -189,6 +189,16 @@ export default function ProjectsPage() {
             </Link>{' '}
             or bulk delete in Submissions before you hit the cap.
           </p>
+          <p className="mt-4 max-w-3xl rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-relaxed text-slate-700">
+            <strong className="text-slate-900">AI builder?</strong> If an assistant is wiring a Next.js marketing contact form, use the
+            copy-paste prompt on{' '}
+            <Link className="font-medium text-brand-700 underline" href="/docs/contact-proxy">
+              Documentation → Next.js contact proxy
+            </Link>{' '}
+            and read <strong>For AI builders</strong> first — this stack uses <code className="text-xs">POST /api/submit</code> for the{' '}
+            <strong>Go API</strong> (your project keys below), not the same path as the optional Next.js Nodedr proxy (
+            <code className="text-xs">/api/contact-submit</code>). Mixing those up can break submissions.
+          </p>
         </header>
 
         <section className="mb-8 rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 to-white p-6 shadow-md sm:p-8">

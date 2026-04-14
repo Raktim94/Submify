@@ -191,6 +191,8 @@ Values used by the **API** container (see `docker-compose.yml` and `apps/api/int
 | Variable | Typical value | Meaning |
 |----------|----------------|---------|
 | `NEXT_PUBLIC_API_BASE` | `/api/v1` | Browser-side API prefix (relative URL works behind Nginx) |
+| `NODEDR_SUBMIT_PUBLIC_KEY` | _(empty or `pk_…`)_ | Optional: server-side key for the marketing contact form proxy (`/api/contact-submit`) |
+| `NODEDR_SUBMIT_SECRET_KEY` | _(empty or `sk_…`)_ | Optional: HMAC signing for that upstream request; never commit real values |
 
 ---
 
@@ -309,6 +311,22 @@ await fetch(`${API_BASE}/submit/${API_KEY}`, {
 ### 5. Example: Next.js server action / route (keeps key out of client if you proxy)
 
 You can call Submify from **your** backend with the same `POST /submit/{key}` contract so the **api_key** never ships to the browser (implement a route that forwards the body).
+
+### 5b. Next.js marketing contact form (Nodedr hosted API proxy)
+
+This repository’s **Next.js app** (`apps/web`) includes an optional **contact form** that posts to a **Route Handler**, which forwards to **`https://api.nodedr.com/api/submit`** with **`x-api-key`** (and optional **`x-signature`** HMAC when `NODEDR_SUBMIT_SECRET_KEY` is set). Keys stay **server-side** — never use `NEXT_PUBLIC_*` for them.
+
+**Using an AI coding assistant (Cursor, Copilot, ChatGPT, etc.)?** This repo ships a **ready-made prompt** you can paste into chat to recreate or extend the same pattern in another codebase. Open the web UI at **`/docs/contact-proxy`**, go to the **Reuse prompt** section, copy the full block, replace `[path/to/site-folder]` with your project path, and follow the note about **`/api/contact-submit`** in this monorepo (the generic prompt may say `/api/submit`, which here is reserved for the **Go** API—changing nginx or routes without understanding that can break submissions). When in doubt, keep the implementation that already exists under `apps/web` and only use the prompt for **new** sites.
+
+| Item | Location |
+|------|----------|
+| Route handler | `apps/web/app/api/contact-submit/route.ts` |
+| Env template | `apps/web/.env.example` |
+| Docker / Compose | `NODEDR_SUBMIT_PUBLIC_KEY` / `NODEDR_SUBMIT_SECRET_KEY` on the **`web`** service (see `docker-compose.yml`) |
+| Nginx | `location /api/contact-submit` → **web** (before `/api/` → Go), so this path does not collide with **`POST /api/submit`** on the API |
+| Full guide + copy-paste prompt | **`/docs/contact-proxy`** in the web app (see *Next.js Nodedr contact proxy* in the docs header) |
+
+Static assets for the UI (e.g. logo under `apps/web/public/`) are **copied into the production image** — see `apps/web/Dockerfile` (`COPY ... /app/public`).
 
 ### 6. Rate limits
 
@@ -453,3 +471,4 @@ This project is licensed under **Business Source License 1.1** — see [LICENSE]
 - Repository: [https://github.com/Raktim94/Submify.git](https://github.com/Raktim94/Submify.git)
 - API detail: [docs/api.md](docs/api.md)
 - Deployment shortcuts: [docs/deployment.md](docs/deployment.md)
+- **AI builders:** Nodedr contact-proxy **copy-paste prompt** (in the running web app): `/docs/contact-proxy` → *For AI builders* / *Reuse prompt* (see [§5b](#5b-nextjs-marketing-contact-form-nodedr-hosted-api-proxy))
