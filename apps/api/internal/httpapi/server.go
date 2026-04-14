@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jung-kurt/gofpdf"
@@ -192,7 +194,167 @@ func (s *Server) UpdateStatus(c *gin.Context) {
 }
 
 func buildTelegramMessage(project db.Project, data []byte, files []byte) string {
-	return "New submission for " + project.Name + "\nData: " + string(data) + "\nFiles: " + string(files)
+	var b strings.Builder
+	b.WriteString("New submission received")
+	if name := strings.TrimSpace(project.Name); name != "" {
+		b.WriteString("\nProject: ")
+		b.WriteString(name)
+	}
+
+	if rendered := formatSubmissionData(data); rendered != "" {
+		b.WriteString("\n\nData\n")
+		b.WriteString(rendered)
+	}
+
+	b.WriteString("\n\nFiles\n")
+	b.WriteString(formatSubmissionFiles(files))
+
+	return b.String()
+}
+
+func formatSubmissionData(data []byte) string {
+	var payload map[string]interface{}
+	if len(bytes.TrimSpace(data)) == 0 || json.Unmarshal(data, &payload) != nil || len(payload) == 0 {
+		return "- (no fields)"
+	}
+
+	keys := make([]string, 0, len(payload))
+	for k := range payload {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	lines := make([]string, 0, len(keys))
+	for _, key := range keys {
+		label := humanizeFieldKey(key)
+		value := formatSubmissionValue(payload[key])
+		lines = append(lines, fmt.Sprintf("- %s: %s", label, value))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatSubmissionFiles(files []byte) string {
+	var list []interface{}
+	if len(bytes.TrimSpace(files)) == 0 || json.Unmarshal(files, &list) != nil || len(list) == 0 {
+		return "- None"
+	}
+
+	lines := make([]string, 0, len(list))
+	for _, item := range list {
+		lines = append(lines, "- "+formatFileItem(item))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatFileItem(item interface{}) string {
+	switch v := item.(type) {
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return "(empty file entry)"
+		}
+		return v
+	case map[string]interface{}:
+		name := strings.TrimSpace(stringFromMap(v, "name"))
+		url := strings.TrimSpace(stringFromMap(v, "url"))
+		if name != "" && url != "" {
+			return fmt.Sprintf("%s (%s)", name, url)
+		}
+		if url != "" {
+			return url
+		}
+		if name != "" {
+			return name
+		}
+		raw, _ := json.Marshal(v)
+		return string(raw)
+	default:
+		raw, _ := json.Marshal(v)
+		return string(raw)
+	}
+}
+
+func stringFromMap(m map[string]interface{}, key string) string {
+	raw, ok := m[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	if s, ok := raw.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", raw)
+}
+
+func formatSubmissionValue(v interface{}) string {
+	switch t := v.(type) {
+	case nil:
+		return "(empty)"
+	case string:
+		trimmed := strings.TrimSpace(t)
+		if trimmed == "" {
+			return "(empty)"
+		}
+		if strings.Contains(trimmed, "\n") {
+			chunks := strings.Split(trimmed, "\n")
+			for i := range chunks {
+				chunks[i] = strings.TrimSpace(chunks[i])
+			}
+			return strings.Join(chunks, " | ")
+		}
+		return trimmed
+	case bool:
+		if t {
+			return "Yes"
+		}
+		return "No"
+	case float64:
+		if t == float64(int64(t)) {
+			return strconv.FormatInt(int64(t), 10)
+		}
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	default:
+		raw, err := json.Marshal(t)
+		if err != nil {
+			return fmt.Sprintf("%v", t)
+		}
+		return string(raw)
+	}
+}
+
+func humanizeFieldKey(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "Field"
+	}
+
+	var b strings.Builder
+	lastWasSpace := false
+	var prev rune
+	for i, r := range key {
+		if r == '_' || r == '-' {
+			if !lastWasSpace {
+				b.WriteRune(' ')
+				lastWasSpace = true
+			}
+			prev = r
+			continue
+		}
+		if i > 0 && unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)) && !lastWasSpace {
+			b.WriteRune(' ')
+		}
+		b.WriteRune(r)
+		lastWasSpace = false
+		prev = r
+	}
+
+	parts := strings.Fields(strings.TrimSpace(b.String()))
+	for i := range parts {
+		p := strings.ToLower(parts[i])
+		if len(p) == 0 {
+			continue
+		}
+		parts[i] = strings.ToUpper(p[:1]) + p[1:]
+	}
+	return strings.Join(parts, " ")
 }
 
 // --- Export: flatten JSON `data` into spreadsheet columns (XLSX/PDF) ---
