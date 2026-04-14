@@ -27,8 +27,19 @@ export default function DashboardPage() {
   const [updateActionMsg, setUpdateActionMsg] = useState('');
   const [submissionBanner, setSubmissionBanner] = useState(false);
   const [updateBanner, setUpdateBanner] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<
+    NotificationPermission | 'unsupported' | null
+  >(null);
   const submissionNotifiedRef = useRef<string | null>(null);
   const updateNotifiedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof Notification === 'undefined') {
+      setNotificationPermission('unsupported');
+    } else {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
 
   useEffect(() => {
     setWelcomeName(localStorage.getItem('submify_user_name') || '');
@@ -138,17 +149,37 @@ export default function DashboardPage() {
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         <Nav />
 
-        <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
-          {typeof Notification !== 'undefined' && Notification.permission === 'default' ? (
-            <button
-              type="button"
-              className="text-sm font-medium text-indigo-700 underline hover:text-indigo-900"
-              onClick={() => void Notification.requestPermission()}
-            >
-              Enable desktop notifications
-            </button>
-          ) : null}
-        </div>
+        {notificationPermission !== null && notificationPermission !== 'unsupported' ? (
+          <div className="mb-6 rounded-2xl border border-indigo-200/90 bg-gradient-to-r from-indigo-50 via-white to-violet-50/80 px-4 py-4 shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">Desktop notifications</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Get alerted for new submissions and app updates when this tab is in the background.
+              </p>
+            </div>
+            <div className="mt-3 shrink-0 sm:mt-0">
+              {notificationPermission === 'default' ? (
+                <button
+                  type="button"
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-700/20 transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto"
+                  onClick={() => {
+                    void Notification.requestPermission().then((p) => setNotificationPermission(p));
+                  }}
+                >
+                  Enable notifications
+                </button>
+              ) : notificationPermission === 'granted' ? (
+                <span className="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-900">
+                  Enabled
+                </span>
+              ) : (
+                <span className="block max-w-md text-sm text-amber-900">
+                  Blocked in browser settings. Allow notifications for this site, then reload the page.
+                </span>
+              )}
+            </div>
+          </div>
+        ) : null}
 
         {submissionBanner && summary?.latest_submission ? (
           <div
@@ -225,8 +256,12 @@ export default function DashboardPage() {
               <code className="rounded bg-white px-1.5 py-0.5 text-xs">x-signature</code>) from a server.
             </li>
             <li>
-              Open <strong className="text-slate-900">Submissions</strong> per project to review rows, export, or bulk delete
-              (up to <strong className="text-slate-900">5,000</strong> per project).
+              Open{' '}
+              <Link className="font-medium text-brand-700 underline" href="/submissions">
+                Submissions
+              </Link>{' '}
+              to pick a project inbox, or use <strong className="text-slate-900">Open submissions</strong> on each project. Export
+              or bulk delete rows (up to <strong className="text-slate-900">5,000</strong> per project).
             </li>
             <li>
               Optional: <Link className="font-medium text-brand-700 underline" href="/settings">Settings</Link> for Telegram

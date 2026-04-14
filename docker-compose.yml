@@ -10,6 +10,13 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+# API: json-file limits by size, not line count (10m × 1 file).
+x-logging-api: &api-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "1"
+
 services:
   db:
     image: postgres:16-alpine
@@ -81,7 +88,7 @@ services:
       UPLOAD_ALLOWED_MIME: ${UPLOAD_ALLOWED_MIME:-image/png,image/jpeg,application/pdf,text/plain}
       PRESIGN_EXPIRY_MINUTES: ${PRESIGN_EXPIRY_MINUTES:-10}
       GIN_MODE: release
-    logging: *default-logging
+    logging: *api-logging
     depends_on:
       db:
         condition: service_healthy

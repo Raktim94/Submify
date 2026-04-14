@@ -384,7 +384,7 @@ export default function HomePage() {
         <footer className="mt-16 border-t border-slate-200/80 pt-8 text-center text-sm text-slate-500">
           <p className="mb-3">Submify — self-hosted form backend. Your keys, your storage, your rules.</p>
           <p>
-            <Link href="/docs" className="font-medium text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-900">
+            <Link href="/docs" className="font-medium text-brand-700 underline decoration-indigo-300 underline-offset-2 hover:text-brand-900">
               Full documentation
             </Link>
           </p>

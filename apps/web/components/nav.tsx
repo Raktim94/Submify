@@ -6,9 +6,22 @@ import { usePathname, useRouter } from 'next/navigation';
 const appLinks = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/projects', label: 'Projects' },
+  { href: '/submissions', label: 'Submissions' },
   { href: '/export', label: 'Export' },
   { href: '/settings', label: 'Settings' }
 ];
+
+function linkIsActive(href: string, pathname: string): boolean {
+  if (pathname === href) return true;
+  if (href === '/submissions') {
+    return pathname === '/submissions' || /\/projects\/[^/]+\/submissions/.test(pathname);
+  }
+  if (href === '/projects') {
+    return pathname.startsWith('/projects') && !pathname.includes('/submissions');
+  }
+  if (href === '/dashboard') return pathname === '/dashboard';
+  return pathname.startsWith(href);
+}
 
 export function Nav() {
   const pathname = usePathname();
@@ -37,8 +50,7 @@ export function Nav() {
         </Link>
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {appLinks.map((link) => {
-            const active =
-              pathname === link.href || (link.href !== '/dashboard' && pathname.startsWith(link.href));
+            const active = linkIsActive(link.href, pathname);
             return (
               <Link
                 key={link.href}

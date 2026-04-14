@@ -107,7 +107,7 @@ docker compose logs -f api
 docker compose logs -f nginx
 ```
 
-### 6. Quick redeploy (pull latest code, rebuild, watch API logs)
+### 6. Quick redeploy (pull latest code, rebuild, clean old images, watch API logs)
 
 On a server where you cloned the repo to `~/Submify`, use this copy-paste sequence after changes are pushed to Git:
 
@@ -115,10 +115,16 @@ On a server where you cloned the repo to `~/Submify`, use this copy-paste sequen
 cd ~/Submify
 git pull
 docker compose up --build -d
-docker compose logs -f api
+chmod +x scripts/prune-docker.sh
+./scripts/prune-docker.sh
+docker compose logs --tail 3000 -f api
 ```
 
-The last command streams API container logs (Ctrl+C to stop). Omit it if you only need a one-shot deploy.
+**Cleanup step (`prune-docker.sh`):** Removes unused Docker images and build cache so repeated rebuilds do not fill the disk. It does **not** delete volumes or your bind-mounted data — PostgreSQL submissions and MinIO files under `/var/lib/submify/data/` stay intact. Do **not** run `docker volume prune` or `docker system prune --volumes` unless you intend to wipe data (see **[Disk after many rebuilds](#operations-logs-backup-updates)**).
+
+**Logs:** `--tail 3000` limits how much **existing** log history is printed when you attach; new lines still stream until you press **Ctrl+C**. For a one-off snapshot without following, use `docker compose logs --tail 3000 api` (no `-f`).
+
+Omit the `prune` and/or `logs` lines if you only need a quick pull and rebuild.
 
 ---
 
@@ -356,16 +362,18 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 
 **Logs:** `docker compose logs -f [service]` (e.g. `docker compose logs -f api` or `nginx`)
 
-**Pull latest code, rebuild, and follow API logs** (duplicate of **Installation → Quick redeploy** for convenience):
+**Pull latest code, rebuild, prune old images, and follow API logs** (same as **Installation → Quick redeploy**):
 
 ```bash
 cd ~/Submify
 git pull
 docker compose up --build -d
-docker compose logs -f api
+chmod +x scripts/prune-docker.sh
+./scripts/prune-docker.sh
+docker compose logs --tail 3000 -f api
 ```
 
-Adjust `~/Submify` if your clone lives elsewhere.
+Adjust `~/Submify` if your clone lives elsewhere. The prune script only clears unused images/cache — **not** submission data (see comments in `scripts/prune-docker.sh`).
 
 **Backups:** Persisted data (see `docker-compose.yml`):
 
@@ -374,7 +382,7 @@ Adjust `~/Submify` if your clone lives elsewhere.
 
 Back up these directories on a schedule appropriate to your RPO/RTO.
 
-**Log size:** Each service uses Docker **`json-file`** logging with rotation (**10 MB** per file, **3** files per container by default). That caps how much log data grows on disk; tune in `docker-compose.yml` under `x-logging` if needed.
+**Log size:** Services use Docker’s **`json-file`** driver with rotation configured in `docker-compose.yml`. The **`api`** container uses **10 MB** per file, **1** file (`x-logging-api`). Other services use **10 MB** × **3** files (`x-logging`) unless you change them. Docker measures **bytes**, not lines.
 
 **Disk after many rebuilds:** New `docker compose up --build` layers live in Docker’s image/build cache, **not** in PostgreSQL. They can fill the host disk over time. Run periodically:
 
