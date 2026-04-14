@@ -16,7 +16,7 @@ FROM --platform=${TARGETPLATFORM} docker:cli AS dockercli
 
 FROM --platform=${TARGETPLATFORM} alpine:3.20
 ARG TARGETARCH
-RUN apk add --no-cache ca-certificates curl \
+RUN apk add --no-cache ca-certificates curl git \
   && mkdir -p /usr/local/lib/docker/cli-plugins \
   && case "$TARGETARCH" in \
        amd64) DARCH=x86_64 ;; \
