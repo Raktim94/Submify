@@ -139,18 +139,6 @@ export async function getMe(): Promise<MeResponse> {
 }
 
 export type DashboardSummary = {
-  update_available: boolean;
-  latest_version: string;
-  current_version: string;
-  update_trigger_enabled?: boolean;
-  update_run?: {
-    running: boolean;
-    success: boolean;
-    message: string;
-    output?: string;
-    started_at?: string;
-    ended_at?: string;
-  };
   latest_submission: {
     at: string;
     project_id: string;
@@ -158,7 +146,7 @@ export type DashboardSummary = {
   } | null;
 };
 
-/** Pass refresh=true on first load so the API contacts GitHub when needed (rate-limited server-side). */
+/** Dashboard summary includes latest submission metadata. */
 export async function getDashboardSummary(refresh = false): Promise<DashboardSummary> {
   const q = refresh ? '?refresh=1' : '';
   return api<DashboardSummary>(`/dashboard/summary${q}`);

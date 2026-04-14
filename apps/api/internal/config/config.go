@@ -4,7 +4,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type Config struct {
@@ -23,14 +22,6 @@ type Config struct {
 	// CorsPublicSubmitAnyOrigin allows any browser Origin for POST /api/submit (uses x-api-key, not cookies).
 	CorsPublicSubmitAnyOrigin bool
 	TrustedProxies            []string
-	AppVersion                   string
-	GitHubRepo                   string
-	// GitHubToken optional PAT for higher API rate limits (private repos need repo scope).
-	GitHubToken                  string
-	UpdateCheckInterval          time.Duration
-	AllowUpdateTrigger           bool
-	UpdateCommand                string
-	UpdateTimeoutMinutes         int
 	UploadMaxSizeBytes           int64
 	AllowedMIMETypes             map[string]struct{}
 	PresignExpiryMinutes         int
@@ -59,13 +50,6 @@ func Load() Config {
 		CorsAllowSameHostOrigin:     getEnvBool("CORS_ALLOW_SAME_HOST_ORIGIN", true),
 		CorsPublicSubmitAnyOrigin:   getEnvBool("CORS_PUBLIC_SUBMIT_ANY_ORIGIN", true),
 		TrustedProxies:              trusted,
-		AppVersion:                  getEnv("APP_VERSION", "0.1.0"),
-		GitHubRepo:                  getEnv("GITHUB_REPO", "Raktim94/Submify"),
-		GitHubToken:                 getEnv("GITHUB_TOKEN", ""),
-		UpdateCheckInterval:         time.Duration(getEnvInt("UPDATE_CHECK_MINUTES", 360)) * time.Minute,
-		AllowUpdateTrigger:          getEnvBool("ALLOW_UPDATE_TRIGGER", false),
-		UpdateCommand:               getEnv("UPDATE_COMMAND", "cd /stack && git -c safe.directory=/stack pull && docker compose pull && docker compose up --build -d && chmod +x scripts/prune-docker.sh && ./scripts/prune-docker.sh && (docker compose logs --tail 3000 -f api > /tmp/submify-update-api.log 2>&1 &)"),
-		UpdateTimeoutMinutes:        getEnvInt("UPDATE_TIMEOUT_MINUTES", 30),
 		UploadMaxSizeBytes:          int64(getEnvInt("UPLOAD_MAX_SIZE_BYTES", 25*1024*1024)),
 		AllowedMIMETypes:            toMIMEMap(splitCSV(getEnv("UPLOAD_ALLOWED_MIME", "image/png,image/jpeg,application/pdf,text/plain"))),
 		PresignExpiryMinutes:        getEnvInt("PRESIGN_EXPIRY_MINUTES", 10),

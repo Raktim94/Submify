@@ -130,11 +130,8 @@ func (s *Server) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up"})
 }
 
-// DashboardSummary returns update metadata plus the user's most recent submission (for dashboard notifications).
+// DashboardSummary returns the user's most recent submission (for dashboard notifications).
 func (s *Server) DashboardSummary(c *gin.Context) {
-	force := c.Query("refresh") == "1" || c.Query("refresh") == "true"
-	s.refreshGitHubVersion(force)
-
 	uid := userIDFromContext(c)
 	snap, err := s.store.LatestSubmissionSnapshotForUser(uid)
 	if err != nil {
@@ -151,29 +148,8 @@ func (s *Server) DashboardSummary(c *gin.Context) {
 		}
 	}
 
-	cfg, err := s.store.GetSystemConfig()
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			c.JSON(http.StatusOK, gin.H{
-				"update_available":       false,
-				"latest_version":         "",
-				"current_version":        s.cfg.AppVersion,
-				"update_trigger_enabled": s.cfg.AllowUpdateTrigger,
-				"latest_submission":      latestSub,
-				"update_run":             s.getUpdateRunStatus(),
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
 	c.JSON(http.StatusOK, gin.H{
-		"update_available":       cfg.UpdateAvail,
-		"latest_version":         cfg.LatestVersion,
-		"current_version":        s.cfg.AppVersion,
-		"update_trigger_enabled": s.cfg.AllowUpdateTrigger,
-		"latest_submission":      latestSub,
-		"update_run":             s.getUpdateRunStatus(),
+		"latest_submission": latestSub,
 	})
 }
 

@@ -2,17 +2,13 @@ package httpapi
 
 import (
 	"bytes"
-	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -22,7 +18,6 @@ import (
 	"github.com/nodedr/submify/apps/api/internal/config"
 	"github.com/nodedr/submify/apps/api/internal/db"
 	"github.com/nodedr/submify/apps/api/internal/telegram"
-	"github.com/nodedr/submify/apps/api/internal/update"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -30,24 +25,10 @@ type Server struct {
 	cfg                    config.Config
 	store                  *db.Store
 	tokens                 *auth.TokenManager
-	checker                *update.Checker
 	sensitivePublicLimiter *KeyedRateLimiter
 	submitLimitIP          *KeyedRateLimiter
 	submitLimitKey         *KeyedRateLimiter
 	authedUserLimiter      *KeyedRateLimiter
-	updateCheckMu          sync.Mutex
-	lastGitHubPollAt       time.Time
-	updateRunMu            sync.Mutex
-	updateRun              UpdateRunState
-}
-
-type UpdateRunState struct {
-	Running   bool
-	StartedAt time.Time
-	EndedAt   time.Time
-	Success   bool
-	Message   string
-	Output    string
 }
 
 func NewServer(cfg config.Config, store *db.Store) *Server {
@@ -59,7 +40,6 @@ func NewServer(cfg config.Config, store *db.Store) *Server {
 		cfg:                    cfg,
 		store:                  store,
 		tokens:                 auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTLMinutes, cfg.RefreshTokenTTLHours),
-		checker:                update.NewChecker(cfg.GitHubRepo, cfg.AppVersion, cfg.GitHubToken),
 		sensitivePublicLimiter: NewKeyedRateLimiter(cfg.RateLimitSensitivePublicRPM, sensBurst),
 		submitLimitIP:          NewKeyedRateLimiter(cfg.RateLimitSubmitIPRPM, subIPBurst),
 		submitLimitKey:         NewKeyedRateLimiter(cfg.RateLimitSubmitKeyRPM, subKeyBurst),
@@ -112,9 +92,7 @@ func (s *Server) Router() *gin.Engine {
 		secured.DELETE("/projects/:id/submissions/bulk", s.BulkDeleteSubmissions)
 		secured.POST("/uploads/presign", s.PresignUpload)
 		secured.GET("/projects/:id/export", s.Export)
-		secured.GET("/system/update-status", s.UpdateStatus)
 		secured.GET("/dashboard/summary", s.DashboardSummary)
-		secured.POST("/system/update-trigger", s.TriggerUpdate)
 		secured.PUT("/users/me/integrations", s.UpdateUserIntegrations)
 	}
 
@@ -122,158 +100,6 @@ func (s *Server) Router() *gin.Engine {
 }
 
 func (s *Server) StartBackgroundJobs() {
-	go func() {
-		s.refreshGitHubVersion(true)
-		ticker := time.NewTicker(s.cfg.UpdateCheckInterval)
-		defer ticker.Stop()
-		for range ticker.C {
-			s.refreshGitHubVersion(true)
-		}
-	}()
-}
-
-// refreshGitHubVersion fetches latest release/tag from GitHub and persists to system_configs.
-// When force is false, calls are throttled to at most once per 90s to avoid rate limits on dashboard refreshes.
-func (s *Server) refreshGitHubVersion(force bool) {
-	const minInterval = 90 * time.Second
-	s.updateCheckMu.Lock()
-	defer s.updateCheckMu.Unlock()
-	if !force && !s.lastGitHubPollAt.IsZero() && time.Since(s.lastGitHubPollAt) < minInterval {
-		return
-	}
-	s.lastGitHubPollAt = time.Now()
-
-	ready, err := s.store.BootstrapComplete()
-	if err != nil || !ready {
-		return
-	}
-	available, latest, err := s.checker.CheckLatest()
-	if err != nil {
-		errMsg := strings.ToLower(err.Error())
-		if strings.Contains(errMsg, "no tags") || strings.Contains(errMsg, "no release or tag found") {
-			log.Printf("update check failed for repo %q: %v", s.cfg.GitHubRepo, err)
-		} else {
-			log.Printf("update check failed for repo %q: %v (set GITHUB_REPO to your fork; add GITHUB_TOKEN if the repo is private or you hit rate limits)", s.cfg.GitHubRepo, err)
-		}
-		return
-	}
-	if err := s.store.SetUpdateStatus(available, latest); err != nil {
-		log.Printf("update status persist failed: %v", err)
-	}
-}
-
-func (s *Server) TriggerUpdate(c *gin.Context) {
-	if !s.cfg.AllowUpdateTrigger {
-		c.JSON(http.StatusConflict, gin.H{"error": "update trigger disabled in this environment"})
-		return
-	}
-	cmdText := strings.TrimSpace(s.cfg.UpdateCommand)
-	if cmdText == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "UPDATE_COMMAND is empty"})
-		return
-	}
-	s.updateRunMu.Lock()
-	if s.updateRun.Running {
-		s.updateRunMu.Unlock()
-		c.JSON(http.StatusConflict, gin.H{"error": "an update is already running"})
-		return
-	}
-	now := time.Now().UTC()
-	s.updateRun = UpdateRunState{
-		Running:   true,
-		StartedAt: now,
-		Message:   "update started",
-	}
-	s.updateRunMu.Unlock()
-
-	timeout := time.Duration(max(s.cfg.UpdateTimeoutMinutes, 1)) * time.Minute
-	go s.runUpdateCommand(cmdText, timeout)
-	c.JSON(http.StatusAccepted, gin.H{
-		"status":     "update started",
-		"started_at": now.Format(time.RFC3339),
-	})
-}
-
-func (s *Server) UpdateStatus(c *gin.Context) {
-	force := c.Query("refresh") == "1" || c.Query("refresh") == "true"
-	s.refreshGitHubVersion(force)
-	cfg, err := s.store.GetSystemConfig()
-	if err != nil {
-		if err == sql.ErrNoRows {
-			c.JSON(http.StatusOK, gin.H{
-				"update_available":        false,
-				"latest_version":          "",
-				"current_version":         s.cfg.AppVersion,
-				"update_trigger_enabled":  s.cfg.AllowUpdateTrigger,
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"update_available":       cfg.UpdateAvail,
-		"latest_version":         cfg.LatestVersion,
-		"current_version":        s.cfg.AppVersion,
-		"update_trigger_enabled": s.cfg.AllowUpdateTrigger,
-		"update_run":             s.getUpdateRunStatus(),
-	})
-}
-
-func (s *Server) runUpdateCommand(command string, timeout time.Duration) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	var cmd *exec.Cmd
-	if strings.Contains(strings.ToLower(command), "powershell") {
-		cmd = exec.CommandContext(ctx, "powershell", "-Command", command)
-	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-lc", command)
-	}
-	output, err := cmd.CombinedOutput()
-	outText := strings.TrimSpace(string(output))
-	if len(outText) > 4000 {
-		outText = outText[len(outText)-4000:]
-	}
-
-	s.updateRunMu.Lock()
-	defer s.updateRunMu.Unlock()
-	s.updateRun.Running = false
-	s.updateRun.EndedAt = time.Now().UTC()
-	s.updateRun.Output = outText
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			s.updateRun.Success = false
-			s.updateRun.Message = fmt.Sprintf("update timed out after %s", timeout)
-		} else {
-			s.updateRun.Success = false
-			s.updateRun.Message = err.Error()
-		}
-		return
-	}
-
-	s.updateRun.Success = true
-	s.updateRun.Message = "update completed successfully"
-	go s.refreshGitHubVersion(true)
-}
-
-func (s *Server) getUpdateRunStatus() gin.H {
-	s.updateRunMu.Lock()
-	defer s.updateRunMu.Unlock()
-
-	status := gin.H{
-		"running": s.updateRun.Running,
-		"success": s.updateRun.Success,
-		"message": s.updateRun.Message,
-		"output":  s.updateRun.Output,
-	}
-	if !s.updateRun.StartedAt.IsZero() {
-		status["started_at"] = s.updateRun.StartedAt.Format(time.RFC3339)
-	}
-	if !s.updateRun.EndedAt.IsZero() {
-		status["ended_at"] = s.updateRun.EndedAt.Format(time.RFC3339)
-	}
-	return status
 }
 
 func buildTelegramMessage(project db.Project, data []byte, files []byte) string {
