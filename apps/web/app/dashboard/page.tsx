@@ -232,6 +232,24 @@ export default function DashboardPage() {
           </Link>
         </section>
 
+        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+          <h2 className="font-display text-lg font-bold text-slate-900">Developer &amp; ownership</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            Submify is made by <strong className="text-slate-900">NODEDR PRIVATE LIMITED</strong>.
+          </p>
+          <ul className="mt-3 space-y-1 text-sm text-slate-700">
+            <li>
+              Lead Developer &amp; Founder: <strong className="text-slate-900">RAKTIM RANJIT</strong>
+            </li>
+            <li>
+              Website:{' '}
+              <a className="font-medium text-brand-700 underline" href="https://www.nodedr.com" target="_blank" rel="noreferrer">
+                www.nodedr.com
+              </a>
+            </li>
+          </ul>
+        </section>
+
         <div className="grid gap-6">
           <section className="flex flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
             <div className="mb-4 flex items-start justify-between gap-3">

@@ -14,7 +14,7 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
 4. [Installation (Docker Compose)](#installation-docker-compose)
 5. [URLs and ports (browser vs containers)](#urls-and-ports-browser-vs-containers)
 6. [Configuration and environment variables](#configuration-and-environment-variables)
-7. [First-time setup (`/setup`)](#first-time-setup-setup)
+7. [First-time access](#first-time-access)
 8. [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel)
 9. [API overview](#api-overview)
 10. [Connecting a client website (forms)](#connecting-a-client-website-forms)
@@ -24,6 +24,7 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
 14. [Operations: logs, backup, updates](#operations-logs-backup-updates)
 15. [Troubleshooting](#troubleshooting)
 16. [Codebase review (health check)](#codebase-review-health-check)
+17. [Developer & Ownership](#developer--ownership)
 
 ---
 
@@ -191,15 +192,9 @@ Values used by the **API** container (see `docker-compose.yml` and `apps/api/int
 
 ---
 
-## First-time setup (`/setup`)
+## First-time access
 
-On first launch, the app redirects to **`/setup`** until a system row exists in the database.
-
-You will enter:
-
-- S3-compatible endpoint, access key, secret, bucket (RustFS/MinIO endpoint from your deployment or external S3)
-- Telegram bot token and chat ID (required by the setup form; use real values or placeholders if you do not use Telegram)
-- Admin email and password (minimum 8 characters; password hashed with Argon2id)
+On first launch, create your first account via **`/register`** (or API `POST /api/v1/auth/register`).
 
 After setup:
 
@@ -207,7 +202,7 @@ After setup:
 2. Open **Dashboard** — your **form API key** is shown there (a **Default** inbox project is created for you automatically)
 3. Use that **`api_key`** on every website integration (see [Connecting a client website](#connecting-a-client-website-forms)); add more **Projects** only if you want separate legacy ingest keys or organization
 
-**Dashboard-only / no real S3:** You can enter placeholder non-empty S3 values to pass setup. JSON submissions and the dashboard will work; **health** may report S3 degraded until valid storage is configured, and **presign/upload** will not work until real S3 settings are saved under **Settings**.
+**S3 note:** JSON submissions work without S3. Configure S3 per project only when you need presigned uploads.
 
 ---
 
@@ -233,10 +228,9 @@ Summary:
 | Area | Method | Path | Auth |
 |------|--------|------|------|
 | Bootstrap | GET | `/api/v1/system/bootstrap-status` | None |
-| Setup | POST | `/api/v1/system/setup` | None (once) |
 | Health | GET | `/api/v1/system/health` | None |
-| Auth | POST | `/api/v1/auth/login`, `/auth/refresh`, `/auth/logout` | None |
-| Submit | POST | `/api/v1/submit/{key}` | Header `x-api-key` (must match path). `key` = account **`api_key`** (recommended) or a project **`public_api_key`** (legacy) |
+| Auth | POST | `/api/v1/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout` | None |
+| Submit | POST | `/api/submit` | Header `x-api-key` (project public key) |
 | Projects | GET, POST | `/api/v1/projects` | Bearer |
 | Project | PATCH | `/api/v1/projects/{id}` | Bearer |
 | Submissions | GET | `/api/v1/projects/{id}/submissions` | Bearer |
@@ -250,12 +244,7 @@ Summary:
 
 ### 1. Get your API key
 
-After login, the dashboard shows **your form API key** (also returned as `api_key` from `POST /auth/login` and `GET /auth/me`). Use the same UUID for:
-
-- The URL segment: `POST /api/v1/submit/<api_key>`
-- The **`x-api-key`** header (must **match** the path)
-
-Submissions go to your **default inbox** project. **Project-only keys** (`public_api_key` on non-default projects) still work for separate ingest endpoints if you need them.
+After login, open **Projects** and copy a project public key (`pk_live_...`). Use it as `x-api-key` when posting to `/api/submit`.
 
 ### 2. CORS for browser-based forms on another domain
 
@@ -286,9 +275,9 @@ Flat objects (without `data` / `files`) are also accepted; they are stored as th
 
 ```javascript
 const API_KEY = "<your account api_key from dashboard>";
-const API_BASE = "https://your-submify-host:2512/api/v1";
+const SUBMIT_URL = "https://your-submify-host:2512/api/submit";
 
-await fetch(`${API_BASE}/submit/${API_KEY}`, {
+await fetch(SUBMIT_URL, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -475,6 +464,16 @@ Review performed against the code in this repository (handlers, routes, middlewa
 ## License
 
 This project is licensed under **Business Source License 1.1** — see [LICENSE](LICENSE).
+
+---
+
+## Developer & Ownership
+
+Submify is made by **NODEDR PRIVATE LIMITED**.
+
+- **Lead Developer & Founder:** **RAKTIM RANJIT**
+- **Company:** NODEDR PRIVATE LIMITED
+- **Website:** [www.nodedr.com](https://www.nodedr.com)
 
 ---
 
