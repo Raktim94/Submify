@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { LandingStory } from '@/components/landing/landing-story';
+import { SiteHeader } from '@/components/landing/site-header';
+import { SubmifyGeminiHero } from '@/components/landing/submify-gemini-hero';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 function IconUser({ className }: { className?: string }) {
   return (
@@ -76,139 +79,29 @@ export default function HomePage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-slate-50 via-white to-indigo-50/30 text-slate-800">
-      {/* Ambient blobs */}
-      <div
-        className="pointer-events-none absolute -left-32 top-20 h-[420px] w-[420px] rounded-full bg-gradient-to-br from-indigo-400/30 via-violet-400/25 to-fuchsia-300/20 blur-3xl motion-reduce:animate-none animate-blob"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute -right-24 top-1/3 h-[380px] w-[380px] rounded-full bg-gradient-to-bl from-cyan-400/25 via-sky-400/20 to-indigo-300/20 blur-3xl motion-reduce:animate-none animate-blob [animation-delay:-7s]"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute bottom-0 left-1/3 h-[300px] w-[500px] -translate-x-1/2 rounded-full bg-gradient-to-t from-indigo-200/40 to-transparent blur-3xl"
-        aria-hidden
-      />
+    <div className="min-h-screen text-slate-800">
+      <SiteHeader signedIn={signedIn} />
+      <SubmifyGeminiHero />
 
-      <div className="landing-grid pointer-events-none absolute inset-0 opacity-[0.45] motion-reduce:opacity-30" aria-hidden />
+      <div className="relative overflow-hidden bg-gradient-to-b from-slate-50 via-white to-indigo-50/30">
+        <div
+          className="pointer-events-none absolute -left-32 top-20 h-[420px] w-[420px] rounded-full bg-gradient-to-br from-indigo-400/30 via-violet-400/25 to-fuchsia-300/20 blur-3xl motion-reduce:animate-none animate-blob"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute -right-24 top-1/3 h-[380px] w-[380px] rounded-full bg-gradient-to-bl from-cyan-400/25 via-sky-400/20 to-indigo-300/20 blur-3xl motion-reduce:animate-none animate-blob [animation-delay:-7s]"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute bottom-0 left-1/3 h-[300px] w-[500px] -translate-x-1/2 rounded-full bg-gradient-to-t from-indigo-200/40 to-transparent blur-3xl"
+          aria-hidden
+        />
+        <div className="landing-grid pointer-events-none absolute inset-0 opacity-[0.45] motion-reduce:opacity-30" aria-hidden />
 
-      {/* Nav */}
-      <header
-        className={`relative z-20 border-b border-slate-200/60 bg-white/70 backdrop-blur-md ${reveal}`}
-        style={{ animationDelay: '0ms' }}
-      >
-        {signedIn ? (
-          <div className="border-b border-emerald-200/80 bg-gradient-to-r from-emerald-50/95 via-teal-50/80 to-cyan-50/70">
-            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-sm sm:px-6">
-              <p className="text-emerald-950">
-                <span className="font-medium">You&apos;re signed in.</span> Open the app or read the docs — no need to log out.
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href="/dashboard"
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98]"
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  href="/docs"
-                  className="rounded-lg border border-emerald-300/80 bg-white/90 px-3 py-1.5 font-medium text-emerald-900 transition hover:bg-emerald-50"
-                >
-                  Documentation
-                </Link>
-              </div>
-            </div>
-          </div>
-        ) : null}
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link href="/" className="font-display text-xl font-bold tracking-tight text-slate-900">
-            Submify
-          </Link>
-          <nav className="flex flex-wrap items-center justify-end gap-2 sm:gap-3" aria-label="Site">
-            <Link
-              href="/docs"
-              className="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 active:scale-[0.98]"
-            >
-              Docs
-            </Link>
-            <Link
-              href="/login"
-              className="rounded-xl px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:scale-[0.98]"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/register"
-              className="relative overflow-hidden rounded-xl bg-gradient-to-r from-brand-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-indigo-500/40 active:scale-[0.98]"
-            >
-              <span className="relative z-10">Create account</span>
-              <span className="absolute inset-0 -translate-x-full animate-shimmer motion-reduce:animate-none bg-gradient-to-r from-transparent via-white/25 to-transparent" />
-            </Link>
-          </nav>
+        <main className="relative z-10 mx-auto max-w-6xl px-4 pb-24 pt-16 sm:px-6 sm:pt-20">
+        <div className={`${reveal}`} style={{ animationDelay: '0ms' }}>
+          <LandingStory />
         </div>
-      </header>
-
-      <main className="relative z-10 mx-auto max-w-6xl px-4 pb-24 pt-12 sm:px-6 sm:pt-16">
-        {/* Hero */}
-        <section className="text-center">
-          <p
-            className={`mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-200/80 bg-indigo-50/80 px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-indigo-700 shadow-sm ${reveal}`}
-            style={{ animationDelay: '80ms' }}
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:animate-none" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            </span>
-            Self-hosted · Your data stays yours
-          </p>
-
-          <h1
-            className={`font-display mx-auto max-w-4xl text-4xl font-bold leading-[1.1] tracking-tight text-slate-900 sm:text-5xl md:text-6xl ${reveal}`}
-            style={{ animationDelay: '140ms' }}
-          >
-            <span className="text-gradient animate-gradient-x bg-[length:200%_auto] motion-reduce:animate-none">
-              Forms that land
-            </span>
-            <br />
-            <span className="text-slate-900">in your inbox</span>
-          </h1>
-
-          <p
-            className={`mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-600 sm:text-xl ${reveal}`}
-            style={{ animationDelay: '220ms' }}
-          >
-            A self-hosted form backend: collect submissions from your sites, review them in a dashboard, export to{' '}
-            <span className="font-medium text-slate-800">Excel</span> or <span className="font-medium text-slate-800">PDF</span>
-            , and optionally wire <span className="font-medium text-slate-800">Telegram</span> alerts or{' '}
-            <span className="font-medium text-slate-800">S3</span>-compatible storage for large uploads.
-          </p>
-
-          <div
-            className={`mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row ${reveal}`}
-            style={{ animationDelay: '300ms' }}
-          >
-            <Link
-              href="/register"
-              className="group relative inline-flex min-w-[200px] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-r from-brand-500 via-violet-600 to-indigo-600 px-8 py-4 text-base font-semibold text-white shadow-xl shadow-indigo-500/30 transition hover:scale-[1.02] hover:shadow-indigo-500/45 active:scale-[0.98]"
-            >
-              <span className="relative z-10">Get started free</span>
-              <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 opacity-0 transition group-hover:translate-x-full group-hover:opacity-100 motion-reduce:group-hover:translate-x-0" />
-            </Link>
-            <Link
-              href="/login"
-              className="inline-flex min-w-[200px] items-center justify-center rounded-2xl border-2 border-slate-200 bg-white/80 px-8 py-4 text-base font-semibold text-slate-800 shadow-sm backdrop-blur transition hover:border-indigo-300 hover:bg-white active:scale-[0.98]"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/docs"
-              className="inline-flex min-w-[200px] items-center justify-center rounded-2xl border border-indigo-200/80 bg-indigo-50/90 px-8 py-4 text-base font-semibold text-indigo-900 shadow-sm transition hover:bg-indigo-100 active:scale-[0.98]"
-            >
-              Documentation
-            </Link>
-          </div>
-        </section>
 
         {/* Live flow strip */}
         <section
@@ -390,6 +283,7 @@ export default function HomePage() {
           </p>
         </footer>
       </main>
+      </div>
     </div>
   );
 }

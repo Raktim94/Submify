@@ -15,21 +15,66 @@ type Submission = {
   created_at: string;
 };
 
-function formatJson(value: unknown): string {
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'string') {
+/** Normalize API `data` to flat string map for table cells. */
+function dataAsFlatRecord(data: unknown): Record<string, string> {
+  const raw = normalizeDataObject(data);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    out[k] = cellString(v);
+  }
+  return out;
+}
+
+function normalizeDataObject(data: unknown): Record<string, unknown> {
+  if (data === null || data === undefined) return {};
+  if (typeof data === 'string') {
     try {
-      const parsed = JSON.parse(value) as unknown;
-      return JSON.stringify(parsed, null, 2);
+      const p = JSON.parse(data) as unknown;
+      if (p && typeof p === 'object' && !Array.isArray(p)) return p as Record<string, unknown>;
     } catch {
-      return value;
+      return { message: data };
     }
+    return {};
   }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
+  if (typeof data === 'object' && !Array.isArray(data)) return data as Record<string, unknown>;
+  return { value: data };
+}
+
+function cellString(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
+function filesSummary(files: unknown): string {
+  if (files === null || files === undefined) return '';
+  if (Array.isArray(files)) return files.length === 0 ? '—' : `${files.length} file(s)`;
+  return cellString(files);
+}
+
+function buildCsv(items: Submission[], dataKeys: string[]): string {
+  const baseCols = ['submitted_at', 'submission_id', 'client_ip', 'user_agent'];
+  const cols = [...baseCols, ...dataKeys, 'files'];
+
+  const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+
+  const lines: string[] = [];
+  lines.push(cols.map(esc).join(','));
+
+  for (const item of items) {
+    const d = dataAsFlatRecord(item.data);
+    const row = cols.map((c) => {
+      if (c === 'submitted_at') return new Date(item.created_at).toISOString();
+      if (c === 'submission_id') return item.id;
+      if (c === 'client_ip') return item.client_ip ?? '';
+      if (c === 'user_agent') return item.user_agent ?? '';
+      if (c === 'files') return filesSummary(item.files);
+      return d[c] ?? '';
+    });
+    lines.push(row.map(esc).join(','));
   }
+
+  return '\uFEFF' + lines.join('\n');
 }
 
 export default function SubmissionsPage() {
@@ -40,6 +85,14 @@ export default function SubmissionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [projectName, setProjectName] = useState('');
+
+  const dataKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const item of items) {
+      Object.keys(dataAsFlatRecord(item.data)).forEach((k) => keys.add(k));
+    }
+    return Array.from(keys).sort((a, b) => a.localeCompare(b));
+  }, [items]);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -78,9 +131,36 @@ export default function SubmissionsPage() {
     await load();
   }
 
+  function downloadPageCsv() {
+    const csv = buildCsv(items, dataKeys);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const safeName = (projectName || 'project').replace(/[^\w\-]+/g, '_').slice(0, 40);
+    a.download = `submissions-${safeName}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  const allSelected =
+    items.length > 0 && items.every((i) => selected[i.id]);
+  const someSelected = items.some((i) => selected[i.id]);
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelected({});
+    } else {
+      const next: Record<string, boolean> = {};
+      items.forEach((i) => {
+        next[i.id] = true;
+      });
+      setSelected(next);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-indigo-50/40">
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <div className="mx-auto max-w-[100rem] px-4 py-8 sm:px-6">
         <Nav />
 
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -99,11 +179,11 @@ export default function SubmissionsPage() {
         </div>
 
         <p className="mb-6 rounded-xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
-          Limit is <strong>5,000</strong> submissions per project. Export from{' '}
+          Limit is <strong>5,000</strong> submissions per project. For full exports (XLSX/PDF) use{' '}
           <Link href="/export" className="font-medium text-amber-900 underline">
             Export
-          </Link>{' '}
-          before bulk delete when near the cap.
+          </Link>
+          . The table below shows up to <strong>200</strong> rows per load; download CSV for this page anytime.
         </p>
 
         {loading ? (
@@ -117,17 +197,25 @@ export default function SubmissionsPage() {
           </div>
         ) : (
           <>
-            <div className="mb-6 flex flex-wrap items-center gap-3">
+            <div className="mb-4 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 className="rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-900 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => void bulkDelete()}
-                disabled={Object.values(selected).every((v) => !v)}
+                disabled={!someSelected}
               >
                 Bulk delete selected
               </button>
+              <button
+                type="button"
+                className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={downloadPageCsv}
+                disabled={items.length === 0}
+              >
+                Download CSV (this page)
+              </button>
               <span className="text-sm text-slate-500">
-                {items.length} row{items.length === 1 ? '' : 's'} loaded (max 200 per request)
+                {items.length} row{items.length === 1 ? '' : 's'} · {dataKeys.length} field column{dataKeys.length === 1 ? '' : 's'}
               </span>
             </div>
 
@@ -139,47 +227,85 @@ export default function SubmissionsPage() {
                   with header <code className="rounded bg-white px-1.5 py-0.5 font-mono text-xs">x-api-key</code> set to this
                   project&apos;s public key.
                 </p>
-                <Link href="/projects" className="mt-6 inline-flex rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">
+                <Link
+                  href="/projects"
+                  className="mt-6 inline-flex rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+                >
                   Back to projects
                 </Link>
               </div>
             ) : (
-              <div className="space-y-4">
-                {items.map((item) => (
-                  <article
-                    key={item.id}
-                    className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-md shadow-slate-200/40"
-                  >
-                    <label className="mb-3 flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
-                      <input
-                        checked={!!selected[item.id]}
-                        onChange={(e) => setSelected((prev) => ({ ...prev, [item.id]: e.target.checked }))}
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                      />
-                      Select for delete
-                    </label>
-                    <p className="text-xs font-mono text-slate-500">ID: {item.id}</p>
-                    <p className="text-xs text-slate-600">{new Date(item.created_at).toLocaleString()}</p>
-                    {(item.client_ip || item.user_agent) && (
-                      <p className="mt-2 text-xs text-slate-600">
-                        {item.client_ip ? `IP: ${item.client_ip}` : ''}
-                        {item.client_ip && item.user_agent ? ' · ' : ''}
-                        {item.user_agent ? `UA: ${item.user_agent}` : ''}
-                      </p>
-                    )}
-                    <div className="mt-3 space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Data</p>
-                      <pre className="max-h-64 overflow-auto rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs leading-relaxed text-slate-800">
-                        {formatJson(item.data)}
-                      </pre>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Files</p>
-                      <pre className="max-h-48 overflow-auto rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs leading-relaxed text-slate-800">
-                        {formatJson(item.files)}
-                      </pre>
-                    </div>
-                  </article>
-                ))}
+              <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-lg shadow-slate-200/50">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50">
+                        <th className="w-10 border-r border-slate-200 bg-slate-50 px-2 py-3">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={toggleSelectAll}
+                            className="h-4 w-4 rounded border-slate-300 text-brand-600"
+                            aria-label="Select all"
+                          />
+                        </th>
+                        <th className="whitespace-nowrap px-3 py-3 font-semibold text-slate-800">Submitted</th>
+                        <th className="whitespace-nowrap px-3 py-3 font-semibold text-slate-800">IP</th>
+                        {dataKeys.map((key) => (
+                          <th key={key} className="min-w-[8rem] whitespace-nowrap px-3 py-3 font-semibold text-slate-800">
+                            {key}
+                          </th>
+                        ))}
+                        <th className="whitespace-nowrap px-3 py-3 font-semibold text-slate-800">Files</th>
+                        <th className="whitespace-nowrap px-3 py-3 font-semibold text-slate-800">Raw</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => {
+                        const flat = dataAsFlatRecord(item.data);
+                        return (
+                          <tr key={item.id} className="border-b border-slate-100 hover:bg-indigo-50/40">
+                            <td className="border-r border-slate-100 bg-white px-2 py-2 align-top">
+                              <input
+                                type="checkbox"
+                                checked={!!selected[item.id]}
+                                onChange={(e) =>
+                                  setSelected((prev) => ({ ...prev, [item.id]: e.target.checked }))
+                                }
+                                className="h-4 w-4 rounded border-slate-300 text-brand-600"
+                                aria-label={`Select ${item.id}`}
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 align-top text-slate-700">
+                              {new Date(item.created_at).toLocaleString()}
+                            </td>
+                            <td className="max-w-[9rem] truncate px-3 py-2 align-top text-slate-600" title={item.client_ip}>
+                              {item.client_ip ?? '—'}
+                            </td>
+                            {dataKeys.map((key) => (
+                              <td key={key} className="max-w-[14rem] px-3 py-2 align-top text-slate-800">
+                                <span className="line-clamp-4 break-words" title={flat[key]}>
+                                  {flat[key] === '' ? '—' : flat[key]}
+                                </span>
+                              </td>
+                            ))}
+                            <td className="whitespace-nowrap px-3 py-2 align-top text-slate-600">{filesSummary(item.files)}</td>
+                            <td className="px-2 py-1 align-top">
+                              <details className="text-xs">
+                                <summary className="cursor-pointer font-medium text-indigo-700 hover:text-indigo-900">
+                                  JSON
+                                </summary>
+                                <pre className="mt-2 max-h-48 max-w-xs overflow-auto rounded-lg bg-slate-900 p-2 text-[11px] text-slate-100">
+                                  {JSON.stringify({ data: normalizeDataObject(item.data), files: item.files }, null, 2)}
+                                </pre>
+                              </details>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </>

@@ -3,9 +3,11 @@ package httpapi
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -193,32 +195,125 @@ func buildTelegramMessage(project db.Project, data []byte, files []byte) string 
 	return "New submission for " + project.Name + "\nData: " + string(data) + "\nFiles: " + string(files)
 }
 
+// --- Export: flatten JSON `data` into spreadsheet columns (XLSX/PDF) ---
+
+func parseDataFields(data json.RawMessage) map[string]string {
+	out := make(map[string]string)
+	if len(data) == 0 {
+		return out
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		out["_data_raw"] = string(data)
+		return out
+	}
+	for k, v := range raw {
+		out[k] = valueToExportCell(v)
+	}
+	return out
+}
+
+func valueToExportCell(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return t
+	case bool:
+		return strconv.FormatBool(t)
+	case float64:
+		if t == float64(int64(t)) {
+			return strconv.FormatInt(int64(t), 10)
+		}
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case json.Number:
+		return t.String()
+	default:
+		b, err := json.Marshal(t)
+		if err != nil {
+			return ""
+		}
+		return string(b)
+	}
+}
+
+func collectExportDataKeys(rows []db.Submission) []string {
+	seen := make(map[string]bool)
+	for _, row := range rows {
+		for k := range parseDataFields(row.Data) {
+			if !seen[k] {
+				seen[k] = true
+			}
+		}
+	}
+	keys := make([]string, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func exportHeaders(dataKeys []string) []string {
+	h := make([]string, 0, 2+len(dataKeys)+4)
+	h = append(h, "ID", "ProjectID")
+	h = append(h, dataKeys...)
+	h = append(h, "Files", "ClientIP", "UserAgent", "CreatedAt")
+	return h
+}
+
+func exportRowStrings(row db.Submission, dataKeys []string) []string {
+	fields := parseDataFields(row.Data)
+	out := make([]string, 0, 2+len(dataKeys)+4)
+	out = append(out, row.ID, row.ProjectID)
+	for _, k := range dataKeys {
+		out = append(out, fields[k])
+	}
+	out = append(out, string(row.Files))
+	ip := ""
+	if row.ClientIP != nil {
+		ip = *row.ClientIP
+	}
+	ua := ""
+	if row.UserAgent != nil {
+		ua = *row.UserAgent
+	}
+	out = append(out, ip, ua, row.CreatedAt.UTC().Format(time.RFC3339))
+	return out
+}
+
+func truncatePDF(s string, max int) string {
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) <= max {
+		return s
+	}
+	if max < 4 {
+		return s[:max]
+	}
+	return s[:max-1] + "…"
+}
+
 func writeExcel(rows []db.Submission) ([]byte, error) {
+	dataKeys := collectExportDataKeys(rows)
+	headers := exportHeaders(dataKeys)
+
 	f := excelize.NewFile()
 	sheet := "Submissions"
 	f.SetSheetName("Sheet1", sheet)
-	headers := []string{"ID", "ProjectID", "Data", "Files", "ClientIP", "UserAgent", "CreatedAt"}
+
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet, cell, h)
 	}
-	for i, row := range rows {
-		idx := i + 2
-		f.SetCellValue(sheet, "A"+strconv.Itoa(idx), row.ID)
-		f.SetCellValue(sheet, "B"+strconv.Itoa(idx), row.ProjectID)
-		f.SetCellValue(sheet, "C"+strconv.Itoa(idx), string(row.Data))
-		f.SetCellValue(sheet, "D"+strconv.Itoa(idx), string(row.Files))
-		ip := ""
-		if row.ClientIP != nil {
-			ip = *row.ClientIP
+	for ri, row := range rows {
+		rIdx := ri + 2
+		vals := exportRowStrings(row, dataKeys)
+		for ci, v := range vals {
+			cell, _ := excelize.CoordinatesToCellName(ci+1, rIdx)
+			_ = f.SetCellStr(sheet, cell, v)
 		}
-		ua := ""
-		if row.UserAgent != nil {
-			ua = *row.UserAgent
-		}
-		f.SetCellValue(sheet, "E"+strconv.Itoa(idx), ip)
-		f.SetCellValue(sheet, "F"+strconv.Itoa(idx), ua)
-		f.SetCellValue(sheet, "G"+strconv.Itoa(idx), row.CreatedAt.Format(time.RFC3339))
 	}
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
@@ -228,23 +323,53 @@ func writeExcel(rows []db.Submission) ([]byte, error) {
 }
 
 func writePDF(rows []db.Submission) ([]byte, error) {
-	pdf := gofpdf.New("P", "mm", "A4", "")
+	dataKeys := collectExportDataKeys(rows)
+	headers := exportHeaders(dataKeys)
+
+	pdf := gofpdf.New("L", "mm", "A4", "")
+	pdf.SetAutoPageBreak(true, 12)
 	pdf.AddPage()
-	pdf.SetFont("Arial", "", 10)
-	pdf.MultiCell(0, 6, "Submify Submission Export", "", "L", false)
-	for _, row := range rows {
-		line := row.ID + " | " + row.CreatedAt.Format(time.RFC3339)
-		pdf.MultiCell(0, 5, line, "", "L", false)
-		if row.ClientIP != nil {
-			pdf.MultiCell(0, 5, "IP: "+*row.ClientIP, "", "L", false)
-		}
-		if row.UserAgent != nil {
-			pdf.MultiCell(0, 5, "UA: "+*row.UserAgent, "", "L", false)
-		}
-		pdf.MultiCell(0, 5, "Data: "+string(row.Data), "", "L", false)
-		pdf.MultiCell(0, 5, "Files: "+string(row.Files), "", "L", false)
-		pdf.Ln(2)
+
+	margin := 8.0
+	pageW := 297.0 - 2*margin
+	colW := pageW / float64(max(len(headers), 1))
+	rowH := 5.5
+	hdrH := 6.0
+	fontSize := 7.0
+	if colW >= 22 {
+		fontSize = 8.0
+	} else if colW < 14 {
+		fontSize = 6.0
+		rowH = 5.0
 	}
+
+	pdf.SetMargins(margin, margin, margin)
+
+	drawHeader := func() {
+		pdf.SetFont("Arial", "B", fontSize+0.5)
+		for _, h := range headers {
+			pdf.CellFormat(colW, hdrH, truncatePDF(h, 36), "1", 0, "CM", true, 0, "")
+		}
+		pdf.Ln(-1)
+		pdf.SetFont("Arial", "", fontSize)
+	}
+
+	pdf.SetFillColor(240, 242, 252)
+	drawHeader()
+	pdf.SetFillColor(255, 255, 255)
+
+	for _, row := range rows {
+		if pdf.GetY()+rowH > 200 {
+			pdf.AddPage()
+			drawHeader()
+		}
+		vals := exportRowStrings(row, dataKeys)
+		for _, v := range vals {
+			pdf.CellFormat(colW, rowH, truncatePDF(v, 90), "1", 0, "LM", false, 0, "")
+		}
+		pdf.Ln(-1)
+	}
+
 	buf := bytes.NewBuffer(nil)
 	if err := pdf.Output(buf); err != nil {
 		return nil, err
