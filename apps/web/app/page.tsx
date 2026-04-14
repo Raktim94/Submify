@@ -1,6 +1,5 @@
 'use client';
 
-import { ContactForm } from '@/components/landing/contact-form';
 import { LandingStory } from '@/components/landing/landing-story';
 import { SiteHeader } from '@/components/landing/site-header';
 import { SubmifyHero } from '@/components/landing/submify-hero';
@@ -214,7 +213,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Contact — server proxy to Nodedr (configure NODEDR_SUBMIT_PUBLIC_KEY on web) */}
+        {/* Contact redirect */}
         <section
           className={`mt-24 scroll-mt-8 ${reveal}`}
           style={{ animationDelay: '180ms' }}
@@ -226,13 +225,21 @@ export default function HomePage() {
               Contact
             </h2>
             <p className="mt-3 text-slate-600">
-              Messages go through our server — your Nodedr key stays off the client. Set{' '}
-              <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">NODEDR_SUBMIT_PUBLIC_KEY</code> on the web service
-              to enable delivery.
+              For business enquiries, partnerships, enterprise support, or custom development, contact our team directly.
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              You will be redirected to the official NodeDr contact page.
             </p>
           </div>
-          <div className="mt-10">
-            <ContactForm />
+          <div className="mt-8 flex justify-center">
+            <a
+              href="https://www.nodedr.com/contactus"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-w-[220px] items-center justify-center rounded-xl bg-gradient-to-r from-brand-700 via-violet-700 to-indigo-800 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-indigo-200/60 transition hover:opacity-95 active:scale-[0.98]"
+            >
+              Go to NodeDr Contact Page
+            </a>
           </div>
         </section>
 
@@ -299,6 +306,28 @@ export default function HomePage() {
 
         <footer className="mt-16 border-t border-slate-200/80 pt-8 text-center text-sm text-slate-500">
           <p className="mb-3">Submify — self-hosted form backend. Your keys, your storage, your rules.</p>
+          <p className="mx-auto mb-3 max-w-3xl leading-relaxed">
+            Built for teams that want data sovereignty, predictable costs, and full control of their form pipeline without platform lock-in.
+          </p>
+          <p className="mb-2 text-slate-600">
+            Made by <strong className="text-slate-800">NODEDR PRIVATE LIMITED</strong>.
+          </p>
+          <p className="mb-3 text-slate-600">
+            <strong className="text-slate-800">RAKTIM RANJIT</strong> — Lead Developer &amp; Founder
+          </p>
+          <p className="mb-4">
+            <a
+              href="https://www.nodedr.com"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-brand-700 underline decoration-indigo-300 underline-offset-2 hover:text-brand-900"
+            >
+              www.nodedr.com
+            </a>
+          </p>
+          <p className="mb-3 text-xs text-slate-500">
+            Copyright © {new Date().getFullYear()} NODEDR PRIVATE LIMITED. All rights reserved.
+          </p>
           <p>
             <Link href="/docs" className="font-medium text-brand-700 underline decoration-indigo-300 underline-offset-2 hover:text-brand-900">
               Full documentation
