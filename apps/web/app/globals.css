@@ -18,6 +18,58 @@ button {
   @apply rounded-md bg-brand-500 px-4 py-2 text-white hover:bg-brand-700;
 }
 
+/* Documentation typography (Tailwind @apply in components) */
+@layer components {
+  .doc-prose {
+    @apply text-slate-700 leading-relaxed;
+  }
+  .doc-prose h1 {
+    @apply font-display text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl;
+  }
+  .doc-prose h2 {
+    @apply font-display mt-14 scroll-mt-28 border-b border-slate-200 pb-3 text-2xl font-bold text-slate-900 first:mt-0;
+  }
+  .doc-prose h3 {
+    @apply mt-8 text-lg font-semibold text-slate-900;
+  }
+  .doc-prose p {
+    @apply mt-4 text-base;
+  }
+  .doc-prose ul {
+    @apply mt-4 list-disc space-y-2 pl-6;
+  }
+  .doc-prose ol {
+    @apply mt-4 list-decimal space-y-2 pl-6;
+  }
+  .doc-prose li {
+    @apply marker:text-indigo-500;
+  }
+  .doc-prose code {
+    @apply rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-sm text-indigo-900;
+  }
+  .doc-prose pre {
+    @apply mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-900 p-4 text-sm text-slate-100 shadow-inner;
+  }
+  .doc-prose pre code {
+    @apply bg-transparent p-0 text-slate-100;
+  }
+  .doc-prose table {
+    @apply mt-4 w-full border-collapse overflow-hidden rounded-xl border border-slate-200 text-sm;
+  }
+  .doc-prose th {
+    @apply bg-slate-100 px-4 py-3 text-left font-semibold text-slate-800;
+  }
+  .doc-prose td {
+    @apply border-t border-slate-200 px-4 py-3;
+  }
+  .doc-prose a {
+    @apply font-medium text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-900;
+  }
+  .doc-prose .callout {
+    @apply mt-4 rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 to-violet-50/80 px-5 py-4 text-sm text-indigo-950 shadow-sm;
+  }
+}
+
 @layer utilities {
   .landing-grid {
     background-image:

@@ -32,7 +32,21 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md p-6">
+    <main className="relative min-h-screen bg-gradient-to-b from-slate-50 via-white to-violet-50/40">
+      <div className="mx-auto flex max-w-md flex-col px-6 pb-12 pt-8">
+        <div className="mb-8 flex items-center justify-between gap-3 text-sm">
+          <Link href="/" className="font-display font-bold text-slate-900 hover:text-brand-700">
+            Submify
+          </Link>
+          <div className="flex gap-3">
+            <Link href="/docs" className="font-medium text-slate-600 hover:text-indigo-700">
+              Docs
+            </Link>
+            <Link href="/" className="font-medium text-slate-600 hover:text-indigo-700">
+              Home
+            </Link>
+          </div>
+        </div>
       <h1 className="mb-2 text-3xl font-bold">Create account</h1>
       <p className="mb-6 text-slate-600">
         Already have an account?{' '}
@@ -58,6 +72,7 @@ export default function RegisterPage() {
         </button>
       </form>
       {error && <pre className="mt-4 whitespace-pre-wrap rounded-md bg-red-100 p-3 text-sm text-red-700">{error}</pre>}
+      </div>
     </main>
   );
 }

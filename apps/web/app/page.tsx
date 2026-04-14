@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
 function IconUser({ className }: { className?: string }) {
   return (
@@ -51,18 +50,15 @@ const reveal =
   'opacity-0 motion-reduce:opacity-100 motion-reduce:translate-y-0 animate-fade-in-up motion-reduce:animate-none';
 
 export default function HomePage() {
-  const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
   const [activeFlow, setActiveFlow] = useState(0);
 
   useEffect(() => {
     const token = localStorage.getItem('submify_access_token');
-    if (token) {
-      router.replace('/dashboard');
-      return;
-    }
+    setSignedIn(!!token?.trim());
     setReady(true);
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -102,11 +98,40 @@ export default function HomePage() {
         className={`relative z-20 border-b border-slate-200/60 bg-white/70 backdrop-blur-md ${reveal}`}
         style={{ animationDelay: '0ms' }}
       >
+        {signedIn ? (
+          <div className="border-b border-emerald-200/80 bg-gradient-to-r from-emerald-50/95 via-teal-50/80 to-cyan-50/70">
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-sm sm:px-6">
+              <p className="text-emerald-950">
+                <span className="font-medium">You&apos;re signed in.</span> Open the app or read the docs — no need to log out.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href="/dashboard"
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98]"
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  href="/docs"
+                  className="rounded-lg border border-emerald-300/80 bg-white/90 px-3 py-1.5 font-medium text-emerald-900 transition hover:bg-emerald-50"
+                >
+                  Documentation
+                </Link>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <Link href="/" className="font-display text-xl font-bold tracking-tight text-slate-900">
             Submify
           </Link>
-          <nav className="flex items-center gap-2 sm:gap-3" aria-label="Account">
+          <nav className="flex flex-wrap items-center justify-end gap-2 sm:gap-3" aria-label="Site">
+            <Link
+              href="/docs"
+              className="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 active:scale-[0.98]"
+            >
+              Docs
+            </Link>
             <Link
               href="/login"
               className="rounded-xl px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 active:scale-[0.98]"
@@ -175,6 +200,12 @@ export default function HomePage() {
               className="inline-flex min-w-[200px] items-center justify-center rounded-2xl border-2 border-slate-200 bg-white/80 px-8 py-4 text-base font-semibold text-slate-800 shadow-sm backdrop-blur transition hover:border-indigo-300 hover:bg-white active:scale-[0.98]"
             >
               Sign in
+            </Link>
+            <Link
+              href="/docs"
+              className="inline-flex min-w-[200px] items-center justify-center rounded-2xl border border-indigo-200/80 bg-indigo-50/90 px-8 py-4 text-base font-semibold text-indigo-900 shadow-sm transition hover:bg-indigo-100 active:scale-[0.98]"
+            >
+              Documentation
             </Link>
           </div>
         </section>
@@ -351,7 +382,12 @@ export default function HomePage() {
         </section>
 
         <footer className="mt-16 border-t border-slate-200/80 pt-8 text-center text-sm text-slate-500">
-          <p>Submify — self-hosted form backend. Your keys, your storage, your rules.</p>
+          <p className="mb-3">Submify — self-hosted form backend. Your keys, your storage, your rules.</p>
+          <p>
+            <Link href="/docs" className="font-medium text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-900">
+              Full documentation
+            </Link>
+          </p>
         </footer>
       </main>
     </div>

@@ -17,7 +17,7 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: 'Submify — Self-hosted form backend',
   description:
-    'Collect submissions from your sites, review them in a dashboard, export to Excel or PDF, with optional Telegram and S3.'
+    'Collect submissions from your sites, review them in a dashboard, export to Excel or PDF, with optional Telegram and S3. Documentation at /docs.'
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

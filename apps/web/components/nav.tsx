@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 
-const links = [
+const appLinks = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/projects', label: 'Projects' },
   { href: '/export', label: 'Export' },
@@ -15,17 +15,30 @@ export function Nav() {
   const router = useRouter();
 
   return (
-    <nav className="mb-8 rounded-2xl border border-slate-200/90 bg-white/95 p-3 shadow-sm backdrop-blur-sm">
-      <div className="flex flex-wrap items-center gap-2">
+    <nav className="mb-8 overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-lg shadow-indigo-100/40 backdrop-blur-md">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-50/50 via-transparent to-violet-50/30" aria-hidden />
+      <div className="relative flex flex-wrap items-center gap-2 p-3">
         <Link
-          href="/dashboard"
-          className="font-display mr-1 shrink-0 rounded-lg px-2 py-1.5 text-lg font-bold tracking-tight text-brand-700 hover:bg-brand-50"
+          href="/"
+          className="font-display mr-1 shrink-0 rounded-lg px-2 py-1.5 text-lg font-bold tracking-tight text-brand-700 transition hover:bg-brand-50"
+          title="Marketing home & documentation"
         >
           Submify
         </Link>
+        <Link
+          href="/docs"
+          className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+            pathname === '/docs' || pathname.startsWith('/docs/')
+              ? 'bg-indigo-100 text-indigo-900 shadow-sm'
+              : 'border border-slate-200/90 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/80'
+          }`}
+        >
+          Docs
+        </Link>
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-          {links.map((link) => {
-            const active = pathname === link.href || (link.href !== '/dashboard' && pathname.startsWith(link.href));
+          {appLinks.map((link) => {
+            const active =
+              pathname === link.href || (link.href !== '/dashboard' && pathname.startsWith(link.href));
             return (
               <Link
                 key={link.href}
@@ -41,20 +54,28 @@ export function Nav() {
             );
           })}
         </div>
-        <button
-          type="button"
-          className="ml-auto rounded-lg border border-slate-300 bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          onClick={() => {
-            localStorage.removeItem('submify_access_token');
-            localStorage.removeItem('submify_refresh_token');
-            localStorage.removeItem('submify_user_api_key');
-            localStorage.removeItem('submify_user_name');
-            localStorage.removeItem('submify_user_phone');
-            router.push('/login');
-          }}
-        >
-          Log out
-        </button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Link
+            href="/"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-indigo-200 hover:bg-slate-50"
+          >
+            Home
+          </Link>
+          <button
+            type="button"
+            className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
+            onClick={() => {
+              localStorage.removeItem('submify_access_token');
+              localStorage.removeItem('submify_refresh_token');
+              localStorage.removeItem('submify_user_api_key');
+              localStorage.removeItem('submify_user_name');
+              localStorage.removeItem('submify_user_phone');
+              router.push('/');
+            }}
+          >
+            Log out
+          </button>
+        </div>
       </div>
     </nav>
   );
