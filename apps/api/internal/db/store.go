@@ -36,6 +36,7 @@ type Project struct {
 	ID             string    `json:"id"`
 	UserID         string    `json:"user_id"`
 	Name           string    `json:"name"`
+	IsDefault      bool      `json:"is_default"`
 	APIKey         string    `json:"api_key"`
 	APISecret      string    `json:"api_secret"`
 	AllowedOrigins []string  `json:"allowed_origins,omitempty"`
@@ -277,7 +278,7 @@ func (s *Store) UpdateUserIntegrations(userID, telegramToken, telegramChatID, s3
 	return err
 }
 
-const projectSelect = `id, user_id, name, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), created_at`
+const projectSelect = `id, user_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {
 	s = strings.TrimSpace(s)
@@ -294,7 +295,7 @@ func parseOriginsJSON(s string) ([]string, error) {
 func projectFromRow(row *sql.Row) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -312,7 +313,7 @@ func projectFromRow(row *sql.Row) (Project, error) {
 func projectFromRows(rows *sql.Rows) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.CreatedAt)
+	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -583,5 +584,24 @@ func (s *Store) DeleteSubmissions(projectID string, ids []string) (int64, error)
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+func (s *Store) DeleteProject(userID, projectID string) error {
+	p, err := s.ProjectOwnedBy(userID, projectID)
+	if err != nil {
+		return err
+	}
+	if p.IsDefault {
+		return errors.New("cannot delete default project")
+	}
+	res, err := s.DB.Exec(`DELETE FROM projects WHERE id=$1 AND user_id=$2`, projectID, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 

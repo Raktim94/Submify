@@ -366,6 +366,23 @@ func (s *Server) UpdateProject(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "updated", "project": p})
 }
 
+func (s *Server) DeleteProject(c *gin.Context) {
+	id := c.Param("id")
+	userID := userIDFromContext(c)
+
+	if err := s.store.DeleteProject(userID, id); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		} else if strings.Contains(strings.ToLower(err.Error()), "cannot delete default project") {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+}
+
 func (s *Server) Submit(c *gin.Context) {
 	max := s.cfg.SubmitMaxBodyBytes
 	if max < 1024 {

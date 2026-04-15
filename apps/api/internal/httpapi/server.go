@@ -87,6 +87,7 @@ func (s *Server) Router() *gin.Engine {
 		secured.GET("/projects", s.ListProjects)
 		secured.POST("/projects", s.CreateProject)
 		secured.PATCH("/projects/:id", s.UpdateProject)
+		secured.DELETE("/projects/:id", s.DeleteProject)
 		secured.GET("/projects/:id/submissions", s.ListSubmissions)
 		secured.DELETE("/projects/:id/submissions/bulk", s.BulkDeleteSubmissions)
 		secured.POST("/uploads/presign", s.PresignUpload)

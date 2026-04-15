@@ -152,6 +152,16 @@ Requires completed setup (`SetupGuard`). Without setup, secured routes return `5
 
 **Response:** `200` `{ "status": "updated" }`
 
+### `DELETE /projects/{id}`
+
+Deletes a project and **all of its submissions**. This is irreversible.
+
+Notes:
+
+- The user’s **default** project cannot be deleted (returns `400`).
+
+**Response:** `200` `{ "status": "deleted" }`
+
 ### `GET /projects/{id}/submissions`
 
 **Query:** `limit` (default 50, max 500), `offset` (default 0)

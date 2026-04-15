@@ -9,6 +9,7 @@ import { NODEDR_CONTACT_PROXY_REUSE_PROMPT } from '../../lib/nodedrContactProxyR
 type Project = {
   id: string;
   name: string;
+  is_default: boolean;
   api_key: string;
   api_secret: string;
   allowed_origins?: string[];
@@ -38,7 +39,8 @@ function ProjectCard({
   onSaveTelegram,
   onClearTelegram,
   onSaveS3,
-  onClearS3
+  onClearS3,
+  onDelete
 }: {
   project: Project;
   onRegenerate: () => void;
@@ -47,6 +49,7 @@ function ProjectCard({
   onClearTelegram: () => Promise<void>;
   onSaveS3: (endpoint: string, bucket: string, accessKey: string, secretKey: string) => Promise<void>;
   onClearS3: () => Promise<void>;
+  onDelete: () => Promise<void>;
 }) {
   const [originsDraft, setOriginsDraft] = useState(() => JSON.stringify(p.allowed_origins ?? [], null, 2));
   const [telegramChatDraft, setTelegramChatDraft] = useState(() => p.telegram_chat_id ?? '');
@@ -244,6 +247,15 @@ function ProjectCard({
           >
             Regenerate keys
           </button>
+          <button
+            type="button"
+            className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-900 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => void onDelete()}
+            disabled={p.is_default}
+            title={p.is_default ? 'Default project cannot be deleted' : 'Delete this project'}
+          >
+            Delete project
+          </button>
           <Link
             className="inline-flex items-center justify-center rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
             href={`/projects/${p.id}/submissions`}
@@ -363,6 +375,21 @@ export default function ProjectsPage() {
       method: 'PATCH',
       body: JSON.stringify({ s3_endpoint: '', s3_bucket: '', s3_access_key: '', s3_secret_key: '' })
     });
+    await load();
+  }
+
+  async function deleteProject(id: string, name: string, isDefault: boolean) {
+    if (isDefault) {
+      alert('You cannot delete the default project.');
+      return;
+    }
+    const first = confirm(
+      `Delete "${name}"?\n\nThis permanently deletes the project and ALL its submissions and project settings. This cannot be undone.`
+    );
+    if (!first) return;
+    const typed = prompt(`Type DELETE to permanently delete "${name}".`);
+    if (typed !== 'DELETE') return;
+    await api(`/projects/${id}`, { method: 'DELETE' });
     await load();
   }
 
@@ -498,6 +525,7 @@ export default function ProjectsPage() {
                   onClearTelegram={() => clearProjectTelegram(p.id)}
                   onSaveS3={(endpoint, bucket, access, secret) => saveProjectS3(p.id, endpoint, bucket, access, secret)}
                   onClearS3={() => clearProjectS3(p.id)}
+                  onDelete={() => deleteProject(p.id, p.name, p.is_default)}
                 />
               ))}
             </ul>
