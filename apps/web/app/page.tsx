@@ -52,6 +52,33 @@ function IconFile({ className }: { className?: string }) {
 const reveal =
   'opacity-0 motion-reduce:opacity-100 motion-reduce:translate-y-0 animate-fade-in-up motion-reduce:animate-none';
 
+const faqItems = [
+  {
+    q: 'What is Submify?',
+    a: 'Submify is an easy form backend for HTML forms and static websites. You send submissions to a Submify endpoint and manage responses in your dashboard.'
+  },
+  {
+    q: 'Do I need a server or backend code to use Submify?',
+    a: 'No. You can connect plain HTML forms directly to Submify using your project key. No PHP or custom server is required for basic usage.'
+  },
+  {
+    q: 'Can I use Submify on static sites like Vercel, Netlify, or GitHub Pages?',
+    a: 'Yes. Submify is designed for static frontends and works well with common hosting providers.'
+  },
+  {
+    q: 'Where do my form submissions go?',
+    a: 'Submissions are stored in your Submify project dashboard, where you can review, export, and manage data.'
+  },
+  {
+    q: 'Can I export form submissions?',
+    a: 'Yes. You can export submissions from the dashboard as Excel or PDF.'
+  },
+  {
+    q: 'Does Submify support alerts and file uploads?',
+    a: 'Yes. You can configure Telegram alerts and optional S3-compatible storage for upload workflows.'
+  }
+];
+
 export default function HomePage() {
   const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
@@ -80,6 +107,24 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen text-slate-800">
+      <script
+        type="application/ld+json"
+        // FAQ structured data for richer search snippets.
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'FAQPage',
+            mainEntity: faqItems.map((item) => ({
+              '@type': 'Question',
+              name: item.q,
+              acceptedAnswer: {
+                '@type': 'Answer',
+                text: item.a
+              }
+            }))
+          })
+        }}
+      />
       <SiteHeader signedIn={signedIn} />
       <SubmifyHero signedIn={signedIn} />
 
@@ -301,6 +346,23 @@ export default function HomePage() {
             >
               Sign in
             </Link>
+          </div>
+        </section>
+
+        <section className="mt-24" aria-labelledby="faq-heading">
+          <h2 id="faq-heading" className="font-display text-center text-3xl font-bold text-slate-900 sm:text-4xl">
+            Frequently asked questions
+          </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-center text-slate-600">
+            Answers about using Submify as an HTML form backend for static sites.
+          </p>
+          <div className="mx-auto mt-8 max-w-3xl space-y-3">
+            {faqItems.map((item) => (
+              <details key={item.q} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <summary className="cursor-pointer list-none font-semibold text-slate-900">{item.q}</summary>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">{item.a}</p>
+              </details>
+            ))}
           </div>
         </section>
 

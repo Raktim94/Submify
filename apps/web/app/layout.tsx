@@ -15,9 +15,30 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: 'Submify — Self-hosted form backend',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://submify.vercel.app'),
+  title: {
+    default: 'Submify | Easy HTML Form Backend for Static Sites',
+    template: '%s | Submify'
+  },
   description:
-    'Collect submissions from your sites, review them in a dashboard, export to Excel or PDF, with optional Telegram and S3. Documentation at /docs.'
+    'Submify is an easy HTML form backend for static websites. Collect form submissions, manage projects, export data, and add optional Telegram and S3 integrations.',
+  alternates: {
+    canonical: '/'
+  },
+  openGraph: {
+    type: 'website',
+    url: '/',
+    siteName: 'Submify',
+    title: 'Submify | Easy HTML Form Backend for Static Sites',
+    description:
+      'Connect your HTML forms to a reliable backend without writing server code. View submissions in a dashboard, export data, and scale with optional integrations.'
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Submify | Easy HTML Form Backend for Static Sites',
+    description:
+      'Connect HTML forms to a backend endpoint, track submissions in a dashboard, and export with ease.'
+  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
