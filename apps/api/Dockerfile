@@ -24,7 +24,8 @@ RUN apk add --no-cache ca-certificates curl git \
        arm) DARCH=armv7 ;; \
        *) DARCH=$TARGETARCH ;; \
      esac \
-  && curl -fsSL "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-${DARCH}" \
+  && curl -fsSL --retry 3 --retry-delay 2 \
+     "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-${DARCH}" \
      -o /usr/local/lib/docker/cli-plugins/docker-compose \
      && chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
