@@ -20,11 +20,14 @@ function errorMessageFromBody(text: string, status: number): string {
   if (!t) {
     return `Request failed (${status})`;
   }
+  if (t.startsWith('<!DOCTYPE') || t.startsWith('<html')) {
+    return `API returned an HTML error page (${status}) instead of JSON — usually a bad gateway or wrong base URL. Self-hosted: keep NEXT_PUBLIC_API_BASE=/api/v1 (default) and rebuild the web image; do not point the dashboard at api.nodedr.com unless that service is up.`;
+  }
   try {
     const j = JSON.parse(t) as { error?: string };
     return j.error ?? t;
   } catch {
-    return t;
+    return t.length > 500 ? `${t.slice(0, 280)}…` : t;
   }
 }
 
