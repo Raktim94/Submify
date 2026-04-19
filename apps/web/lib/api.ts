@@ -20,6 +20,45 @@ export function apiBase(): string {
 
 let refreshInFlight: Promise<string | null> | null = null;
 
+function looksLikeHtml(text: string): boolean {
+  const s = text.trimStart().slice(0, 800).toLowerCase();
+  return (
+    s.startsWith('<!doctype') ||
+    s.startsWith('<html') ||
+    s.startsWith('<head') ||
+    /^<\s*html[\s>]/.test(s)
+  );
+}
+
+/**
+ * Maps an API error response body to a short message safe to show in the UI.
+ * Never surfaces proxy/Cloudflare HTML error pages (502/503 bodies) to users.
+ */
+export function userFacingApiError(text: string, status: number): string {
+  const t = text.trim();
+  if (!t) {
+    if (status >= 500 && status < 600) {
+      return 'The service is temporarily unavailable. Please try again in a few minutes.';
+    }
+    return `Request failed (${status})`;
+  }
+  if (looksLikeHtml(t)) {
+    if (status >= 500 && status < 600) {
+      return 'The service is temporarily unavailable. Please try again in a few minutes.';
+    }
+    return 'The server returned an unexpected response. Please try again.';
+  }
+  try {
+    const j = JSON.parse(t) as { error?: string };
+    if (typeof j.error === 'string' && j.error.trim()) {
+      return j.error.trim();
+    }
+  } catch {
+    /* plain text */
+  }
+  return t.length > 500 ? `${t.slice(0, 280)}…` : t;
+}
+
 /** Parse JSON from a response body string; avoids "Unexpected end of JSON input" on empty bodies. */
 function parseJsonBody<T>(text: string, context: string): T {
   const t = text.trim();
@@ -29,23 +68,10 @@ function parseJsonBody<T>(text: string, context: string): T {
   try {
     return JSON.parse(t) as T;
   } catch {
+    if (looksLikeHtml(t)) {
+      throw new Error('The server returned an unexpected response. Please try again.');
+    }
     throw new Error(t.length > 280 ? `${t.slice(0, 280)}…` : t);
-  }
-}
-
-function errorMessageFromBody(text: string, status: number): string {
-  const t = text.trim();
-  if (!t) {
-    return `Request failed (${status})`;
-  }
-  if (t.startsWith('<!DOCTYPE') || t.startsWith('<html')) {
-    return `API returned HTML (${status}) instead of JSON — often nginx 502 (API container down or unreachable) or a proxy misroute. Check: docker compose ps && docker compose logs --tail 80 api nginx`;
-  }
-  try {
-    const j = JSON.parse(t) as { error?: string };
-    return j.error ?? t;
-  } catch {
-    return t.length > 500 ? `${t.slice(0, 280)}…` : t;
   }
 }
 
@@ -143,7 +169,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    throw new Error(errorMessageFromBody(text, res.status));
+    throw new Error(userFacingApiError(text, res.status));
   }
   return parseJsonBody<T>(text, path);
 }
@@ -163,7 +189,7 @@ export async function getBootstrapStatus(): Promise<{ setup_required: boolean }>
   const res = await fetch(`${apiBase()}/system/bootstrap-status`, { cache: 'no-store' });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(errorMessageFromBody(text, res.status));
+    throw new Error(userFacingApiError(text, res.status));
   }
   return parseJsonBody<{ setup_required: boolean }>(text, 'bootstrap-status');
 }
@@ -220,7 +246,7 @@ export async function registerAccount(body: {
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(errorMessageFromBody(text, res.status));
+    throw new Error(userFacingApiError(text, res.status));
   }
   return parseJsonBody(text, 'auth/register');
 }

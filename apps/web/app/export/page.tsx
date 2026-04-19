@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Nav } from '../../components/nav';
-import { api, apiBase } from '../../lib/api';
+import { api, apiBase, userFacingApiError } from '../../lib/api';
 
 type Project = { id: string; name: string };
 
@@ -37,7 +37,7 @@ export default function ExportPage() {
     });
     if (!res.ok) {
       const t = await res.text();
-      setError(t || `Download failed (${res.status})`);
+      setError(userFacingApiError(t, res.status));
       return;
     }
     const blob = await res.blob();

@@ -4,7 +4,7 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
 import { useRouter } from 'next/navigation';
-import { apiBase } from '../../lib/api';
+import { apiBase, userFacingApiError } from '../../lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,26 +16,22 @@ export default function LoginPage() {
     const form = new FormData(e.currentTarget);
     const payload = Object.fromEntries(form.entries());
 
-    const res = await fetch(`${apiBase()}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      credentials: 'include'
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${apiBase()}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include'
+      });
+    } catch {
+      setError('Network error. Check your connection and try again.');
+      return;
+    }
 
     const text = await res.text();
     if (!res.ok) {
-      const t = text.trim();
-      if (!t) {
-        setError(`Sign-in failed (${res.status})`);
-        return;
-      }
-      try {
-        const j = JSON.parse(t) as { error?: string };
-        setError(j.error ?? t);
-      } catch {
-        setError(t);
-      }
+      setError(userFacingApiError(text, res.status));
       return;
     }
 
