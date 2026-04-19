@@ -1,6 +1,6 @@
 # Submify
 
-Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin) API, Next.js dashboard, PostgreSQL, S3-compatible object storage (RustFS/MinIO in Compose), and Nginx as a single entrypoint.
+Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin) API, Next.js dashboard, PostgreSQL, S3-compatible object storage (**MinIO** by default, Compose service name **`rustfs`**), and Nginx as a single entrypoint.
 
 **Upstream repository:** [https://github.com/Raktim94/Submify.git](https://github.com/Raktim94/Submify.git)
 
@@ -34,7 +34,7 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
   - `/api/*` → API (Go, port 8080 in the container)
   - `/*` → Next.js (port 3000 in the container)
 - **PostgreSQL** stores all tenants in one database (JSONB-friendly, battle-tested). Rows are scoped by `user_id` / `project_id`; the API never lists or mutates another user’s data.
-- **RustFS / MinIO** (`rustfs` service) provides an S3-compatible API for presigned uploads when configured.
+- **Object storage** — the Compose service is named **`rustfs`** (hostname `rustfs` inside the network). By default it runs **`minio/minio`** (S3-compatible API). Set **`RUSTFS_IMAGE`** to swap in another S3-compatible image if needed. Data is stored on the host under `/var/lib/submify/data/rustfs`.
 
 The browser and external clients should use **one origin** for dashboard + API (e.g. `https://forms.example.com:2512/api/v1/...`) or configure **CORS** for separate sites (see [Connecting a client website](#connecting-a-client-website-forms)).
 
@@ -72,23 +72,38 @@ git clone https://github.com/Raktim94/Submify.git
 cd Submify
 ```
 
-### 2. Set secrets and origins (recommended before first boot)
+### 2. Environment file (required before first boot)
 
-Create a `.env` next to `docker-compose.yml` (Compose loads it automatically) or export variables in your shell:
+Docker Compose **requires** secrets in a **`.env`** file next to `docker-compose.yml` (Compose loads it automatically). Templates are **versioned** in the repo:
+
+| File | Role |
+|------|------|
+| **`.env.example`** (repo root) | Copy to `.env` and edit values — **required** vars for Compose |
+| **`apps/web/.env.example`** | Optional Next.js / marketing contact-proxy vars (see [§5b](#5b-nextjs-marketing-contact-form-nodedr-hosted-api-proxy)) |
+
+Create `.env` from the template:
+
+```bash
+cp .env.example .env
+# or: ./scripts/setup-env.sh
+```
+
+Edit `.env` and set at least:
 
 | Variable | Purpose |
 |----------|---------|
-| `JWT_SECRET` | Signing key for JWTs (change from default in production) |
-| `ALLOWED_ORIGINS` | Comma-separated browser origins allowed by CORS (e.g. `https://mysite.com,https://app.mysite.com`) |
-| `RUSTFS_ROOT_USER` / `RUSTFS_ROOT_PASSWORD` | MinIO root credentials (defaults exist; override in production) |
-| `TUNNEL_TOKEN` | Only if using the `tunnel` Compose profile |
+| **`POSTGRES_PASSWORD`** | PostgreSQL password (must match what Compose wires into `DATABASE_URL` for the API) |
+| **`JWT_SECRET`** | At least 32 random characters for JWT signing (e.g. `openssl rand -hex 32`) |
+| **`RUSTFS_ROOT_PASSWORD`** | MinIO root password (`RUSTFS_ROOT_USER` defaults to `submify` if unset) |
 
-Example:
+Optional: export overrides in your shell instead of `.env`, or add **`ALLOWED_ORIGINS`**, **`AUTH_COOKIE_SECURE`**, etc. (see [Configuration](#configuration-and-environment-variables)).
 
 ```bash
-export JWT_SECRET="$(openssl rand -hex 32)"
+# Optional one-liners when not using .env for these
 export ALLOWED_ORIGINS="http://localhost:2512,https://yourdomain.com"
 ```
+
+**`TUNNEL_TOKEN`** is only needed if you use the **`tunnel`** Compose profile ([Cloudflare Tunnel](#optional-cloudflare-tunnel)).
 
 ### 3. Start the stack
 
@@ -110,7 +125,7 @@ docker compose logs -f nginx
 
 ### 6. Quick redeploy (pull latest code, rebuild, clean old images, watch API logs)
 
-On a server where you cloned the repo to `~/Submify`, use this copy-paste sequence after changes are pushed to Git:
+On a server where you cloned the repo to `~/Submify`, use this copy-paste sequence after changes are pushed to Git. Ensure **`.env`** exists (see [§2](#2-environment-file-required-before-first-boot)); **`git pull` does not create it**.
 
 ```bash
 cd ~/Submify
@@ -168,14 +183,14 @@ Values used by the **API** container (see `docker-compose.yml` and `apps/api/int
 |----------|----------------------|---------|
 | `PORT` | `8080` | HTTP port inside the API container |
 | `DATABASE_URL` | Compose default to `db` | PostgreSQL connection string |
-| `JWT_SECRET` | `change-this-in-production` | JWT HMAC secret |
-| `ALLOWED_ORIGINS` | `http://localhost:2512` | CORS allowlist (comma-separated) |
+| `JWT_SECRET` | Set in **`.env`** (required by Compose) | JWT HMAC secret (≥32 random characters recommended) |
+| `ALLOWED_ORIGINS` | `http://localhost:2512,http://127.0.0.1:2512` | CORS allowlist (comma-separated) |
 | `UPLOAD_MAX_SIZE_BYTES` | `26214400` (25 MiB) | Max upload size for presign |
 | `UPLOAD_ALLOWED_MIME` | `image/png,image/jpeg,application/pdf,text/plain` | Allowed MIME types for presign |
 | `PRESIGN_EXPIRY_MINUTES` | `10` | Presigned URL lifetime |
 | `ACCESS_TOKEN_TTL_MINUTES` | `30` | Access token lifetime |
 | `REFRESH_TOKEN_TTL_HOURS` | `168` | Refresh token lifetime |
-| `POSTGRES_PASSWORD` | `submify` | DB password (set a strong value in production; must match `DATABASE_URL` in Compose) |
+| `POSTGRES_PASSWORD` | Set in **`.env`** (required; no Compose default) | DB password; Compose interpolates this into `DATABASE_URL` for the API |
 | `TRUSTED_PROXIES` | private RFC1918 + loopback | CIDRs allowed to set `X-Forwarded-For` (trust Nginx / load balancers only) |
 | `RATE_LIMIT_SENSITIVE_PUBLIC_RPM` | `25` | Login / setup / refresh / logout per IP |
 | `RATE_LIMIT_SUBMIT_IP_RPM` | `90` | Public submit per client IP |
@@ -419,6 +434,8 @@ Or add a weekly cron job (see comments in the script). The script runs `docker b
 
 | Symptom | What to check |
 |---------|----------------|
+| Compose error: `required variable POSTGRES_PASSWORD is missing` (or similar for `JWT_SECRET` / `RUSTFS_ROOT_PASSWORD`) | Create **`.env`** in the repo root: `cp .env.example .env` or `./scripts/setup-env.sh`, then set real secrets |
+| `docker compose build` / bake **exit status 1** | Run **`docker compose build --progress=plain api`** (or **`web`**) and read the **ERROR** block at the end. On a **small VPS**, parallel builds can OOM — try **`docker compose build --parallel 1`** or add **swap** |
 | Nothing on port 2512 | Firewall, `docker compose ps`, Nginx logs |
 | Setup loop | DB healthy, API logs, `system_configs` row |
 | `401` on submit | `x-api-key` equals URL segment and matches a valid **`api_key`** or project **`public_api_key`** |
@@ -430,7 +447,7 @@ Or add a weekly cron job (see comments in the script). The script runs `docker b
 
 ## Codebase review (health check)
 
-Review performed against the code in this repository (handlers, routes, middleware, Compose, Nginx):
+Review performed against the code in this repository (handlers, routes, Next.js **proxy** (edge routing), Compose, Nginx):
 
 | Area | Assessment |
 |------|------------|
@@ -447,7 +464,10 @@ Review performed against the code in this repository (handlers, routes, middlewa
 |------|-----|-----|
 | `apps/api/internal/telegram/telegram.go` | **Compile error** — `err` from `if err := send(...)` was scoped inside the `if` block but referenced on the next line outside it | Separated `err := send(...)` from the `if` so `err` is in scope for the log line |
 | `apps/api/internal/auth/password.go` | **Login always fails** — `HashPassword` produces 5 `$`-delimited parts but `VerifyPassword` expected 6 parts and read salt/hash from wrong indices | Changed verify to expect 5 parts and read salt from `parts[3]`, hash from `parts[4]` |
-| `apps/api/Dockerfile` | **Build fails** — no `go.sum` existed; only `go.mod` was copied before `go mod download` | Replaced with `COPY . .` then `go mod tidy && go build` so the builder resolves deps itself |
+| `apps/api/Dockerfile` | **Build fails** — `go build -o /out/...` without **`/out`** existing; empty **`GOARCH`** when platform args are missing | **`mkdir -p /out`** before build; **`ARG TARGETARCH=amd64`** in the builder stage; `go mod tidy` + `go build` after **`COPY . .`** |
+| `apps/api/internal/httpapi/handlers.go` | **Compile error** with **`github.com/golang-jwt/jwt/v5`** — `NumericDate` exposes **`Time`** as a field | Use **`claims.ExpiresAt.Time`** (not **`Time()`**) when reading expiry |
+| `.gitignore` | **`.env.example`** was ignored by **`.env.*`**, so clones had no Compose template | Un-ignore **`!.env.example`** / **`!**/.env.example`**; track root + **`apps/web/.env.example`** |
+| `apps/web` (Next.js 16) | Deprecation: **`middleware`** file convention renamed | **`middleware.ts`** → **`proxy.ts`** with **`export function proxy`** |
 | `apps/web/Dockerfile` | **Build fails** — `COPY /app/public` fails because no `public/` directory exists in the project | Replaced with `RUN mkdir -p ./public` |
 | `docker-compose.yml` | **Warning** — obsolete `version: '3.9'` attribute | Removed |
 | `apps/web/app/export/page.tsx` | **Exports always 401** — `window.open()` cannot send `Authorization` header | Replaced with `fetch()` + Blob download that sends the Bearer token |
