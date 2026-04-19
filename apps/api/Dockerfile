@@ -4,11 +4,15 @@ ARG TARGETPLATFORM=linux/amd64
 ARG TARGETARCH=amd64
 
 FROM --platform=${TARGETPLATFORM} golang:1.24-alpine AS builder
-ARG TARGETARCH
+# Default when classic docker build omits BuildKit platform args (empty GOARCH breaks compile).
+ARG TARGETARCH=amd64
 WORKDIR /src
 COPY . .
 # Transitive deps (e.g. via gin) may require Go 1.23+; image must match.
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o /out/submify-api ./cmd/server
+# go build -o /out/... does not mkdir parents; /out must exist.
+RUN mkdir -p /out \
+  && go mod tidy \
+  && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o /out/submify-api ./cmd/server
 
 # Docker CLI (optional in-container "update & restart" against mounted docker.sock).
 # --platform matches the final image so cross-builds do not embed the builder's arch.
