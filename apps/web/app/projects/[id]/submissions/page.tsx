@@ -138,12 +138,17 @@ export default function SubmissionsPage() {
       .map(([k]) => k);
     if (submission_ids.length === 0) return;
 
-    await api(`/projects/${projectId}/submissions/bulk`, {
-      method: 'DELETE',
-      body: JSON.stringify({ submission_ids })
-    });
-    setSelected({});
-    await load();
+    setError('');
+    try {
+      await api(`/projects/${projectId}/submissions/bulk`, {
+        method: 'DELETE',
+        body: JSON.stringify({ submission_ids })
+      });
+      setSelected({});
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed');
+    }
   }
 
   function downloadPageCsv() {

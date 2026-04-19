@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export function proxy(req: NextRequest) {
+/** Next.js edge middleware (must be named `middleware` in `middleware.ts` at the app root). */
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (pathname.startsWith('/_next') || pathname.startsWith('/api') || pathname.includes('.')) {

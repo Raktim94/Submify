@@ -307,11 +307,15 @@ export default function ProjectsPage() {
 
   async function regenerateProject(id: string) {
     if (!confirm('Regenerate keys? The old public and secret keys stop working immediately.')) return;
-    await api(`/projects/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ regenerate_key: true })
-    });
-    await load();
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ regenerate_key: true })
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not regenerate keys');
+    }
   }
 
   async function saveOrigins(id: string, raw: string) {
@@ -326,11 +330,15 @@ export default function ProjectsPage() {
       alert(e instanceof Error ? e.message : 'Invalid JSON');
       return;
     }
-    await api(`/projects/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ allowed_origins: parsed })
-    });
-    await load();
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ allowed_origins: parsed })
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save allowed origins');
+    }
   }
 
   async function saveProjectTelegram(id: string, chatID: string, token: string) {
@@ -339,19 +347,27 @@ export default function ProjectsPage() {
     };
     const trimmedToken = token.trim();
     if (trimmedToken) payload.telegram_bot_token = trimmedToken;
-    await api(`/projects/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload)
-    });
-    await load();
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save Telegram settings');
+    }
   }
 
   async function clearProjectTelegram(id: string) {
-    await api(`/projects/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ telegram_chat_id: '', telegram_bot_token: '' })
-    });
-    await load();
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ telegram_chat_id: '', telegram_bot_token: '' })
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not clear Telegram');
+    }
   }
 
   async function saveProjectS3(id: string, endpoint: string, bucket: string, accessKey: string, secretKey: string) {
@@ -363,19 +379,27 @@ export default function ProjectsPage() {
     const trimmedSecret = secretKey.trim();
     if (trimmedAccess) payload.s3_access_key = trimmedAccess;
     if (trimmedSecret) payload.s3_secret_key = trimmedSecret;
-    await api(`/projects/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload)
-    });
-    await load();
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save S3 settings');
+    }
   }
 
   async function clearProjectS3(id: string) {
-    await api(`/projects/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ s3_endpoint: '', s3_bucket: '', s3_access_key: '', s3_secret_key: '' })
-    });
-    await load();
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ s3_endpoint: '', s3_bucket: '', s3_access_key: '', s3_secret_key: '' })
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not clear S3');
+    }
   }
 
   async function deleteProject(id: string, name: string, isDefault: boolean) {
@@ -389,8 +413,12 @@ export default function ProjectsPage() {
     if (!first) return;
     const typed = prompt(`Type DELETE to permanently delete "${name}".`);
     if (typed !== 'DELETE') return;
-    await api(`/projects/${id}`, { method: 'DELETE' });
-    await load();
+    try {
+      await api(`/projects/${id}`, { method: 'DELETE' });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not delete project');
+    }
   }
 
   return (

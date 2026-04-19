@@ -467,7 +467,7 @@ Review performed against the code in this repository (handlers, routes, Next.js 
 | `apps/api/Dockerfile` | **Build fails** — `go build -o /out/...` without **`/out`** existing; empty **`GOARCH`** when platform args are missing | **`mkdir -p /out`** before build; **`ARG TARGETARCH=amd64`** in the builder stage; `go mod tidy` + `go build` after **`COPY . .`** |
 | `apps/api/internal/httpapi/handlers.go` | **Compile error** with **`github.com/golang-jwt/jwt/v5`** — `NumericDate` exposes **`Time`** as a field | Use **`claims.ExpiresAt.Time`** (not **`Time()`**) when reading expiry |
 | `.gitignore` | **`.env.example`** was ignored by **`.env.*`**, so clones had no Compose template | Un-ignore **`!.env.example`** / **`!**/.env.example`**; track root + **`apps/web/.env.example`** |
-| `apps/web` (Next.js 16) | Deprecation: **`middleware`** file convention renamed | **`middleware.ts`** → **`proxy.ts`** with **`export function proxy`** |
+| `apps/web` (Next.js) | **`proxy.ts` never ran** — only **`middleware.ts`** with **`export function middleware`** is executed at the app root | Use **`middleware.ts`** (removed misnamed **`proxy.ts`**) |
 | `apps/web/Dockerfile` | **Build fails** — `COPY /app/public` fails because no `public/` directory exists in the project | Replaced with `RUN mkdir -p ./public` |
 | `docker-compose.yml` | **Warning** — obsolete `version: '3.9'` attribute | Removed |
 | `apps/web/app/export/page.tsx` | **Exports always 401** — `window.open()` cannot send `Authorization` header | Replaced with `fetch()` + Blob download that sends the Bearer token |
