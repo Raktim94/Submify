@@ -1,4 +1,22 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api/v1';
+/**
+ * Resolves the dashboard → Go API base URL.
+ * - Browser + default self-host: use `window.location.origin + /api/v1` so the request always
+ *   matches the site you opened (avoids stale baked env or wrong hosts).
+ * - If `NEXT_PUBLIC_API_BASE` is an absolute URL (split API host), use that (build-time value).
+ */
+export function apiBase(): string {
+  const baked = process.env.NEXT_PUBLIC_API_BASE?.trim();
+  if (baked && (baked.startsWith('http://') || baked.startsWith('https://'))) {
+    return baked.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/api/v1`;
+  }
+  if (baked) {
+    return baked;
+  }
+  return '/api/v1';
+}
 
 let refreshInFlight: Promise<string | null> | null = null;
 
@@ -21,7 +39,7 @@ function errorMessageFromBody(text: string, status: number): string {
     return `Request failed (${status})`;
   }
   if (t.startsWith('<!DOCTYPE') || t.startsWith('<html')) {
-    return `API returned an HTML error page (${status}) instead of JSON — usually a bad gateway or wrong base URL. Self-hosted: keep NEXT_PUBLIC_API_BASE=/api/v1 (default) and rebuild the web image; do not point the dashboard at api.nodedr.com unless that service is up.`;
+    return `API returned HTML (${status}) instead of JSON — often nginx 502 (API container down or unreachable) or a proxy misroute. Check: docker compose ps && docker compose logs --tail 80 api nginx`;
   }
   try {
     const j = JSON.parse(t) as { error?: string };
@@ -39,7 +57,7 @@ function isBrowser(): boolean {
 export async function logoutSession(): Promise<void> {
   if (!isBrowser()) return;
   try {
-    await fetch(`${API_BASE}/auth/logout`, {
+    await fetch(`${apiBase()}/auth/logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -65,7 +83,7 @@ function clearSessionAndGoToLogin(): void {
 async function refreshAccessToken(): Promise<string | null> {
   if (!isBrowser()) return null;
 
-  const res = await fetch(`${API_BASE}/auth/refresh`, {
+  const res = await fetch(`${apiBase()}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: '{}',
@@ -102,7 +120,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     if (bearer) {
       headers.set('Authorization', `Bearer ${bearer}`);
     }
-    return fetch(`${API_BASE}${path}`, {
+    return fetch(`${apiBase()}${path}`, {
       ...init,
       headers,
       credentials: 'include',
@@ -134,7 +152,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export async function isSessionValid(): Promise<boolean> {
   if (!isBrowser()) return false;
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, { credentials: 'include', cache: 'no-store' });
+    const res = await fetch(`${apiBase()}/auth/me`, { credentials: 'include', cache: 'no-store' });
     return res.ok;
   } catch {
     return false;
@@ -142,7 +160,7 @@ export async function isSessionValid(): Promise<boolean> {
 }
 
 export async function getBootstrapStatus(): Promise<{ setup_required: boolean }> {
-  const res = await fetch(`${API_BASE}/system/bootstrap-status`, { cache: 'no-store' });
+  const res = await fetch(`${apiBase()}/system/bootstrap-status`, { cache: 'no-store' });
   const text = await res.text();
   if (!res.ok) {
     throw new Error(errorMessageFromBody(text, res.status));
@@ -193,7 +211,7 @@ export async function registerAccount(body: {
   full_name: string;
   phone: string;
 }> {
-  const res = await fetch(`${API_BASE}/auth/register`, {
+  const res = await fetch(`${apiBase()}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

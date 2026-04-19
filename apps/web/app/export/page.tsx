@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Nav } from '../../components/nav';
-import { api, API_BASE } from '../../lib/api';
+import { api, apiBase } from '../../lib/api';
 
 type Project = { id: string; name: string };
 
@@ -32,7 +32,7 @@ export default function ExportPage() {
     }
     const form = new FormData(e.currentTarget);
     const format = form.get('format') as string;
-    const res = await fetch(`${API_BASE}/projects/${projectId}/export?format=${format}`, {
+    const res = await fetch(`${apiBase()}/projects/${projectId}/export?format=${format}`, {
       credentials: 'include'
     });
     if (!res.ok) {

@@ -4,7 +4,7 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
 import { useRouter } from 'next/navigation';
-import { API_BASE } from '../../lib/api';
+import { apiBase } from '../../lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,7 +16,7 @@ export default function LoginPage() {
     const form = new FormData(e.currentTarget);
     const payload = Object.fromEntries(form.entries());
 
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const res = await fetch(`${apiBase()}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
