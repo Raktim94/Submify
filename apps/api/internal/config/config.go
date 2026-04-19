@@ -46,15 +46,16 @@ func Load() Config {
 	if len(trusted) == 0 {
 		trusted = []string{"127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
 	}
+	// Defaults match docker-compose.yml when env vars are unset (self-host / tunnel / nginx in front).
 	cfg := Config{
 		Port: getEnv("PORT", "8080"),
 		DatabaseURL:                 getEnv("DATABASE_URL", "postgres://submify:submify@db:5432/submify?sslmode=disable"),
 		JWTSecret:                   getJWTSecret(),
 		AllowedOrigins:              splitCSV(getEnv("ALLOWED_ORIGINS", "http://localhost:2512,http://127.0.0.1:2512")),
-		CorsRelaxPrivateNetworks:    getEnvBool("CORS_RELAX_PRIVATE_NETWORKS", false),
+		CorsRelaxPrivateNetworks:    getEnvBool("CORS_RELAX_PRIVATE_NETWORKS", true),
 		CorsOriginHostSuffixes:      splitCSV(getEnv("CORS_ORIGIN_HOST_SUFFIXES", "")),
-		CorsAllowSameHostOrigin:     getEnvBool("CORS_ALLOW_SAME_HOST_ORIGIN", false),
-		CorsPublicSubmitAnyOrigin:   getEnvBool("CORS_PUBLIC_SUBMIT_ANY_ORIGIN", false),
+		CorsAllowSameHostOrigin:     getEnvBool("CORS_ALLOW_SAME_HOST_ORIGIN", true),
+		CorsPublicSubmitAnyOrigin:   getEnvBool("CORS_PUBLIC_SUBMIT_ANY_ORIGIN", true),
 		TrustedProxies:              trusted,
 		UploadMaxSizeBytes:          int64(getEnvInt("UPLOAD_MAX_SIZE_BYTES", 25*1024*1024)),
 		AllowedMIMETypes:            toMIMEMap(splitCSV(getEnv("UPLOAD_ALLOWED_MIME", "image/png,image/jpeg,application/pdf,text/plain"))),

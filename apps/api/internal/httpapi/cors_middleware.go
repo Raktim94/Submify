@@ -44,7 +44,7 @@ func SubmifyCORS(cfg config.Config) gin.HandlerFunc {
 		}
 
 		if !OriginAllowed(origin, c.Request, cfg) {
-			c.AbortWithStatus(http.StatusForbidden)
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "origin not allowed"})
 			return
 		}
 

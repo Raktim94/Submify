@@ -56,7 +56,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env — at least 32 random characters (e.g. openssl rand -hex 32)}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       # Browser CORS: list exact page origins (scheme+host+port), e.g. https://app.nodedr.com
-      # OR set CORS_ORIGIN_HOST_SUFFIXES=nodedr.com to allow any https?://*.nodedr.com (and https?://nodedr.com).
+      # OR set CORS_ORIGIN_HOST_SUFFIXES=nodedr.com (or your domain) when the UI and API use different hosts.
       # LAN: CORS_RELAX_PRIVATE_NETWORKS=true allows http(s)://192.168.x.x:2512 without listing each IP.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:2512,http://127.0.0.1:2512}
       CORS_RELAX_PRIVATE_NETWORKS: ${CORS_RELAX_PRIVATE_NETWORKS:-true}
