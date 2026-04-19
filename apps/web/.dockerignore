@@ -1,3 +1,8 @@
 node_modules
 .next
 npm-debug.log
+
+# Do not bake machine-local Next env into the image (e.g. NEXT_PUBLIC_API_BASE pointing at api.nodedr.com).
+.env
+.env.*
+!.env.example

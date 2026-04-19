@@ -85,6 +85,8 @@ services:
   web:
     build:
       context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_BASE: /api/v1
     container_name: submify-web
     environment:
       NEXT_PUBLIC_API_BASE: /api/v1
