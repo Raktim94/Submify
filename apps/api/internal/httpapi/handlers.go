@@ -192,7 +192,7 @@ func (s *Server) Register(c *gin.Context) {
 	}
 	exp := time.Now().UTC().Add(time.Duration(s.cfg.RefreshTokenTTLHours) * time.Hour)
 	if refreshClaims.ExpiresAt != nil {
-		exp = refreshClaims.ExpiresAt.Time()
+		exp = refreshClaims.ExpiresAt.Time
 	}
 	if err := s.store.CreateRefreshSession(refreshClaims.JTI, u.ID, exp); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -262,7 +262,7 @@ func (s *Server) Login(c *gin.Context) {
 	}
 	exp := time.Now().UTC().Add(time.Duration(s.cfg.RefreshTokenTTLHours) * time.Hour)
 	if refreshClaims.ExpiresAt != nil {
-		exp = refreshClaims.ExpiresAt.Time()
+		exp = refreshClaims.ExpiresAt.Time
 	}
 	if err := s.store.CreateRefreshSession(refreshClaims.JTI, user.ID, exp); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -345,7 +345,7 @@ func (s *Server) Refresh(c *gin.Context) {
 	} else {
 		exp := time.Now().UTC().Add(time.Duration(s.cfg.RefreshTokenTTLHours) * time.Hour)
 		if claims.ExpiresAt != nil {
-			exp = claims.ExpiresAt.Time()
+			exp = claims.ExpiresAt.Time
 		}
 		if err := s.store.CreateRefreshSession(jti, claims.UserID, exp); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -364,7 +364,7 @@ func (s *Server) Refresh(c *gin.Context) {
 	}
 	newExp := time.Now().UTC().Add(time.Duration(s.cfg.RefreshTokenTTLHours) * time.Hour)
 	if newRefreshClaims.ExpiresAt != nil {
-		newExp = newRefreshClaims.ExpiresAt.Time()
+		newExp = newRefreshClaims.ExpiresAt.Time
 	}
 	if err := s.store.RotateRefreshSession(jti, newJTI, claims.UserID, newExp); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
