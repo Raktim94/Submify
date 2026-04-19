@@ -23,7 +23,7 @@ services:
     container_name: submify-db
     environment:
       POSTGRES_USER: submify
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-submify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env — see .env.example}
       POSTGRES_DB: submify
     volumes:
       - /var/lib/submify/data/postgres:/var/lib/postgresql/data
@@ -40,7 +40,7 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${RUSTFS_ROOT_USER:-submify}
-      MINIO_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:-submify123}
+      MINIO_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:?Set RUSTFS_ROOT_PASSWORD in .env — see .env.example}
     volumes:
       - /var/lib/submify/data/rustfs:/data
     logging: *default-logging
@@ -49,16 +49,12 @@ services:
     build:
       context: ./apps/api
     container_name: submify-api
-    # Root + docker.sock: required so "Update & restart" can run docker compose on the host (Linux).
-    user: "0:0"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      # Project directory on host (compose file + context for pull/up). Must be this repo root.
-      - .:/stack:rw
+    # Runs as non-root user from the image (see apps/api/Dockerfile). Do not mount docker.sock into the API.
     environment:
       PORT: 8080
-      DATABASE_URL: postgres://submify:${POSTGRES_PASSWORD:-submify}@db:5432/submify?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      DATABASE_URL: postgres://submify:${POSTGRES_PASSWORD}@db:5432/submify?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env — at least 32 random characters (e.g. openssl rand -hex 32)}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       # Browser CORS: list exact page origins (scheme+host+port), e.g. https://app.nodedr.com
       # OR set CORS_ORIGIN_HOST_SUFFIXES=nodedr.com to allow any https?://*.nodedr.com (and https?://nodedr.com).
       # LAN: CORS_RELAX_PRIVATE_NETWORKS=true allows http(s)://192.168.x.x:2512 without listing each IP.

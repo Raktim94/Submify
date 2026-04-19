@@ -16,6 +16,14 @@ type Store struct {
 	DB *sql.DB
 }
 
+type RefreshSession struct {
+	JTI           string
+	UserID        string
+	ExpiresAt     time.Time
+	RevokedAt     sql.NullTime
+	ReplacedByJTI sql.NullString
+}
+
 type User struct {
 	ID               string    `json:"id"`
 	Email            string    `json:"email"`
@@ -595,6 +603,75 @@ func (s *Store) DeleteProject(userID, projectID string) error {
 		return errors.New("cannot delete default project")
 	}
 	res, err := s.DB.Exec(`DELETE FROM projects WHERE id=$1 AND user_id=$2`, projectID, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) CreateRefreshSession(jti, userID string, expiresAt time.Time) error {
+	_, err := s.DB.Exec(`
+		INSERT INTO refresh_sessions (jti, user_id, expires_at)
+		VALUES ($1, $2::uuid, $3)
+	`, jti, userID, expiresAt.UTC())
+	return err
+}
+
+func (s *Store) RefreshSessionByJTI(jti string) (RefreshSession, error) {
+	var rs RefreshSession
+	err := s.DB.QueryRow(`
+		SELECT jti, user_id::text, expires_at, revoked_at, replaced_by_jti
+		FROM refresh_sessions
+		WHERE jti = $1
+	`, jti).Scan(&rs.JTI, &rs.UserID, &rs.ExpiresAt, &rs.RevokedAt, &rs.ReplacedByJTI)
+	return rs, err
+}
+
+func (s *Store) RotateRefreshSession(oldJTI, newJTI, userID string, newExpiresAt time.Time) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`
+		UPDATE refresh_sessions
+		SET revoked_at = NOW(), replaced_by_jti = $2
+		WHERE jti = $1
+		  AND user_id = $3::uuid
+		  AND revoked_at IS NULL
+		  AND expires_at > NOW()
+	`, oldJTI, newJTI, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO refresh_sessions (jti, user_id, expires_at)
+		VALUES ($1, $2::uuid, $3)
+	`, newJTI, userID, newExpiresAt.UTC()); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) RevokeRefreshSession(jti, userID string) error {
+	res, err := s.DB.Exec(`
+		UPDATE refresh_sessions
+		SET revoked_at = NOW()
+		WHERE jti = $1
+		  AND user_id = $2::uuid
+		  AND revoked_at IS NULL
+	`, jti, userID)
 	if err != nil {
 		return err
 	}

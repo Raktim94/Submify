@@ -32,26 +32,41 @@ function isBrowser(): boolean {
   return typeof window !== 'undefined';
 }
 
-function clearSessionAndGoToLogin(): void {
+/** Server clears HttpOnly cookies; clears non-sensitive client hints. */
+export async function logoutSession(): Promise<void> {
   if (!isBrowser()) return;
-  localStorage.removeItem('submify_access_token');
-  localStorage.removeItem('submify_refresh_token');
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      credentials: 'include',
+      cache: 'no-store'
+    });
+  } catch {
+    /* ignore */
+  }
   localStorage.removeItem('submify_user_name');
   localStorage.removeItem('submify_user_phone');
-  if (window.location.pathname !== '/login') {
-    window.location.href = '/login';
-  }
+}
+
+function clearSessionAndGoToLogin(): void {
+  if (!isBrowser()) return;
+  void logoutSession().finally(() => {
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+  });
 }
 
 async function refreshAccessToken(): Promise<string | null> {
   if (!isBrowser()) return null;
-  const refreshToken = localStorage.getItem('submify_refresh_token');
-  if (!refreshToken) return null;
 
   const res = await fetch(`${API_BASE}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    body: '{}',
+    credentials: 'include',
     cache: 'no-store'
   });
   const text = await res.text();
@@ -59,11 +74,10 @@ async function refreshAccessToken(): Promise<string | null> {
     return null;
   }
   const data = parseJsonBody<{ access_token?: string; refresh_token?: string }>(text, 'auth/refresh');
-  if (!data.access_token || !data.refresh_token) {
+  if (!data.access_token) {
     return null;
   }
-  localStorage.setItem('submify_access_token', data.access_token);
-  localStorage.setItem('submify_refresh_token', data.refresh_token);
+  // Tokens also live in HttpOnly cookies set by the server; JSON is for API clients.
   return data.access_token;
 }
 
@@ -77,29 +91,30 @@ async function getRefreshedAccessToken(): Promise<string | null> {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const request = async (token: string | null): Promise<Response> => {
+  const request = async (bearer?: string | null): Promise<Response> => {
     const headers = new Headers({ 'Content-Type': 'application/json' });
     if (init?.headers) {
       new Headers(init.headers).forEach((value, key) => headers.set(key, value));
     }
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
+    if (bearer) {
+      headers.set('Authorization', `Bearer ${bearer}`);
     }
     return fetch(`${API_BASE}${path}`, {
       ...init,
       headers,
+      credentials: 'include',
       cache: 'no-store'
     });
   };
 
-  const token = isBrowser() ? localStorage.getItem('submify_access_token') : null;
-  let res = await request(token);
+  // HttpOnly access cookie is sent automatically; Bearer is optional (CLI / API clients).
+  let res = await request(null);
   let text = await res.text();
 
   if (!res.ok && res.status === 401) {
     const refreshed = await getRefreshedAccessToken();
     if (refreshed) {
-      res = await request(refreshed);
+      res = await request(null);
       text = await res.text();
     } else if (isBrowser()) {
       clearSessionAndGoToLogin();
@@ -110,6 +125,17 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(errorMessageFromBody(text, res.status));
   }
   return parseJsonBody<T>(text, path);
+}
+
+/** True if the browser has a valid session (HttpOnly cookies). */
+export async function isSessionValid(): Promise<boolean> {
+  if (!isBrowser()) return false;
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, { credentials: 'include', cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function getBootstrapStatus(): Promise<{ setup_required: boolean }> {
@@ -168,6 +194,7 @@ export async function registerAccount(body: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    credentials: 'include',
     cache: 'no-store'
   });
   const text = await res.text();

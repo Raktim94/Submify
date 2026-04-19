@@ -19,7 +19,8 @@ export default function LoginPage() {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      credentials: 'include'
     });
 
     const text = await res.text();
@@ -56,8 +57,6 @@ export default function LoginPage() {
       setError('Invalid response from server');
       return;
     }
-    localStorage.setItem('submify_access_token', data.access_token);
-    localStorage.setItem('submify_refresh_token', data.refresh_token);
     if (typeof data.full_name === 'string') {
       localStorage.setItem('submify_user_name', data.full_name);
     }

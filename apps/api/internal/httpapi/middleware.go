@@ -8,12 +8,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	accessCookieName  = "submify_access_token"
+	refreshCookieName = "submify_refresh_token"
+)
+
 func SecurityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+		// JSON API only — no inline scripts; tighten XSS depth vs generic 'unsafe-inline'.
+		c.Header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 		c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 		c.Next()
 	}
@@ -34,14 +40,23 @@ func (s *Server) SetupGuard() gin.HandlerFunc {
 	}
 }
 
+func accessTokenFromRequest(c *gin.Context) string {
+	if authHeader := strings.TrimSpace(c.GetHeader("Authorization")); strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		return strings.TrimSpace(authHeader[7:])
+	}
+	if cookie, err := c.Request.Cookie(accessCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
+		return strings.TrimSpace(cookie.Value)
+	}
+	return ""
+}
+
 func (s *Server) AuthGuard() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		header := c.GetHeader("Authorization")
-		if !strings.HasPrefix(strings.ToLower(header), "bearer ") {
+		token := accessTokenFromRequest(c)
+		if token == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			return
 		}
-		token := strings.TrimSpace(header[7:])
 		claims, err := s.tokens.Parse(token, "access")
 		if err != nil {
 			log.Printf("auth reject: remote=%s path=%s reason=%v", c.ClientIP(), c.Request.URL.Path, err)

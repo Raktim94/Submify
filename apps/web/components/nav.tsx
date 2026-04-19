@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
+import { logoutSession } from '@/lib/api';
 import { usePathname, useRouter } from 'next/navigation';
 
 const appLinks = [
@@ -78,11 +79,7 @@ export function Nav() {
             type="button"
             className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
             onClick={() => {
-              localStorage.removeItem('submify_access_token');
-              localStorage.removeItem('submify_refresh_token');
-              localStorage.removeItem('submify_user_name');
-              localStorage.removeItem('submify_user_phone');
-              router.push('/');
+              void logoutSession().then(() => router.push('/'));
             }}
           >
             Log out

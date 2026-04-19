@@ -12,6 +12,9 @@ import (
 
 func Run() error {
 	cfg := config.Load()
+	if err := config.Validate(cfg); err != nil {
+		return err
+	}
 	store, err := db.Open(cfg.DatabaseURL)
 	if err != nil {
 		return err

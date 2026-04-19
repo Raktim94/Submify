@@ -71,6 +71,80 @@ type userIntegrationsRequest struct {
 	S3Bucket         *string `json:"s3_bucket"`
 }
 
+func (s *Server) cookieSameSite() http.SameSite {
+	switch s.cfg.AuthCookieSameSite {
+	case "strict":
+		return http.SameSiteStrictMode
+	case "none":
+		return http.SameSiteNoneMode
+	default:
+		return http.SameSiteLaxMode
+	}
+}
+
+func (s *Server) setSessionCookies(c *gin.Context, accessToken, refreshToken string) {
+	secure := s.cfg.AuthCookieSecure
+	sameSite := s.cookieSameSite()
+	c.SetSameSite(sameSite)
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     accessCookieName,
+		Value:    accessToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		Domain:   s.cfg.AuthCookieDomain,
+		SameSite: sameSite,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    refreshToken,
+		Path:     "/api/v1",
+		HttpOnly: true,
+		Secure:   secure,
+		Domain:   s.cfg.AuthCookieDomain,
+		SameSite: sameSite,
+	})
+}
+
+func (s *Server) clearSessionCookies(c *gin.Context) {
+	secure := s.cfg.AuthCookieSecure
+	sameSite := s.cookieSameSite()
+	c.SetSameSite(sameSite)
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     accessCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secure,
+		Domain:   s.cfg.AuthCookieDomain,
+		SameSite: sameSite,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    "",
+		Path:     "/api/v1",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secure,
+		Domain:   s.cfg.AuthCookieDomain,
+		SameSite: sameSite,
+	})
+}
+
+func refreshTokenFromRequest(c *gin.Context) string {
+	if h := strings.TrimSpace(c.GetHeader("x-refresh-token")); h != "" {
+		return h
+	}
+	if authHeader := strings.TrimSpace(c.GetHeader("Authorization")); strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		return strings.TrimSpace(authHeader[7:])
+	}
+	if cookie, err := c.Request.Cookie(refreshCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
+		return strings.TrimSpace(cookie.Value)
+	}
+	return ""
+}
+
 func (s *Server) BootstrapStatus(c *gin.Context) {
 	has, err := s.store.HasAnyUser()
 	if err != nil {
@@ -111,11 +185,20 @@ func (s *Server) Register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	access, refresh, err := s.tokens.GeneratePair(u.ID, u.Email)
+	access, _, refresh, refreshClaims, err := s.tokens.GeneratePairWithClaims(u.ID, u.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	exp := time.Now().UTC().Add(time.Duration(s.cfg.RefreshTokenTTLHours) * time.Hour)
+	if refreshClaims.ExpiresAt != nil {
+		exp = refreshClaims.ExpiresAt.Time()
+	}
+	if err := s.store.CreateRefreshSession(refreshClaims.JTI, u.ID, exp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.setSessionCookies(c, access, refresh)
 	c.JSON(http.StatusCreated, gin.H{
 		"access_token": access, "refresh_token": refresh, "api_key": u.APIKey,
 		"email": u.Email, "full_name": u.FullName, "phone": u.Phone,
@@ -172,11 +255,20 @@ func (s *Server) Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
-	access, refresh, err := s.tokens.GeneratePair(user.ID, user.Email)
+	access, _, refresh, refreshClaims, err := s.tokens.GeneratePairWithClaims(user.ID, user.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	exp := time.Now().UTC().Add(time.Duration(s.cfg.RefreshTokenTTLHours) * time.Hour)
+	if refreshClaims.ExpiresAt != nil {
+		exp = refreshClaims.ExpiresAt.Time()
+	}
+	if err := s.store.CreateRefreshSession(refreshClaims.JTI, user.ID, exp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.setSessionCookies(c, access, refresh)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": access, "refresh_token": refresh, "api_key": user.APIKey,
 		"full_name": user.FullName, "phone": user.Phone,
@@ -209,17 +301,76 @@ func (s *Server) GetMe(c *gin.Context) {
 
 func (s *Server) Refresh(c *gin.Context) {
 	var req refreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	bodyBytes, _ := io.ReadAll(c.Request.Body)
+	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	if len(bytes.TrimSpace(bodyBytes)) > 0 {
+		_ = json.Unmarshal(bodyBytes, &req)
+	}
+	rt := strings.TrimSpace(req.RefreshToken)
+	if rt == "" {
+		rt = refreshTokenFromRequest(c)
+	}
+	if rt == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing refresh token"})
 		return
 	}
-	claims, err := s.tokens.Parse(req.RefreshToken, "refresh")
+	claims, err := s.tokens.Parse(rt, "refresh")
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
 		return
 	}
-	access, refresh, err := s.tokens.GeneratePair(claims.UserID, claims.Email)
+	jti := claims.JTI
+	if jti == "" {
+		jti = claims.ID
+	}
+
+	rs, err := s.store.RefreshSessionByJTI(jti)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err == nil {
+		if rs.RevokedAt.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token revoked"})
+			return
+		}
+		if !rs.ExpiresAt.After(time.Now()) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token expired"})
+			return
+		}
+		if rs.UserID != claims.UserID {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+			return
+		}
+	} else {
+		exp := time.Now().UTC().Add(time.Duration(s.cfg.RefreshTokenTTLHours) * time.Hour)
+		if claims.ExpiresAt != nil {
+			exp = claims.ExpiresAt.Time()
+		}
+		if err := s.store.CreateRefreshSession(jti, claims.UserID, exp); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	access, _, refresh, newRefreshClaims, err := s.tokens.GeneratePairWithClaims(claims.UserID, claims.Email)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	newJTI := newRefreshClaims.JTI
+	if newJTI == "" {
+		newJTI = newRefreshClaims.ID
+	}
+	newExp := time.Now().UTC().Add(time.Duration(s.cfg.RefreshTokenTTLHours) * time.Hour)
+	if newRefreshClaims.ExpiresAt != nil {
+		newExp = newRefreshClaims.ExpiresAt.Time()
+	}
+	if err := s.store.RotateRefreshSession(jti, newJTI, claims.UserID, newExp); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token invalid"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -228,6 +379,7 @@ func (s *Server) Refresh(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.setSessionCookies(c, access, refresh)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": access, "refresh_token": refresh, "api_key": u.APIKey,
 		"full_name": u.FullName, "phone": u.Phone,
@@ -235,6 +387,31 @@ func (s *Server) Refresh(c *gin.Context) {
 }
 
 func (s *Server) Logout(c *gin.Context) {
+	var req refreshRequest
+	bodyBytes, _ := io.ReadAll(c.Request.Body)
+	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	if len(bytes.TrimSpace(bodyBytes)) > 0 {
+		_ = json.Unmarshal(bodyBytes, &req)
+	}
+	rt := strings.TrimSpace(req.RefreshToken)
+	if rt == "" {
+		rt = refreshTokenFromRequest(c)
+	}
+	s.clearSessionCookies(c)
+	if rt == "" {
+		c.JSON(http.StatusOK, gin.H{"status": "logged out"})
+		return
+	}
+	claims, err := s.tokens.Parse(rt, "refresh")
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": "logged out"})
+		return
+	}
+	jti := claims.JTI
+	if jti == "" {
+		jti = claims.ID
+	}
+	_ = s.store.RevokeRefreshSession(jti, claims.UserID)
 	c.JSON(http.StatusOK, gin.H{"status": "logged out"})
 }
 
@@ -424,18 +601,20 @@ func (s *Server) Submit(c *gin.Context) {
 		return
 	}
 
-	reqOrigin := requestOriginOrReferer(c)
-	if !OriginMatchesAllowlist(project.AllowedOrigins, reqOrigin) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "origin not allowed for this project"})
-		return
-	}
-
 	sig := strings.TrimSpace(c.GetHeader("x-signature"))
+	hasValidHMAC := false
 	if sig != "" {
 		if !verifyHMACSHA256Hex(project.APISecret, rawBody, sig) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
 			return
 		}
+		hasValidHMAC = true
+	}
+
+	reqOrigin := requestOriginOrReferer(c)
+	if !OriginMatchesAllowlist(project.AllowedOrigins, reqOrigin, hasValidHMAC) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "origin not allowed for this project"})
+		return
 	}
 
 	var raw map[string]interface{}

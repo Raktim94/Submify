@@ -5,6 +5,7 @@ import { SiteHeader } from '@/components/landing/site-header';
 import { SubmifyHero } from '@/components/landing/submify-hero';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { isSessionValid } from '@/lib/api';
 
 function IconUser({ className }: { className?: string }) {
   return (
@@ -85,9 +86,16 @@ export default function HomePage() {
   const [activeFlow, setActiveFlow] = useState(0);
 
   useEffect(() => {
-    const token = localStorage.getItem('submify_access_token');
-    setSignedIn(!!token?.trim());
-    setReady(true);
+    let cancelled = false;
+    void isSessionValid().then((ok) => {
+      if (!cancelled) {
+        setSignedIn(ok);
+        setReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

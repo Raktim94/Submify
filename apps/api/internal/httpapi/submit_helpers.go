@@ -75,14 +75,15 @@ func requestOriginOrReferer(c *gin.Context) string {
 }
 
 // OriginMatchesAllowlist enforces optional per-project browser Origin / Referer (full origin URL, e.g. https://app.example.com).
-func OriginMatchesAllowlist(allowed []string, requestOrigin string) bool {
+// When an allowlist is set and the request has no Origin/Referer (non-browser clients), a valid HMAC signature is required.
+func OriginMatchesAllowlist(allowed []string, requestOrigin string, hasValidHMAC bool) bool {
 	if len(allowed) == 0 {
 		return true
 	}
-	if strings.TrimSpace(requestOrigin) == "" {
-		return true
-	}
 	ro := strings.TrimSpace(requestOrigin)
+	if ro == "" {
+		return hasValidHMAC
+	}
 	for _, a := range allowed {
 		if strings.EqualFold(strings.TrimSpace(a), ro) {
 			return true

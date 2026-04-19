@@ -32,9 +32,8 @@ export default function ExportPage() {
     }
     const form = new FormData(e.currentTarget);
     const format = form.get('format') as string;
-    const token = localStorage.getItem('submify_access_token');
     const res = await fetch(`${API_BASE}/projects/${projectId}/export?format=${format}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      credentials: 'include'
     });
     if (!res.ok) {
       const t = await res.text();

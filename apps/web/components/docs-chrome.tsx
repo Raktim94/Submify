@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
+import { isSessionValid } from '@/lib/api';
 import { useEffect, useState } from 'react';
 
 const defaultNav = [
@@ -35,7 +36,13 @@ export function DocsChrome({
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
-    setSignedIn(!!localStorage.getItem('submify_access_token')?.trim());
+    let cancelled = false;
+    void isSessionValid().then((ok) => {
+      if (!cancelled) setSignedIn(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
