@@ -136,6 +136,14 @@ cd /path/to/Submify   # e.g. ~/Submify on Linux
 git pull
 ```
 
+**If `git pull` aborts** with *local changes would be overwritten* (often **`scripts/prune-docker.sh`**): drop uncommitted edits to that file, then pull again:
+
+```bash
+git checkout -- scripts/prune-docker.sh && git pull
+```
+
+Or use **`./scripts/pull-latest.sh`** (same behavior, then `git pull`).
+
 **2. Rebuild and restart the stack** (defaults in `docker-compose.yml`; optional **`.env`** / **`.env.auto`** are picked up automatically from the project directory)
 
 ```bash
@@ -166,8 +174,10 @@ docker compose logs --tail 3000 -f api
 **All-in-one (Linux/macOS / Git Bash)** — adjust `cd` to your clone path:
 
 ```bash
-cd ~/Submify && git pull && docker compose up --build -d && ./scripts/prune-docker.sh && docker compose logs --tail 3000 -f api
+cd ~/Submify && git checkout -- scripts/prune-docker.sh && git pull && docker compose up --build -d && ./scripts/prune-docker.sh && docker compose logs --tail 3000 -f api
 ```
+
+*(The `git checkout -- scripts/prune-docker.sh` step is a no-op when the file is unchanged; it drops uncommitted edits so `git pull` is not blocked.)*
 
 **Windows (PowerShell, Docker Desktop):** same idea — `cd` to your clone, `git pull`, then `docker compose up --build -d`, then `docker compose logs --tail 3000 -f api`. For **`prune-docker.sh`**, use **Git Bash**: `sh ./scripts/prune-docker.sh`, or skip pruning and use **[Disk after many rebuilds](#operations-logs-backup-updates)** when the disk fills.
 
