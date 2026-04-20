@@ -155,9 +155,10 @@ If you start Compose via **`SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh`
 **3. Prune old images and build cache** (optional; saves disk — safe for **`./data/`**)
 
 ```bash
-chmod +x scripts/prune-docker.sh   # once per machine, if needed
-./scripts/prune-docker.sh
+sh ./scripts/prune-docker.sh
 ```
+
+(`sh` avoids “Permission denied” when the file is not marked executable; after **`git pull`**, the repo should ship **`scripts/prune-docker.sh`** as executable — if yours is not, run **`chmod +x scripts/prune-docker.sh`** once, or always use **`sh ./scripts/prune-docker.sh`**.)
 
 **4. Watch API logs**
 
@@ -170,7 +171,7 @@ docker compose logs --tail 3000 -f api
 **All-in-one (Linux/macOS / Git Bash)** — adjust `cd` to your clone path:
 
 ```bash
-cd ~/Submify && git checkout -- scripts/prune-docker.sh && git pull && docker compose up --build -d && ./scripts/prune-docker.sh && docker compose logs --tail 3000 -f api
+cd ~/Submify && git checkout -- scripts/prune-docker.sh && git pull && docker compose up --build -d && sh ./scripts/prune-docker.sh && docker compose logs --tail 3000 -f api
 ```
 
 *(If you skip `git checkout -- scripts/prune-docker.sh` and have any local change to that file, **`git pull` will abort**.)*
@@ -434,7 +435,7 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 
 **Logs:** `docker compose logs -f [service]` (e.g. `api` or `nginx`).
 
-**Pull, rebuild, prune, logs:** use **[Installation → §6 Quick redeploy](#6-quick-redeploy-pull-latest-code-rebuild-clean-old-images-watch-api-logs)** — always **`git checkout -- scripts/prune-docker.sh && git pull`** first, then **`docker compose up --build -d`**, optional **`./scripts/prune-docker.sh`**, then **`docker compose logs --tail 3000 -f api`**. If you deploy with **`./scripts/compose-up.sh`**, substitute **`./scripts/compose-up.sh up --build -d`** for **`docker compose up --build -d`** so env files stay aligned.
+**Pull, rebuild, prune, logs:** use **[Installation → §6 Quick redeploy](#6-quick-redeploy-pull-latest-code-rebuild-clean-old-images-watch-api-logs)** — always **`git checkout -- scripts/prune-docker.sh && git pull`** first, then **`docker compose up --build -d`**, optional **`sh ./scripts/prune-docker.sh`**, then **`docker compose logs --tail 3000 -f api`**. If you deploy with **`./scripts/compose-up.sh`**, substitute **`./scripts/compose-up.sh up --build -d`** for **`docker compose up --build -d`** so env files stay aligned.
 
 The prune script only clears unused images/cache — **not** **`./data/`** (see `scripts/prune-docker.sh`).
 
@@ -450,11 +451,10 @@ Back up these directories on a schedule appropriate to your RPO/RTO.
 **Disk after many rebuilds:** New `docker compose up --build` layers live in Docker’s image/build cache, **not** in PostgreSQL. They can fill the host disk over time. Run periodically:
 
 ```bash
-chmod +x scripts/prune-docker.sh
-./scripts/prune-docker.sh
+sh ./scripts/prune-docker.sh
 ```
 
-Or add a weekly cron job (see comments in the script). The script runs `docker builder prune` and `docker system prune` / `docker image prune` — it does **not** remove volumes or your bind-mounted DB paths. Never run `docker volume prune` or `docker system prune --volumes` unless you intend to delete data.
+Or add a weekly cron job (see comments in the script; use the full path and **`sh`**, or **`chmod +x`** and **`./scripts/prune-docker.sh`**). The script runs `docker builder prune` and `docker system prune` / `docker image prune` — it does **not** remove volumes or your bind-mounted DB paths. Never run `docker volume prune` or `docker system prune --volumes` unless you intend to delete data.
 
 ---
 
@@ -464,6 +464,7 @@ Or add a weekly cron job (see comments in the script). The script runs `docker b
 |---------|----------------|
 | API exits: **`JWT_SECRET` must be set…** | With **`GIN_MODE=release`**, the secret must be ≥32 characters. Set **`JWT_SECRET`** in **`.env`** or use **`SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh`** so **`.env.auto`** supplies one |
 | Postgres auth errors after an upgrade or new **`.env.auto`** | **`POSTGRES_PASSWORD`** no longer matches the cluster on disk. Restore the old password in **`.env`**, or start from a fresh **`./data/postgres`** only if you accept losing DB contents |
+| **`Permission denied`** running **`./scripts/prune-docker.sh`** | Run **`sh ./scripts/prune-docker.sh`** (no execute bit needed), or **`chmod +x scripts/prune-docker.sh`**. New clones should get **`+x`** from Git after **`git pull`** |
 | `docker compose build` / bake **exit status 1** | Run **`docker compose build --progress=plain api`** (or **`web`**) and read the **ERROR** block at the end. On a **small VPS**, parallel builds can OOM — try **`docker compose build --parallel 1`** or add **swap** |
 | Nothing on port 2512 | Firewall, `docker compose ps`, Nginx logs |
 | Locked out after recreating **`.env.auto`** but keeping old DB data | Restore the previous **`.env.auto`** (or reset Postgres / MinIO data to match new secrets) |

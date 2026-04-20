@@ -52,4 +52,4 @@ Back up those folders with your backup policy. For production, override default 
 ## Logs and Docker disk
 
 - Compose enables **log rotation** (`json-file`, 10 MB × 3 files per service) so container logs do not grow without bound.
-- Rebuilds accumulate **image/build cache** on the host (not in Postgres). Run `scripts/prune-docker.sh` occasionally or from cron to free space; it does not delete database files.
+- Rebuilds accumulate **image/build cache** on the host (not in Postgres). Run `sh scripts/prune-docker.sh` occasionally or from cron to free space; it does not delete database files.
