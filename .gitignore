@@ -17,6 +17,9 @@ bin/
 !.env.example
 !**/.env.example
 
+# Docker Compose data (Postgres + MinIO) — lives next to docker-compose.yml
+/data/
+
 # IDE
 .vscode/
 .idea/

@@ -7,9 +7,19 @@
 
 ## Run
 
+Out of the box (defaults in `docker-compose.yml`, data in `./data/`):
+
 ```bash
 docker compose up --build -d
 ```
+
+Optional strong random secrets (first install only; keeps `.env.auto` next to compose — back it up with `./data/`):
+
+```bash
+SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh up --build -d
+```
+
+Windows: `$env:SUBMIFY_GENERATE_AUTO_ENV='1'; .\scripts\Compose-Up.ps1 up --build -d`
 
 Open:
 
@@ -18,10 +28,8 @@ Open:
 
 ## First-Time Setup
 
-1. Visit `/setup`.
-2. Enter S3-compatible RustFS endpoint and credentials.
-3. Enter Telegram bot token + chat ID.
-4. Create admin credentials.
+1. Open **`/register`** and create the first account (password is chosen in the browser).
+2. Optional: configure Telegram and S3-compatible storage in the dashboard **Settings** after login.
 
 ## Cloudflare Tunnel (CGNAT)
 
@@ -34,12 +42,12 @@ docker compose --profile tunnel up -d
 
 ## Persistence
 
-Data is stored on the **host** (bind mounts), not inside the API container image:
+Data lives next to `docker-compose.yml` (not inside the API image):
 
-- `/var/lib/submify/data/postgres` — PostgreSQL files survive `docker compose restart` and `docker compose down`
-- `/var/lib/submify/data/rustfs` — object storage (MinIO) data
+- `./data/postgres` — PostgreSQL
+- `./data/rustfs` — MinIO (S3-compatible)
 
-Set a strong `POSTGRES_PASSWORD` in production (same value is interpolated into the API `DATABASE_URL` in Compose). Avoid `docker compose down -v` unless you intend to delete **named** volumes (this stack uses bind mounts by default, but `-v` is still risky if you add named volumes later).
+Back up those folders with your backup policy. For production, override default passwords and **`JWT_SECRET`** via **`.env`**. Avoid `docker compose down -v` if you add named volumes later.
 
 ## Logs and Docker disk
 

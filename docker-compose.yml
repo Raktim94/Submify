@@ -1,32 +1,35 @@
-# PostgreSQL and MinIO data live in the HOST paths below (bind mounts), not inside the API image.
-# `docker compose restart` / `docker compose down` keeps this data. Only `docker compose down -v`
-# removes explicitly declared named volumes (not used here by default).
+# Submify — `docker compose up --build -d` works out of the box (CasaOS / desktop friendly).
 #
-# Image layers from old builds do not live in the DB volume; they use Docker’s image store.
-# Run scripts/prune-docker.sh periodically (e.g. cron) to reclaim disk — it never touches volumes.
+# Defaults: Postgres, JWT, and MinIO passwords are defined below via ${VAR:-...} (change in `.env` for production).
+# Data: `./data/postgres` and `./data/rustfs` next to this file (portable; add to backups).
+#
+# Strong random secrets (optional): SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh up --build -d
+#
+# Image layers do not live in the DB folder; they use Docker’s image store.
+# Run scripts/prune-docker.sh periodically on servers to reclaim disk.
 x-logging: &default-logging
   driver: json-file
   options:
     max-size: "10m"
     max-file: "3"
 
-# API: json-file limits by size, not line count (10m × 1 file).
 x-logging-api: &api-logging
   driver: json-file
   options:
     max-size: "10m"
     max-file: "1"
 
+# OOB hex defaults (32 bytes each). MUST match between db POSTGRES_PASSWORD and api DATABASE_URL — see comments inline.
 services:
   db:
     image: postgres:16-alpine
     container_name: submify-db
     environment:
       POSTGRES_USER: submify
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env — see .env.example}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-7f3a9c2e8b1d4f6a0e5c8b2d9f4a6e1c3b7d0f5a8e2c6b9d4f1a7e0c5b8d3f6}
       POSTGRES_DB: submify
     volumes:
-      - /var/lib/submify/data/postgres:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U submify"]
@@ -40,30 +43,24 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${RUSTFS_ROOT_USER:-submify}
-      MINIO_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:?Set RUSTFS_ROOT_PASSWORD in .env — see .env.example}
+      MINIO_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:-b1c2d3e4f5a69788796a5b4c3d2e1f0c9d8e7f6a5b4938271605f4e3d2c1b0a9f8}
     volumes:
-      - /var/lib/submify/data/rustfs:/data
+      - ./data/rustfs:/data
     logging: *default-logging
 
   api:
     build:
       context: ./apps/api
     container_name: submify-api
-    # Runs as non-root user from the image (see apps/api/Dockerfile). Do not mount docker.sock into the API.
     environment:
       PORT: 8080
-      DATABASE_URL: postgres://submify:${POSTGRES_PASSWORD}@db:5432/submify?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env — at least 32 random characters (e.g. openssl rand -hex 32)}
+      # Same default POSTGRES_PASSWORD as db service (compose substitutes each ${} independently).
+      DATABASE_URL: postgres://submify:${POSTGRES_PASSWORD:-7f3a9c2e8b1d4f6a0e5c8b2d9f4a6e1c3b7d0f5a8e2c6b9d4f1a7e0c5b8d3f6}@db:5432/submify?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-a8e9d7f6c5b4a39281706f5e4d3c2b1a098f7e6d5c4b3a2918075645342312019}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
-      # Browser CORS: list exact page origins (scheme+host+port), e.g. https://app.nodedr.com
-      # OR set CORS_ORIGIN_HOST_SUFFIXES=nodedr.com (or your domain) when the UI and API use different hosts.
-      # LAN: CORS_RELAX_PRIVATE_NETWORKS=true allows http(s)://192.168.x.x:2512 without listing each IP.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:2512,http://127.0.0.1:2512}
       CORS_RELAX_PRIVATE_NETWORKS: ${CORS_RELAX_PRIVATE_NETWORKS:-true}
-      # When true (default), Origin is allowed if it matches the public Host (and port) of this request — works with
-      # Cloudflare Tunnel / nginx without listing every hostname in ALLOWED_ORIGINS. Set false to require explicit lists only.
       CORS_ALLOW_SAME_HOST_ORIGIN: ${CORS_ALLOW_SAME_HOST_ORIGIN:-true}
-      # Allow browsers on any site to POST to /api/submit with x-api-key (embedded forms). Set false to lock down.
       CORS_PUBLIC_SUBMIT_ANY_ORIGIN: ${CORS_PUBLIC_SUBMIT_ANY_ORIGIN:-true}
       CORS_ORIGIN_HOST_SUFFIXES: ${CORS_ORIGIN_HOST_SUFFIXES:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
@@ -90,7 +87,6 @@ services:
     container_name: submify-web
     environment:
       NEXT_PUBLIC_API_BASE: /api/v1
-      # Optional: homepage contact form → Nodedr (see apps/web/.env.example, /docs/contact-proxy)
       NODEDR_SUBMIT_PUBLIC_KEY: ${NODEDR_SUBMIT_PUBLIC_KEY:-}
       NODEDR_SUBMIT_SECRET_KEY: ${NODEDR_SUBMIT_SECRET_KEY:-}
     logging: *default-logging
@@ -124,4 +120,3 @@ services:
     logging: *default-logging
     profiles:
       - tunnel
-

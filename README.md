@@ -34,7 +34,7 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
   - `/api/*` → API (Go, port 8080 in the container)
   - `/*` → Next.js (port 3000 in the container)
 - **PostgreSQL** stores all tenants in one database (JSONB-friendly, battle-tested). Rows are scoped by `user_id` / `project_id`; the API never lists or mutates another user’s data.
-- **Object storage** — the Compose service is named **`rustfs`** (hostname `rustfs` inside the network). By default it runs **`minio/minio`** (S3-compatible API). Set **`RUSTFS_IMAGE`** to swap in another S3-compatible image if needed. Data is stored on the host under `/var/lib/submify/data/rustfs`.
+- **Object storage** — the Compose service is named **`rustfs`** (hostname `rustfs` inside the network). By default it runs **`minio/minio`** (S3-compatible API). Set **`RUSTFS_IMAGE`** to swap in another S3-compatible image if needed. Data is stored under **`./data/rustfs`** next to `docker-compose.yml` (portable bind mounts).
 
 The browser and external clients should use **one origin** for dashboard + API (e.g. `https://forms.example.com:2512/api/v1/...`) or configure **CORS** for separate sites (see [Connecting a client website](#connecting-a-client-website-forms)).
 
@@ -59,7 +59,7 @@ Email notifications are **not** implemented in this release; you can send mail f
 - Host firewall / security group allowing inbound **TCP 2512** (or your reverse proxy port)
 - For production: TLS termination (reverse proxy or tunnel) is strongly recommended
 
-**Note:** `docker-compose.yml` uses Linux-style bind mounts under `/var/lib/submify/data/...`. That path is normal on Linux VPS deployments. On Windows Docker Desktop you may need to adjust volume mappings for local development; production guidance assumes a Linux server.
+**Note:** Default Compose uses **`./data/postgres`** and **`./data/rustfs`** (next to the compose file) so the stack runs on **Windows, macOS, Linux, and CasaOS-style installs** without creating `/var/lib/...` paths. For a Linux VPS you can edit those volume lines to absolute host paths if you prefer.
 
 ---
 
@@ -72,31 +72,17 @@ git clone https://github.com/Raktim94/Submify.git
 cd Submify
 ```
 
-### 2. Environment file (required before first boot)
+### 2. Environment and secrets (optional)
 
-Docker Compose **requires** secrets in a **`.env`** file next to `docker-compose.yml` (Compose loads it automatically). Templates are **versioned** in the repo:
+**Default:** no `.env` is required. **`docker-compose.yml`** ships **development-friendly defaults** for **`POSTGRES_PASSWORD`**, **`JWT_SECRET`**, and **`RUSTFS_ROOT_PASSWORD`**. **Change them for production** via a **`.env`** file (see **`.env.example`**) so your instance is unique.
 
 | File | Role |
 |------|------|
-| **`.env.example`** (repo root) | Copy to `.env` and edit values — **required** vars for Compose |
+| **`.env`** (optional) | Overrides — copy from **`.env.example`** (`./scripts/setup-env.sh`) |
+| **`.env.auto`** (optional) | Strong random secrets if you set **`SUBMIFY_GENERATE_AUTO_ENV=1`** when running **`./scripts/compose-up.sh`** — back up with **`./data/`** |
 | **`apps/web/.env.example`** | Optional Next.js / marketing contact-proxy vars (see [§5b](#5b-nextjs-marketing-contact-form-nodedr-hosted-api-proxy)) |
 
-Create `.env` from the template:
-
-```bash
-cp .env.example .env
-# or: ./scripts/setup-env.sh
-```
-
-Edit `.env` and set at least:
-
-| Variable | Purpose |
-|----------|---------|
-| **`POSTGRES_PASSWORD`** | PostgreSQL password (must match what Compose wires into `DATABASE_URL` for the API) |
-| **`JWT_SECRET`** | At least 32 random characters for JWT signing (e.g. `openssl rand -hex 32`) |
-| **`RUSTFS_ROOT_PASSWORD`** | MinIO root password (`RUSTFS_ROOT_USER` defaults to `submify` if unset) |
-
-Optional: export overrides in your shell instead of `.env`, or add **`ALLOWED_ORIGINS`**, **`AUTH_COOKIE_SECURE`**, etc. (see [Configuration](#configuration-and-environment-variables)).
+**Wrapper scripts** (`./scripts/compose-up.sh`, **`Compose-Up.ps1`**) only add **`--env-file`** entries when **`.env.auto`** and/or **`.env`** exist; plain **`docker compose`** is always enough for a first run.
 
 ```bash
 # Optional one-liners when not using .env for these
@@ -112,6 +98,22 @@ docker compose up --build -d
 docker compose ps
 ```
 
+**Optional — strong random secrets** (first install only; creates **`.env.auto`**):
+
+```bash
+SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh up --build -d
+```
+
+Windows:
+
+```powershell
+$env:SUBMIFY_GENERATE_AUTO_ENV='1'; .\scripts\Compose-Up.ps1 up --build -d
+```
+
+### 3b. Recovering data after path or password changes
+
+If you previously used **`/var/lib/submify/data/...`** or an old **`.env`**, your files may still be on disk. **Stop the stack**, copy the old Postgres data directory into **`./data/postgres`**, and set **`POSTGRES_PASSWORD`** in **`.env`** to the **same** value used when that database was first initialized. If you regenerated **`.env.auto`** or defaults no longer match the volume, Postgres will reject connections until the password matches.
+
 ### 4. Open the app
 
 See **[URLs and ports (browser vs containers)](#urls-and-ports-browser-vs-containers)** below for the full picture.
@@ -125,22 +127,51 @@ docker compose logs -f nginx
 
 ### 6. Quick redeploy (pull latest code, rebuild, clean old images, watch API logs)
 
-On a server where you cloned the repo to `~/Submify`, use this copy-paste sequence after changes are pushed to Git. Ensure **`.env`** exists (see [§2](#2-environment-file-required-before-first-boot)); **`git pull` does not create it**.
+Use this after new commits land in your upstream branch. **`git pull`** updates code only — it does **not** replace **`./data/`** or your **`.env`** / **`.env.auto`** (keep those on the server).
+
+**1. Go to your clone and pull**
 
 ```bash
-cd ~/Submify
+cd /path/to/Submify   # e.g. ~/Submify on Linux
 git pull
+```
+
+**2. Rebuild and restart the stack** (defaults in `docker-compose.yml`; optional **`.env`** / **`.env.auto`** are picked up automatically from the project directory)
+
+```bash
 docker compose up --build -d
-chmod +x scripts/prune-docker.sh
+```
+
+If you start Compose via **`SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh`**, use the same wrapper here so **`--env-file`** stays consistent:
+
+```bash
+./scripts/compose-up.sh up --build -d
+```
+
+**3. Prune old images and build cache** (optional; saves disk — safe for **`./data/`**)
+
+```bash
+chmod +x scripts/prune-docker.sh   # once per machine, if needed
 ./scripts/prune-docker.sh
+```
+
+**4. Watch API logs**
+
+```bash
 docker compose logs --tail 3000 -f api
 ```
 
-**Cleanup step (`prune-docker.sh`):** Removes unused Docker images and build cache so repeated rebuilds do not fill the disk. It does **not** delete volumes or your bind-mounted data — PostgreSQL submissions and MinIO files under `/var/lib/submify/data/` stay intact. Do **not** run `docker volume prune` or `docker system prune --volumes` unless you intend to wipe data (see **[Disk after many rebuilds](#operations-logs-backup-updates)**).
+`--tail 3000` only caps **history shown at attach**; new lines still stream until **Ctrl+C**. For a snapshot without following: `docker compose logs --tail 3000 api` (no `-f`).
 
-**Logs:** `--tail 3000` limits how much **existing** log history is printed when you attach; new lines still stream until you press **Ctrl+C**. For a one-off snapshot without following, use `docker compose logs --tail 3000 api` (no `-f`).
+**All-in-one (Linux/macOS / Git Bash)** — adjust `cd` to your clone path:
 
-Omit the `prune` and/or `logs` lines if you only need a quick pull and rebuild.
+```bash
+cd ~/Submify && git pull && docker compose up --build -d && ./scripts/prune-docker.sh && docker compose logs --tail 3000 -f api
+```
+
+**Windows (PowerShell, Docker Desktop):** same idea — `cd` to your clone, `git pull`, then `docker compose up --build -d`, then `docker compose logs --tail 3000 -f api`. For **`prune-docker.sh`**, use **Git Bash**: `sh ./scripts/prune-docker.sh`, or skip pruning and use **[Disk after many rebuilds](#operations-logs-backup-updates)** when the disk fills.
+
+Omit steps 3 and/or 4 if you only need a quick pull and rebuild.
 
 ---
 
@@ -183,14 +214,14 @@ Values used by the **API** container (see `docker-compose.yml` and `apps/api/int
 |----------|----------------------|---------|
 | `PORT` | `8080` | HTTP port inside the API container |
 | `DATABASE_URL` | Compose default to `db` | PostgreSQL connection string |
-| `JWT_SECRET` | Set in **`.env`** (required by Compose) | JWT HMAC secret (≥32 random characters recommended) |
+| `JWT_SECRET` | Built-in default in **`docker-compose.yml`**, or **`.env`** / **`.env.auto`** | JWT HMAC secret (≥32 characters; override in production) |
 | `ALLOWED_ORIGINS` | `http://localhost:2512,http://127.0.0.1:2512` | CORS allowlist (comma-separated) |
 | `UPLOAD_MAX_SIZE_BYTES` | `26214400` (25 MiB) | Max upload size for presign |
 | `UPLOAD_ALLOWED_MIME` | `image/png,image/jpeg,application/pdf,text/plain` | Allowed MIME types for presign |
 | `PRESIGN_EXPIRY_MINUTES` | `10` | Presigned URL lifetime |
 | `ACCESS_TOKEN_TTL_MINUTES` | `30` | Access token lifetime |
 | `REFRESH_TOKEN_TTL_HOURS` | `168` | Refresh token lifetime |
-| `POSTGRES_PASSWORD` | Set in **`.env`** (required; no Compose default) | DB password; Compose interpolates this into `DATABASE_URL` for the API |
+| `POSTGRES_PASSWORD` | Built-in default in **`docker-compose.yml`**, or **`.env`** / **`.env.auto`** | DB password; must match **`DATABASE_URL`** in the API service |
 | `TRUSTED_PROXIES` | private RFC1918 + loopback | CIDRs allowed to set `X-Forwarded-For` (trust Nginx / load balancers only) |
 | `RATE_LIMIT_SENSITIVE_PUBLIC_RPM` | `25` | Login / setup / refresh / logout per IP |
 | `RATE_LIMIT_SUBMIT_IP_RPM` | `90` | Public submit per client IP |
@@ -395,25 +426,16 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 
 ## Operations: logs, backup, updates
 
-**Logs:** `docker compose logs -f [service]` (e.g. `docker compose logs -f api` or `nginx`)
+**Logs:** `docker compose logs -f [service]` (e.g. `api` or `nginx`).
 
-**Pull latest code, rebuild, prune old images, and follow API logs** (same as **Installation → Quick redeploy**):
+**Pull, rebuild, prune, logs:** use **[Installation → §6 Quick redeploy](#6-quick-redeploy-pull-latest-code-rebuild-clean-old-images-watch-api-logs)** — same commands: **`git pull`**, **`docker compose up --build -d`**, optional **`./scripts/prune-docker.sh`**, then **`docker compose logs --tail 3000 -f api`**. If you deploy with **`./scripts/compose-up.sh`**, substitute **`./scripts/compose-up.sh up --build -d`** for **`docker compose up --build -d`** so env files stay aligned.
 
-```bash
-cd ~/Submify
-git pull
-docker compose up --build -d
-chmod +x scripts/prune-docker.sh
-./scripts/prune-docker.sh
-docker compose logs --tail 3000 -f api
-```
-
-Adjust `~/Submify` if your clone lives elsewhere. The prune script only clears unused images/cache — **not** submission data (see comments in `scripts/prune-docker.sh`).
+The prune script only clears unused images/cache — **not** **`./data/`** (see `scripts/prune-docker.sh`).
 
 **Backups:** Persisted data (see `docker-compose.yml`):
 
-- `/var/lib/submify/data/postgres`
-- `/var/lib/submify/data/rustfs`
+- `./data/postgres`
+- `./data/rustfs`
 
 Back up these directories on a schedule appropriate to your RPO/RTO.
 
@@ -434,10 +456,11 @@ Or add a weekly cron job (see comments in the script). The script runs `docker b
 
 | Symptom | What to check |
 |---------|----------------|
-| Compose error: `required variable POSTGRES_PASSWORD is missing` (or similar for `JWT_SECRET` / `RUSTFS_ROOT_PASSWORD`) | Create **`.env`** in the repo root: `cp .env.example .env` or `./scripts/setup-env.sh`, then set real secrets |
+| API exits: **`JWT_SECRET` must be set…** | With **`GIN_MODE=release`**, the secret must be ≥32 characters. Set **`JWT_SECRET`** in **`.env`** or use **`SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh`** so **`.env.auto`** supplies one |
+| Postgres auth errors after an upgrade or new **`.env.auto`** | **`POSTGRES_PASSWORD`** no longer matches the cluster on disk. Restore the old password in **`.env`**, or start from a fresh **`./data/postgres`** only if you accept losing DB contents |
 | `docker compose build` / bake **exit status 1** | Run **`docker compose build --progress=plain api`** (or **`web`**) and read the **ERROR** block at the end. On a **small VPS**, parallel builds can OOM — try **`docker compose build --parallel 1`** or add **swap** |
 | Nothing on port 2512 | Firewall, `docker compose ps`, Nginx logs |
-| Setup loop | DB healthy, API logs, `system_configs` row |
+| Locked out after recreating **`.env.auto`** but keeping old DB data | Restore the previous **`.env.auto`** (or reset Postgres / MinIO data to match new secrets) |
 | `401` on submit | `x-api-key` equals URL segment and matches a valid **`api_key`** or project **`public_api_key`** |
 | `429` on submit | Per-project **5000** cap, or submit IP/key rate limits |
 | CORS errors from browser | `ALLOWED_ORIGINS` includes your site’s exact origin (scheme + host + port) |
@@ -475,7 +498,7 @@ Review performed against the code in this repository (handlers, routes, Next.js 
 **Operational notes:**
 
 - **Tenant isolation:** one PostgreSQL database with strict `user_id` / `project_id` checks on every mutating and listing path; another user’s JWT cannot read their rows.
-- **Persistence:** Postgres files live in the **host bind mount** (`/var/lib/submify/data/postgres` in the default Compose file), not in the API image — restarts keep data. Use a strong **`POSTGRES_PASSWORD`** in production.
+- **Persistence:** Postgres files live in **`./data/postgres`** (next to `docker-compose.yml`), not in the API image — restarts keep data. Use unique secrets in production via **`.env`**.
 - Rate limits are **tiered** (health/bootstrap exempt; authed traffic per **user**). Adjust env vars if you still see `429` for legitimate load.
 - Run `go test ./...` under `apps/api` to execute unit tests for password hashing, JWT, etc.
 

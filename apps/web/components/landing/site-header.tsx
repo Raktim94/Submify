@@ -3,9 +3,25 @@
 import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
 
-export function SiteHeader({ signedIn }: { signedIn: boolean }) {
+export function SiteHeader({
+  signedIn,
+  setupRequired = false
+}: {
+  signedIn: boolean;
+  /** True when no user exists yet — first account is created at /register with a browser-chosen password. */
+  setupRequired?: boolean;
+}) {
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/95 shadow-sm shadow-slate-200/30 backdrop-blur-md">
+      {!signedIn && setupRequired ? (
+        <div className="border-b border-amber-200/90 bg-amber-50 px-4 py-2.5 text-center text-sm text-amber-950 sm:text-[0.9375rem]">
+          <strong className="font-semibold">First-time setup:</strong> no accounts exist yet.{' '}
+          <Link href="/register" className="font-semibold text-amber-900 underline decoration-amber-700/60 underline-offset-2 hover:text-amber-950">
+            Create the first account
+          </Link>{' '}
+          and choose your password in the browser — you do not put your login password in server environment files.
+        </div>
+      ) : null}
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Link href="/" className="inline-flex shrink-0 items-center transition-opacity hover:opacity-90" aria-label="Submify home">

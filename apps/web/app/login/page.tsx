@@ -1,14 +1,21 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
 import { useRouter } from 'next/navigation';
-import { apiBase, userFacingApiError } from '../../lib/api';
+import { apiBase, getBootstrapStatus, userFacingApiError } from '../../lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState('');
+  const [setupRequired, setSetupRequired] = useState(false);
+
+  useEffect(() => {
+    void getBootstrapStatus()
+      .then((b) => setSetupRequired(b.setup_required))
+      .catch(() => {});
+  }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -79,6 +86,18 @@ export default function LoginPage() {
           </div>
         </div>
       <h1 className="mb-2 text-3xl font-bold">Sign in</h1>
+      {setupRequired ? (
+        <div
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-950"
+          role="status"
+        >
+          No accounts exist on this instance yet.{' '}
+          <Link href="/register" className="font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-950">
+            Create the first account
+          </Link>{' '}
+          and set your password on that page — not in environment variables.
+        </div>
+      ) : null}
       <p className="mb-6 text-slate-600">
         New here?{' '}
         <Link href="/register" className="text-brand-700 underline">

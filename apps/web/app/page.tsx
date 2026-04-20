@@ -5,7 +5,7 @@ import { SiteHeader } from '@/components/landing/site-header';
 import { SubmifyHero } from '@/components/landing/submify-hero';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { isSessionValid } from '@/lib/api';
+import { getBootstrapStatus, isSessionValid } from '@/lib/api';
 
 function IconUser({ className }: { className?: string }) {
   return (
@@ -83,16 +83,25 @@ const faqItems = [
 export default function HomePage() {
   const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
   const [activeFlow, setActiveFlow] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    void isSessionValid().then((ok) => {
-      if (!cancelled) {
-        setSignedIn(ok);
-        setReady(true);
+    void (async () => {
+      const ok = await isSessionValid();
+      if (cancelled) return;
+      setSignedIn(ok);
+      if (!ok) {
+        try {
+          const b = await getBootstrapStatus();
+          if (!cancelled) setSetupRequired(b.setup_required);
+        } catch {
+          if (!cancelled) setSetupRequired(false);
+        }
       }
-    });
+      if (!cancelled) setReady(true);
+    })();
     return () => {
       cancelled = true;
     };
@@ -133,7 +142,7 @@ export default function HomePage() {
           })
         }}
       />
-      <SiteHeader signedIn={signedIn} />
+      <SiteHeader signedIn={signedIn} setupRequired={setupRequired} />
       <SubmifyHero signedIn={signedIn} />
 
       <div className="relative overflow-hidden bg-gradient-to-b from-slate-50 via-white to-indigo-50/30">

@@ -1,14 +1,21 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
 import { useRouter } from 'next/navigation';
-import { registerAccount } from '../../lib/api';
+import { getBootstrapStatus, registerAccount } from '../../lib/api';
 
 export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState('');
+  const [firstAccount, setFirstAccount] = useState(false);
+
+  useEffect(() => {
+    void getBootstrapStatus()
+      .then((b) => setFirstAccount(b.setup_required))
+      .catch(() => {});
+  }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -46,6 +53,13 @@ export default function RegisterPage() {
           </div>
         </div>
       <h1 className="mb-2 text-3xl font-bold">Create account</h1>
+      {firstAccount ? (
+        <p className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/80 p-3 text-sm leading-relaxed text-indigo-950">
+          You are creating the <strong>first account</strong> for this Submify instance. The password you enter below is the one you
+          will use to sign in — it is not configured via server <code className="rounded bg-indigo-100/80 px-1 py-0.5 text-xs">.env</code>{' '}
+          files.
+        </p>
+      ) : null}
       <p className="mb-6 text-slate-600">
         Already have an account?{' '}
         <Link href="/login" className="text-brand-700 underline">

@@ -9,7 +9,7 @@ export function middleware(req: NextRequest) {
   }
 
   if (pathname === '/setup') {
-    return NextResponse.redirect(new URL('/', req.url));
+    return NextResponse.redirect(new URL('/register', req.url));
   }
 
   return NextResponse.next();

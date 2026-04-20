@@ -1,5 +1,6 @@
 #!/bin/sh
-# Create .env from .env.example if missing (required for docker compose).
+# Create optional .env from .env.example (CORS, tunnel, production secrets, etc.).
+# The stack runs without .env — defaults live in docker-compose.yml.
 set -e
 cd "$(dirname "$0")/.." || exit 1
 if [ ! -f .env ]; then
@@ -8,7 +9,7 @@ if [ ! -f .env ]; then
     exit 1
   fi
   cp .env.example .env
-  echo "Created .env from .env.example — edit secrets before production."
+  echo "Created .env from .env.example — uncomment and set any values you need."
 else
   echo ".env already exists; not overwriting."
 fi
