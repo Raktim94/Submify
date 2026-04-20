@@ -125,7 +125,7 @@ docker compose logs -f api
 docker compose logs -f nginx
 ```
 
-### 6. Quick redeploy (pull latest code, rebuild, clean old images, watch API logs)
+### 6. Quick redeploy (pull latest, rebuild, prune)
 
 Use this after new commits land in your upstream branch. **`git pull`** updates code only — it does **not** replace **`./data/`** or your **`.env`** / **`.env.auto`** (keep those on the server).
 
@@ -160,25 +160,34 @@ sh ./scripts/prune-docker.sh
 
 (`sh` avoids “Permission denied” when the file is not marked executable; after **`git pull`**, the repo should ship **`scripts/prune-docker.sh`** as executable — if yours is not, run **`chmod +x scripts/prune-docker.sh`** once, or always use **`sh ./scripts/prune-docker.sh`**.)
 
-**4. Watch API logs**
+**4. (Optional) Watch API logs**
+
+Do **not** chain this after deploy with **`&&`** unless you understand: **`docker compose logs -f`** **follows** the log stream and **does not exit** until you press **Ctrl+C** — the shell is waiting for new lines, not frozen.
 
 ```bash
 docker compose logs --tail 3000 -f api
 ```
 
-`--tail 3000` only caps **history shown at attach**; new lines still stream until **Ctrl+C**. For a snapshot without following: `docker compose logs --tail 3000 api` (no `-f`).
+- **`-f`** = follow live logs (runs until **Ctrl+C**).
+- **No `-f`** = print recent lines and return to the prompt: `docker compose logs --tail 300 api`
 
-**All-in-one (Linux/macOS / Git Bash)** — adjust `cd` to your clone path:
+**All-in-one that finishes** (returns to shell when done — recommended for copy-paste deploys):
 
 ```bash
-cd ~/Submify && git checkout -- scripts/prune-docker.sh && git pull && docker compose up --build -d && sh ./scripts/prune-docker.sh && docker compose logs --tail 3000 -f api
+cd ~/Submify && git checkout -- scripts/prune-docker.sh && git pull && docker compose up --build -d && sh ./scripts/prune-docker.sh
+```
+
+Then, only if you want to watch logs, run this **as a second command**:
+
+```bash
+docker compose logs --tail 3000 -f api
 ```
 
 *(If you skip `git checkout -- scripts/prune-docker.sh` and have any local change to that file, **`git pull` will abort**.)*
 
-**Windows (PowerShell, Docker Desktop):** `cd` to your clone, then **`git checkout -- scripts/prune-docker.sh && git pull`**, then **`docker compose up --build -d`**, then logs. For **`prune-docker.sh`**, use **Git Bash**: `sh ./scripts/prune-docker.sh`, or skip pruning and use **[Disk after many rebuilds](#operations-logs-backup-updates)** when the disk fills.
+**Windows (PowerShell, Docker Desktop):** `cd` to your clone, then **`git checkout -- scripts/prune-docker.sh && git pull`**, then **`docker compose up --build -d`**. For **`prune-docker.sh`**, use **Git Bash**: `sh ./scripts/prune-docker.sh`. Logs: same **`docker compose logs …`** as above. Use **[Disk after many rebuilds](#operations-logs-backup-updates)** when the disk fills.
 
-Omit steps 3 and/or 4 if you only need a quick pull and rebuild.
+Omit step 3 if you only need a quick pull and rebuild.
 
 ---
 
@@ -435,7 +444,7 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 
 **Logs:** `docker compose logs -f [service]` (e.g. `api` or `nginx`).
 
-**Pull, rebuild, prune, logs:** use **[Installation → §6 Quick redeploy](#6-quick-redeploy-pull-latest-code-rebuild-clean-old-images-watch-api-logs)** — always **`git checkout -- scripts/prune-docker.sh && git pull`** first, then **`docker compose up --build -d`**, optional **`sh ./scripts/prune-docker.sh`**, then **`docker compose logs --tail 3000 -f api`**. If you deploy with **`./scripts/compose-up.sh`**, substitute **`./scripts/compose-up.sh up --build -d`** for **`docker compose up --build -d`** so env files stay aligned.
+**Pull, rebuild, prune:** use **[Installation → §6 Quick redeploy](#6-quick-redeploy-pull-latest-rebuild-prune)** — **`git checkout -- scripts/prune-docker.sh && git pull`**, then **`docker compose up --build -d`**, optional **`sh ./scripts/prune-docker.sh`**. Run **`docker compose logs -f api`** separately if you want live logs (**`-f`** streams until **Ctrl+C**). If you deploy with **`./scripts/compose-up.sh`**, substitute **`./scripts/compose-up.sh up --build -d`** for **`docker compose up --build -d`** so env files stay aligned.
 
 The prune script only clears unused images/cache — **not** **`./data/`** (see `scripts/prune-docker.sh`).
 
@@ -465,6 +474,7 @@ Or add a weekly cron job (see comments in the script; use the full path and **`s
 | API exits: **`JWT_SECRET` must be set…** | With **`GIN_MODE=release`**, the secret must be ≥32 characters. Set **`JWT_SECRET`** in **`.env`** or use **`SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh`** so **`.env.auto`** supplies one |
 | Postgres auth errors after an upgrade or new **`.env.auto`** | **`POSTGRES_PASSWORD`** no longer matches the cluster on disk. Restore the old password in **`.env`**, or start from a fresh **`./data/postgres`** only if you accept losing DB contents |
 | **`Permission denied`** running **`./scripts/prune-docker.sh`** | Run **`sh ./scripts/prune-docker.sh`** (no execute bit needed), or **`chmod +x scripts/prune-docker.sh`**. New clones should get **`+x`** from Git after **`git pull`** |
+| Redeploy “hangs” after **`docker compose logs -f`** | **`-f`** follows logs until **Ctrl+C** — not stuck. Omit **`-f`** for a one-shot dump, or run logs **after** the deploy command instead of **`&&`** chaining |
 | `docker compose build` / bake **exit status 1** | Run **`docker compose build --progress=plain api`** (or **`web`**) and read the **ERROR** block at the end. On a **small VPS**, parallel builds can OOM — try **`docker compose build --parallel 1`** or add **swap** |
 | Nothing on port 2512 | Firewall, `docker compose ps`, Nginx logs |
 | Locked out after recreating **`.env.auto`** but keeping old DB data | Restore the previous **`.env.auto`** (or reset Postgres / MinIO data to match new secrets) |
@@ -477,7 +487,7 @@ Or add a weekly cron job (see comments in the script; use the full path and **`s
 
 ## Codebase review (health check)
 
-Review performed against the code in this repository (handlers, routes, Next.js **proxy** (edge routing), Compose, Nginx):
+Review performed against the code in this repository (handlers, routes, Next.js **redirects** in `next.config.js`, Compose, Nginx):
 
 | Area | Assessment |
 |------|------------|
@@ -497,7 +507,7 @@ Review performed against the code in this repository (handlers, routes, Next.js 
 | `apps/api/Dockerfile` | **Build fails** — `go build -o /out/...` without **`/out`** existing; empty **`GOARCH`** when platform args are missing | **`mkdir -p /out`** before build; **`ARG TARGETARCH=amd64`** in the builder stage; `go mod tidy` + `go build` after **`COPY . .`** |
 | `apps/api/internal/httpapi/handlers.go` | **Compile error** with **`github.com/golang-jwt/jwt/v5`** — `NumericDate` exposes **`Time`** as a field | Use **`claims.ExpiresAt.Time`** (not **`Time()`**) when reading expiry |
 | `.gitignore` | **`.env.example`** was ignored by **`.env.*`**, so clones had no Compose template | Un-ignore **`!.env.example`** / **`!**/.env.example`**; track root + **`apps/web/.env.example`** |
-| `apps/web` (Next.js) | **`proxy.ts` never ran** — only **`middleware.ts`** with **`export function middleware`** is executed at the app root | Use **`middleware.ts`** (removed misnamed **`proxy.ts`**) |
+| `apps/web` (Next.js) | Edge **`middleware.ts`** is easy to confuse with deprecated Next conventions | **`/setup` → `/register`** via **`next.config.js` `redirects`** (no middleware file) |
 | `apps/web/Dockerfile` | **Build fails** — `COPY /app/public` fails because no `public/` directory exists in the project | Replaced with `RUN mkdir -p ./public` |
 | `docker-compose.yml` | **Warning** — obsolete `version: '3.9'` attribute | Removed |
 | `apps/web/app/export/page.tsx` | **Exports always 401** — `window.open()` cannot send `Authorization` header | Replaced with `fetch()` + Blob download that sends the Bearer token |
