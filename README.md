@@ -131,18 +131,14 @@ Use this after new commits land in your upstream branch. **`git pull`** updates 
 
 **1. Go to your clone and pull**
 
+Always reset **`scripts/prune-docker.sh`** to the last committed version **before** **`git pull`** (servers often pick up stray edits; this step is harmless when the file is clean):
+
 ```bash
 cd /path/to/Submify   # e.g. ~/Submify on Linux
-git pull
-```
-
-**If `git pull` aborts** with *local changes would be overwritten* (often **`scripts/prune-docker.sh`**): drop uncommitted edits to that file, then pull again:
-
-```bash
 git checkout -- scripts/prune-docker.sh && git pull
 ```
 
-Or use **`./scripts/pull-latest.sh`** (same behavior, then `git pull`).
+Same thing: **`./scripts/pull-latest.sh`** (runs that checkout, then **`git pull`**).
 
 **2. Rebuild and restart the stack** (defaults in `docker-compose.yml`; optional **`.env`** / **`.env.auto`** are picked up automatically from the project directory)
 
@@ -177,9 +173,9 @@ docker compose logs --tail 3000 -f api
 cd ~/Submify && git checkout -- scripts/prune-docker.sh && git pull && docker compose up --build -d && ./scripts/prune-docker.sh && docker compose logs --tail 3000 -f api
 ```
 
-*(The `git checkout -- scripts/prune-docker.sh` step is a no-op when the file is unchanged; it drops uncommitted edits so `git pull` is not blocked.)*
+*(If you skip `git checkout -- scripts/prune-docker.sh` and have any local change to that file, **`git pull` will abort**.)*
 
-**Windows (PowerShell, Docker Desktop):** same idea — `cd` to your clone, `git pull`, then `docker compose up --build -d`, then `docker compose logs --tail 3000 -f api`. For **`prune-docker.sh`**, use **Git Bash**: `sh ./scripts/prune-docker.sh`, or skip pruning and use **[Disk after many rebuilds](#operations-logs-backup-updates)** when the disk fills.
+**Windows (PowerShell, Docker Desktop):** `cd` to your clone, then **`git checkout -- scripts/prune-docker.sh && git pull`**, then **`docker compose up --build -d`**, then logs. For **`prune-docker.sh`**, use **Git Bash**: `sh ./scripts/prune-docker.sh`, or skip pruning and use **[Disk after many rebuilds](#operations-logs-backup-updates)** when the disk fills.
 
 Omit steps 3 and/or 4 if you only need a quick pull and rebuild.
 
@@ -438,7 +434,7 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 
 **Logs:** `docker compose logs -f [service]` (e.g. `api` or `nginx`).
 
-**Pull, rebuild, prune, logs:** use **[Installation → §6 Quick redeploy](#6-quick-redeploy-pull-latest-code-rebuild-clean-old-images-watch-api-logs)** — same commands: **`git pull`**, **`docker compose up --build -d`**, optional **`./scripts/prune-docker.sh`**, then **`docker compose logs --tail 3000 -f api`**. If you deploy with **`./scripts/compose-up.sh`**, substitute **`./scripts/compose-up.sh up --build -d`** for **`docker compose up --build -d`** so env files stay aligned.
+**Pull, rebuild, prune, logs:** use **[Installation → §6 Quick redeploy](#6-quick-redeploy-pull-latest-code-rebuild-clean-old-images-watch-api-logs)** — always **`git checkout -- scripts/prune-docker.sh && git pull`** first, then **`docker compose up --build -d`**, optional **`./scripts/prune-docker.sh`**, then **`docker compose logs --tail 3000 -f api`**. If you deploy with **`./scripts/compose-up.sh`**, substitute **`./scripts/compose-up.sh up --build -d`** for **`docker compose up --build -d`** so env files stay aligned.
 
 The prune script only clears unused images/cache — **not** **`./data/`** (see `scripts/prune-docker.sh`).
 
