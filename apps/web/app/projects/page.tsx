@@ -180,7 +180,7 @@ function ProjectCard({
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 sm:col-span-2"
                 value={s3EndpointDraft}
                 onChange={(e) => setS3EndpointDraft(e.target.value)}
-                placeholder="Endpoint URL (e.g. http://minio:9000)"
+                placeholder="Endpoint URL (e.g. http://rustfs:9000)"
                 aria-label="Project S3 endpoint"
               />
               <input

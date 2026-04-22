@@ -1,6 +1,6 @@
 # Submify
 
-Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin) API, Next.js dashboard, PostgreSQL, S3-compatible object storage (**MinIO** by default), and Nginx as a single entrypoint.
+Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin) API, Next.js dashboard, PostgreSQL, S3-compatible object storage (**RustFS** by default), and Nginx as a single entrypoint.
 
 **Upstream repository:** [https://github.com/Raktim94/Submify.git](https://github.com/Raktim94/Submify.git)
 
@@ -34,7 +34,7 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
   - `/api/*` → API (Go, port 8080 in the container)
   - `/*` → Next.js (port 3000 in the container)
 - **PostgreSQL** stores all tenants in one database (JSONB-friendly, battle-tested). Rows are scoped by `user_id` / `project_id`; the API never lists or mutates another user’s data.
-- **Object storage (MinIO)** — by default the stack runs **`minio/minio`** (S3-compatible API). MinIO data is stored under **`./data/minio`** next to `docker-compose.yml` (portable bind mounts).
+- **Object storage (RustFS)** — by default the stack runs **`rustfs/rustfs`** (S3-compatible API). Data is stored under **`./data/rustfs`** next to `docker-compose.yml` (portable bind mounts).
 
 The browser and external clients should use **one origin** for dashboard + API (e.g. `https://forms.example.com:2512/api/v1/...`) or configure **CORS** for separate sites (see [Connecting a client website](#connecting-a-client-website-forms)).
 
@@ -60,7 +60,7 @@ Email notifications are **not** implemented in this release; you can send mail f
 - Host firewall / security group allowing inbound **TCP 2512** (or your reverse proxy port)
 - For production: TLS termination (reverse proxy or tunnel) is strongly recommended
 
-**Note:** Default Compose uses **`./data/postgres`** and **`./data/minio`** (next to the compose file) so the stack runs on **Windows, macOS, Linux, and CasaOS-style installs** without creating `/var/lib/...` paths. For a Linux VPS you can edit those volume lines to absolute host paths if you prefer.
+**Note:** Default Compose uses **`./data/postgres`** and **`./data/rustfs`** (next to the compose file) so the stack runs on **Windows, macOS, Linux, and CasaOS-style installs** without creating `/var/lib/...` paths. For a Linux VPS you can edit those volume lines to absolute host paths if you prefer.
 
 ---
 
@@ -101,7 +101,7 @@ cd Submify
 
 ### 2. Environment and secrets
 
-**Default:** no `.env` is required. Startup wrappers auto-create **`.env.auto`** with strong random values for **`POSTGRES_PASSWORD`**, **`JWT_SECRET`**, and **`MINIO_ROOT_PASSWORD`** on first run. You can still override with `.env` (see `.env.example`).
+**Default:** no `.env` is required. Startup wrappers auto-create **`.env.auto`** with strong random values for **`POSTGRES_PASSWORD`**, **`JWT_SECRET`**, and **`RUSTFS_ROOT_PASSWORD`** on first run. You can still override with `.env` (see `.env.example`).
 
 | File | Role |
 |------|------|
@@ -431,16 +431,16 @@ Nginx forwards `X-Forwarded-For`; the API uses **`TRUSTED_PROXIES`** (CIDR list)
 
 ## Presigned uploads (optional)
 
-### MinIO: what it does in Submify
+### RustFS: what it does in Submify
 
-Submify stores normal form JSON in PostgreSQL. **MinIO** is used only as **file/object storage** for large uploads via presigned URLs.
+Submify stores normal form JSON in PostgreSQL. **RustFS** is used only as **file/object storage** for large uploads via presigned URLs.
 
-- Without MinIO: submissions still work (JSON-only).
-- With MinIO: users upload large files directly to object storage, then store file references in submissions.
+- Without RustFS: submissions still work (JSON-only).
+- With RustFS: users upload large files directly to object storage, then store file references in submissions.
 
-In short: PostgreSQL = form data, MinIO = file objects.
+In short: PostgreSQL = form data, RustFS = file objects.
 
-### MinIO setup (Submify stack) — step-by-step
+### RustFS setup (Submify stack) — step-by-step
 
 #### Step 0 — Go to project root
 
@@ -464,7 +464,7 @@ Windows (PowerShell):
 [Convert]::ToBase64String((1..32 | ForEach-Object {Get-Random -Maximum 256}))
 ```
 
-Copy the output; this will be your MinIO root password.
+Copy the output; this will be your object storage admin password.
 
 #### Step 2 — Decide: delete `.env.auto` or keep it
 
@@ -489,7 +489,7 @@ Windows (PowerShell):
 Remove-Item .env.auto -Force
 ```
 
-Alternative: keep `.env.auto` and edit it with your MinIO values.
+Alternative: keep `.env.auto` and edit it with your storage values.
 
 #### Step 3 — Create/edit `.env`
 
@@ -502,15 +502,15 @@ nano .env
 Add:
 
 ```env
-MINIO_ROOT_USER=nodedr_admin
-MINIO_ROOT_PASSWORD=PASTE_YOUR_GENERATED_PASSWORD
+RUSTFS_ROOT_USER=nodedr_admin
+RUSTFS_ROOT_PASSWORD=PASTE_YOUR_GENERATED_PASSWORD
 ```
 
 Example:
 
 ```env
-MINIO_ROOT_USER=nodedr_admin
-MINIO_ROOT_PASSWORD=y80tiIs8tOUsPLC5WUKb+9Ms0pmrih4otqCHpy2lwpA=
+RUSTFS_ROOT_USER=nodedr_admin
+RUSTFS_ROOT_PASSWORD=y80tiIs8tOUsPLC5WUKb+9Ms0pmrih4otqCHpy2lwpA=
 ```
 
 #### Step 4 — Restart Docker stack
@@ -534,21 +534,21 @@ Windows:
 Linux/macOS:
 
 ```bash
-docker compose exec minio env | grep MINIO_ROOT_
+docker compose exec rustfs env | grep RUSTFS_ROOT_
 ```
 
 Windows:
 
 ```powershell
-docker compose exec minio env | findstr MINIO_ROOT_
+docker compose exec rustfs env | findstr RUSTFS_ROOT_
 ```
 
 Expected output includes:
 
-- `MINIO_ROOT_USER=nodedr_admin`
-- `MINIO_ROOT_PASSWORD=your_password_here`
+- `RUSTFS_ROOT_USER=nodedr_admin`
+- `RUSTFS_ROOT_PASSWORD=your_password_here`
 
-#### Step 6 — Open MinIO console
+#### Step 6 — Open RustFS console
 
 Open in browser:
 
@@ -558,7 +558,7 @@ Login with your configured root credentials.
 
 #### Step 7 — Create bucket
 
-In MinIO UI:
+In RustFS UI:
 
 1. Go to **Buckets**
 2. Click **Create Bucket**
@@ -568,7 +568,7 @@ In MinIO UI:
 
 Do not use root credentials in your app.
 
-In MinIO UI:
+In RustFS UI:
 
 1. Go to **Access Keys**
 2. Click **Create Access Key**
@@ -578,12 +578,12 @@ In MinIO UI:
 
 Use these in Submify storage settings (`s3_access_key` / `s3_secret_key`).
 
-### Find the current/default MinIO username and password
+### Find the current/default storage username and password
 
-MinIO login values come from these environment variables:
+Compose keeps compatibility keys and maps them to RustFS:
 
-- Username: `MINIO_ROOT_USER`
-- Password: `MINIO_ROOT_PASSWORD`
+- Username: `RUSTFS_ROOT_USER`
+- Password: `RUSTFS_ROOT_PASSWORD`
 
 Where to check (in priority order):
 
@@ -593,20 +593,20 @@ Where to check (in priority order):
 
 Practical checks:
 
-- Open `.env` and `.env.auto` in your project root and search for `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`.
-- If `MINIO_ROOT_USER` is not set, default is usually `submify`.
+- Open `.env` and `.env.auto` in your project root and search for `RUSTFS_ROOT_USER` / `RUSTFS_ROOT_PASSWORD`.
+- If `RUSTFS_ROOT_USER` is not set, default is usually `submify`.
 - To inspect the effective runtime values for the running container:
-  - `docker compose exec minio env | grep MINIO_ROOT_` (Linux/macOS)
-  - `docker compose exec minio env | findstr MINIO_ROOT_` (PowerShell)
+  - `docker compose exec rustfs env | grep RUSTFS_ROOT_` (Linux/macOS)
+  - `docker compose exec rustfs env | findstr RUSTFS_ROOT_` (PowerShell)
 
 ### Configure Submify Settings for file upload
 
 Open **Settings** (or Project-level storage in **Projects**) and set:
 
-- `s3_endpoint`: MinIO internal endpoint (default in this Compose stack: `http://minio:9000`)
+- `s3_endpoint`: RustFS internal endpoint (default in this Compose stack: `http://rustfs:9000`)
 - `s3_bucket`: your bucket name (for example `submify-uploads`)
-- `s3_access_key`: MinIO access key
-- `s3_secret_key`: MinIO secret key
+- `s3_access_key`: RustFS access key
+- `s3_secret_key`: RustFS secret key
 
 ### Client-side upload flow (correct way)
 
@@ -652,10 +652,10 @@ await fetch(presign.upload_url, {
 ### Final checklist
 
 - `.env.auto` deleted or updated intentionally
-- `.env` configured with MinIO root credentials
+- `.env` configured with storage credentials
 - stack restarted
 - runtime env verified inside container
-- logged into MinIO console
+- logged into RustFS console
 - bucket created
 - access key created for app use
 
@@ -688,9 +688,9 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 - Change account login password
 - Rotate account API key (invalidates old key immediately)
 - Rotate all project keys in one action (invalidates all old project public/secret keys)
-- Update S3/MinIO credentials used for presigned uploads
+- Update S3/storage credentials used for presigned uploads
 - Save host bind/port preferences with copy-paste restart command
-- For detailed MinIO credential setup and rotation, see **[Presigned uploads (optional)](#presigned-uploads-optional)**.
+- For detailed RustFS credential setup and rotation, see **[Presigned uploads (optional)](#presigned-uploads-optional)**.
 
 ---
 
@@ -705,7 +705,7 @@ The prune script only clears unused images/cache — **not** **`./data/`** (see 
 **Backups:** Persisted data (see `docker-compose.yml`):
 
 - `./data/postgres`
-- `./data/minio`
+- `./data/rustfs`
 
 Back up these directories on a schedule appropriate to your RPO/RTO.
 

@@ -74,7 +74,7 @@ export default function DocsPage() {
             <strong>PostgreSQL</strong>: users, projects, submissions, system config (e.g. latest known app version).
           </li>
           <li>
-            <strong>Object storage</strong> (S3-compatible, e.g. MinIO): optional presigned uploads for large files from the dashboard
+            <strong>Object storage</strong> (S3-compatible, e.g. RustFS): optional presigned uploads for large files from the dashboard
             flow.
           </li>
           <li>
@@ -227,16 +227,16 @@ export default function DocsPage() {
           <strong>API keys</strong> — Rotate account API key or all project keys if a key is exposed.
         </p>
         <p>
-          <strong>Storage credentials</strong> — Configure MinIO/S3 endpoint, bucket, access key, and secret key for presigned uploads.
+          <strong>Storage credentials</strong> — Configure RustFS/S3 endpoint, bucket, access key, and secret key for presigned uploads.
         </p>
       </section>
 
-      <section id="minio">
-        <h2>MinIO (file uploads) — full setup</h2>
+      <section id="rustfs">
+        <h2>RustFS (file uploads) — full setup</h2>
         <p>
-          Submify uses <strong>MinIO</strong> for file/object storage when you need large uploads. Form JSON data still goes to PostgreSQL.
+          Submify uses <strong>RustFS</strong> for file/object storage when you need large uploads. Form JSON data still goes to PostgreSQL.
         </p>
-        <h3>What MinIO is used for</h3>
+        <h3>What RustFS is used for</h3>
         <ul>
           <li>Store uploaded files via presigned URLs.</li>
           <li>Keep large files out of your main database tables.</li>
@@ -266,8 +266,8 @@ Remove-Item .env.auto -Force`}</code>
         </pre>
         <h3>Step 3 — Create/edit .env</h3>
         <pre>
-          <code>{`MINIO_ROOT_USER=nodedr_admin
-MINIO_ROOT_PASSWORD=PASTE_YOUR_GENERATED_PASSWORD`}</code>
+          <code>{`RUSTFS_ROOT_USER=nodedr_admin
+RUSTFS_ROOT_PASSWORD=PASTE_YOUR_GENERATED_PASSWORD`}</code>
         </pre>
         <h3>Step 4 — Restart Docker stack</h3>
         <pre>
@@ -282,19 +282,19 @@ MINIO_ROOT_PASSWORD=PASTE_YOUR_GENERATED_PASSWORD`}</code>
         <h3>Step 5 — Verify env variables</h3>
         <pre>
           <code>{`# Linux/macOS
-docker compose exec minio env | grep MINIO_ROOT_
+docker compose exec rustfs env | grep RUSTFS_ROOT_
 
 # PowerShell
-docker compose exec minio env | findstr MINIO_ROOT_`}</code>
+docker compose exec rustfs env | findstr RUSTFS_ROOT_`}</code>
         </pre>
-        <h3>Step 6 — Login to MinIO console</h3>
+        <h3>Step 6 — Login to RustFS console</h3>
         <ol>
           <li>Open <code>http://127.0.0.1:9001</code> (or your mapped host port).</li>
           <li>
             Login with:
             <ul>
-              <li><code>MINIO_ROOT_USER</code> (default often <code>submify</code>)</li>
-              <li><code>MINIO_ROOT_PASSWORD</code></li>
+              <li><code>RUSTFS_ROOT_USER</code> (default often <code>submify</code>)</li>
+              <li><code>RUSTFS_ROOT_PASSWORD</code></li>
             </ul>
           </li>
           <li>Create a bucket (example: <code>submify-uploads</code>).</li>
@@ -302,13 +302,13 @@ docker compose exec minio env | findstr MINIO_ROOT_`}</code>
         <h3>Step 7 — Create bucket</h3>
         <p>Use bucket name <code>submify-uploads</code> (or your preferred name).</p>
         <h3>Step 8 — Create access key (important)</h3>
-        <p>Do not use MinIO root credentials in your application settings.</p>
+        <p>Do not use RustFS root credentials in your application settings.</p>
         <p>
-          In MinIO UI, go to <strong>Access Keys</strong>, click <strong>Create Access Key</strong>, and copy Access
+          In RustFS UI, go to <strong>Access Keys</strong>, click <strong>Create Access Key</strong>, and copy Access
           Key + Secret Key.
         </p>
-        <h3>Find default/current MinIO login</h3>
-        <p>MinIO root login comes from <code>MINIO_ROOT_USER</code> and <code>MINIO_ROOT_PASSWORD</code>.</p>
+        <h3>Find default/current RustFS login</h3>
+        <p>RustFS root login comes from <code>RUSTFS_ROOT_USER</code> and <code>RUSTFS_ROOT_PASSWORD</code>.</p>
         <p>Check values in this order:</p>
         <ol>
           <li>
@@ -324,39 +324,39 @@ docker compose exec minio env | findstr MINIO_ROOT_`}</code>
         <p>Quick runtime check:</p>
         <ul>
           <li>
-            Linux/macOS: <code>docker compose exec minio env | grep MINIO_ROOT_</code>
+            Linux/macOS: <code>docker compose exec rustfs env | grep RUSTFS_ROOT_</code>
           </li>
           <li>
-            PowerShell: <code>docker compose exec minio env | findstr MINIO_ROOT_</code>
+            PowerShell: <code>docker compose exec rustfs env | findstr RUSTFS_ROOT_</code>
           </li>
         </ul>
         <p>
-          If <code>MINIO_ROOT_USER</code> is not set, default username is usually <code>submify</code>.
+          If <code>RUSTFS_ROOT_USER</code> is not set, default username is usually <code>submify</code>.
         </p>
-        <h3>Change MinIO root username/password</h3>
+        <h3>Change RustFS root username/password</h3>
         <ol>
           <li>Set new values in <code>.env</code> (or <code>.env.auto</code>):</li>
           <li>
-            <code>MINIO_ROOT_USER=&lt;new-user&gt;</code> and <code>MINIO_ROOT_PASSWORD=&lt;new-strong-password&gt;</code>
+            <code>RUSTFS_ROOT_USER=&lt;new-user&gt;</code> and <code>RUSTFS_ROOT_PASSWORD=&lt;new-strong-password&gt;</code>
           </li>
           <li>Restart stack with your compose wrapper command.</li>
-          <li>Log in again to MinIO console with new credentials.</li>
+          <li>Log in again to RustFS console with new credentials.</li>
           <li>If app upload credentials changed, update Submify Settings/Projects storage fields.</li>
         </ol>
         <h3>Configure Submify for uploads</h3>
         <p>In Settings (or Project storage config), fill:</p>
         <ul>
           <li>
-            <code>s3_endpoint</code>: <code>http://minio:9000</code> (Docker internal hostname for MinIO service)
+            <code>s3_endpoint</code>: <code>http://rustfs:9000</code> (Docker internal hostname for RustFS service)
           </li>
           <li>
             <code>s3_bucket</code>: your bucket (for example <code>submify-uploads</code>)
           </li>
           <li>
-            <code>s3_access_key</code>: MinIO access key
+            <code>s3_access_key</code>: RustFS access key
           </li>
           <li>
-            <code>s3_secret_key</code>: MinIO secret key
+            <code>s3_secret_key</code>: RustFS secret key
           </li>
         </ul>
         <h3>Client-side upload flow</h3>
@@ -386,24 +386,24 @@ await fetch(presign.upload_url, {
         </pre>
         <h3>Security notes</h3>
         <ul>
-          <li>Do not put MinIO secret key in browser-exposed code.</li>
+          <li>Do not put RustFS secret key in browser-exposed code.</li>
           <li>Rotate keys periodically and after suspected leakage.</li>
-          <li>Back up both PostgreSQL data and MinIO data directories.</li>
+          <li>Back up both PostgreSQL data and RustFS data directories.</li>
         </ul>
         <h3>Common mistakes</h3>
         <ul>
           <li><code>.env.auto</code> overriding expected <code>.env</code> values</li>
           <li>Forgetting to restart containers after env changes</li>
-          <li>Typo in MinIO environment variable names</li>
+          <li>Typo in RustFS environment variable names</li>
           <li>Using root credentials in production app configuration</li>
         </ul>
         <h3>Final checklist</h3>
         <ul>
           <li><code>.env.auto</code> deleted or updated intentionally</li>
-          <li><code>.env</code> configured with MinIO root credentials</li>
+          <li><code>.env</code> configured with RustFS root credentials</li>
           <li>Stack restarted</li>
-          <li>Env verified from running MinIO container</li>
-          <li>Logged into MinIO console successfully</li>
+          <li>Env verified from running RustFS container</li>
+          <li>Logged into RustFS console successfully</li>
           <li>Bucket created</li>
           <li>Access key created for app use</li>
         </ul>

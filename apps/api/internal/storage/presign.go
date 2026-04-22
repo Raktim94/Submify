@@ -2,14 +2,17 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	awscreds "github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type PresignInput struct {
@@ -28,33 +31,65 @@ type PresignResult struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-func client(endpoint, accessKey, secretKey string) (*minio.Client, error) {
-	u, err := url.Parse(endpoint)
+func normalizedEndpoint(endpoint string) (string, error) {
+	raw := strings.TrimSpace(endpoint)
+	if raw == "" {
+		return "", fmt.Errorf("empty endpoint")
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("invalid endpoint: missing host")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported endpoint scheme: %s", u.Scheme)
+	}
+	return strings.TrimRight(u.String(), "/"), nil
+}
+
+func client(ctx context.Context, endpoint, accessKey, secretKey string) (*s3.Client, error) {
+	endpointURL, err := normalizedEndpoint(endpoint)
 	if err != nil {
 		return nil, err
 	}
-	secure := u.Scheme == "https"
-	host := u.Host
-	if host == "" {
-		host = endpoint
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion("us-east-1"),
+		config.WithCredentialsProvider(awscreds.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+			if service == s3.ServiceID {
+				return aws.Endpoint{
+					URL:               endpointURL,
+					HostnameImmutable: true,
+				}, nil
+			}
+			return aws.Endpoint{}, &aws.EndpointNotFoundError{}
+		})),
+	)
+	if err != nil {
+		return nil, err
 	}
-	return minio.New(host, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: secure,
+	return s3.NewFromConfig(cfg, func(o *s3.Options) {
+		// RustFS (like many S3-compatible services) works reliably with path-style addressing.
+		o.UsePathStyle = true
 	})
 }
 
 func CheckBucket(ctx context.Context, endpoint, accessKey, secretKey, bucket string) error {
-	c, err := client(endpoint, accessKey, secretKey)
+	c, err := client(ctx, endpoint, accessKey, secretKey)
 	if err != nil {
 		return err
 	}
-	_, err = c.BucketExists(ctx, bucket)
+	_, err = c.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucket)})
 	return err
 }
 
 func PresignUpload(ctx context.Context, in PresignInput) (PresignResult, error) {
-	c, err := client(in.Endpoint, in.AccessKey, in.SecretKey)
+	c, err := client(ctx, in.Endpoint, in.AccessKey, in.SecretKey)
 	if err != nil {
 		return PresignResult{}, err
 	}
@@ -67,13 +102,17 @@ func PresignUpload(ctx context.Context, in PresignInput) (PresignResult, error) 
 	}, "/")
 
 	expires := time.Duration(in.ExpiryMinutes) * time.Minute
-	uploadURL, err := c.PresignedPutObject(ctx, in.Bucket, key, expires)
+	presigner := s3.NewPresignClient(c)
+	uploadReq, err := presigner.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(in.Bucket),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignOptions) { opts.Expires = expires })
 	if err != nil {
 		return PresignResult{}, err
 	}
 
 	return PresignResult{
-		UploadURL: uploadURL.String(),
+		UploadURL: uploadReq.URL,
 		ObjectKey: key,
 		ExpiresAt: time.Now().UTC().Add(expires),
 	}, nil

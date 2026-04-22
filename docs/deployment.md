@@ -45,7 +45,7 @@ docker compose --profile tunnel up -d
 Data lives next to `docker-compose.yml` (not inside the API image):
 
 - `./data/postgres` — PostgreSQL
-- `./data/minio` — MinIO (S3-compatible)
+- `./data/rustfs` — RustFS (S3-compatible)
 
 Back up those folders with your backup policy. For production, override default passwords and **`JWT_SECRET`** via **`.env`**. Avoid `docker compose down -v` if you add named volumes later.
 
