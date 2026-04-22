@@ -76,7 +76,7 @@ func client(ctx context.Context, endpoint, accessKey, secretKey string) (*s3.Cli
 	return s3.NewFromConfig(cfg, func(o *s3.Options) {
 		// RustFS (like many S3-compatible services) works reliably with path-style addressing.
 		o.UsePathStyle = true
-	})
+	}), nil
 }
 
 func PresignUpload(ctx context.Context, in PresignInput) (PresignResult, error) {
