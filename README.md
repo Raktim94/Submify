@@ -588,7 +588,7 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 Safe rotation flow (recommended):
 
 1. Update `MINIO_ROOT_PASSWORD` in `.env` (or `.env.auto` if you use generated secrets).
-2. Restart stack: `./scripts/compose-up.sh up -d` (Linux/macOS) or `.\scripts\Compose-Up.ps1 up -d` (PowerShell).
+2. Restart stack using the step-by-step process below.
 3. If your S3 access/secret pair also changed, update them in Submify Settings/Projects.
 4. Verify health endpoint returns OK: `/api/v1/system/health`.
 5. Test one presigned upload to confirm storage credentials and bucket permissions are still correct.
@@ -608,6 +608,54 @@ Linux/macOS example:
 export MINIO_ROOT_PASSWORD='your-new-strong-password'
 ./scripts/compose-up.sh up -d
 ```
+
+#### Restart the stack (step-by-step)
+
+Use this when you changed `.env` / `.env.auto` and want new values to apply.
+
+Linux/macOS:
+
+```bash
+# 1) Go to your project folder
+cd /path/to/Submify
+
+# 2) Stop running containers for this project
+docker compose down
+
+# 3) Start again with env files applied (wrapper recommended)
+./scripts/compose-up.sh up -d
+
+# 4) Confirm services are healthy/running
+docker compose ps
+
+# 5) Check MinIO logs if needed
+docker compose logs --tail 200 minio
+```
+
+Windows PowerShell:
+
+```powershell
+# 1) Go to your project folder
+cd F:\webproject
+
+# 2) Stop running containers for this project
+docker compose down
+
+# 3) Start again with env files applied
+.\scripts\Compose-Up.ps1 up -d
+
+# 4) Confirm services are healthy/running
+docker compose ps
+
+# 5) Check MinIO logs if needed
+docker compose logs --tail 200 minio
+```
+
+If login still fails after restart:
+
+1. Run `docker compose exec minio env | grep MINIO_ROOT_` (Linux/macOS) or `docker compose exec minio env | findstr MINIO_ROOT_` (PowerShell) to confirm runtime values.
+2. Ensure only one value source is setting the password (`.env` overrides `.env.auto` when both exist).
+3. Restart once more after correcting env values.
 
 ---
 
