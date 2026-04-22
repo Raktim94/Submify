@@ -28,13 +28,13 @@ function Ensure-AutoEnv {
     Write-Host "Keep this file with ./data/ - new values will not match an existing database." -ForegroundColor DarkYellow
     $pg = New-HexSecret 32
     $jwt = New-HexSecret 32
-    $s3 = New-HexSecret 32
+    $minio = New-HexSecret 32
     $content = @"
 # Auto-generated - do not commit. Keep with ./data/
 
 POSTGRES_PASSWORD=$pg
 JWT_SECRET=$jwt
-RUSTFS_ROOT_PASSWORD=$s3
+MINIO_ROOT_PASSWORD=$minio
 "@
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText($autoEnv, $content.TrimEnd() + "`n", $utf8NoBom)

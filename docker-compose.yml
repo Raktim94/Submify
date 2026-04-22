@@ -1,7 +1,7 @@
 # Submify — `docker compose up --build -d` works out of the box (CasaOS / desktop friendly).
 #
 # Defaults: Postgres, JWT, and MinIO passwords are defined below via ${VAR:-...} (change in `.env` for production).
-# Data: `./data/postgres` and `./data/rustfs` next to this file (portable; add to backups).
+# Data: `./data/postgres` and `./data/minio` next to this file (portable; add to backups).
 #
 # Strong random secrets (optional): SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh up --build -d
 #
@@ -37,15 +37,15 @@ services:
       timeout: 5s
       retries: 10
 
-  rustfs:
-    image: ${RUSTFS_IMAGE:-minio/minio:latest}
-    container_name: submify-rustfs
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    container_name: submify-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${RUSTFS_ROOT_USER:-submify}
-      MINIO_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:-b1c2d3e4f5a69788796a5b4c3d2e1f0c9d8e7f6a5b4938271605f4e3d2c1b0a9f8}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-submify}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-b1c2d3e4f5a69788796a5b4c3d2e1f0c9d8e7f6a5b4938271605f4e3d2c1b0a9f8}
     volumes:
-      - ./data/rustfs:/data
+      - ./data/minio:/data
     logging: *default-logging
 
   api:
@@ -76,7 +76,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      rustfs:
+      minio:
         condition: service_started
 
   web:

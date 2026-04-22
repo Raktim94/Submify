@@ -212,7 +212,7 @@ export default function SettingsPage() {
             </li>
             <li>
               Endpoint URLs for MinIO in Docker are often internal, e.g.{' '}
-              <code className="rounded bg-white px-1.5 py-0.5 text-xs">http://rustfs:9000</code> — use the hostname your API
+              <code className="rounded bg-white px-1.5 py-0.5 text-xs">http://minio:9000</code> — use the hostname your API
               container can reach.
             </li>
           </ul>
@@ -337,7 +337,7 @@ export default function SettingsPage() {
         <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
           <h2 className="font-display text-xl font-bold text-slate-900">MinIO root password (host-level)</h2>
           <p className="mt-1 text-sm leading-relaxed text-slate-600">
-            The MinIO root password is a Docker runtime secret (<code className="rounded bg-slate-100 px-1">RUSTFS_ROOT_PASSWORD</code>).
+            The MinIO root password is a Docker runtime secret (<code className="rounded bg-slate-100 px-1">MINIO_ROOT_PASSWORD</code>).
             It is not changed from the web UI by design.
           </p>
           <p className="mt-3 text-sm leading-relaxed text-slate-700">
@@ -437,7 +437,7 @@ export default function SettingsPage() {
                 <input
                   className="w-full rounded-xl border-slate-300 px-4 py-3"
                   name="s3_endpoint"
-                  placeholder="https://s3.example.com or http://rustfs:9000"
+                  placeholder="https://s3.example.com or http://minio:9000"
                   defaultValue={me.s3_endpoint}
                 />
               </label>

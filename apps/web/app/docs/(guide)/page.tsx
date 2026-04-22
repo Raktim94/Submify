@@ -259,18 +259,58 @@ openssl rand -base64 32`}</code>
           <li>
             Login with:
             <ul>
-              <li><code>RUSTFS_ROOT_USER</code> (default often <code>submify</code>)</li>
-              <li><code>RUSTFS_ROOT_PASSWORD</code></li>
+              <li><code>MINIO_ROOT_USER</code> (default often <code>submify</code>)</li>
+              <li><code>MINIO_ROOT_PASSWORD</code></li>
             </ul>
           </li>
           <li>Create a bucket (example: <code>submify-uploads</code>).</li>
           <li>Create an access key + secret key dedicated for Submify.</li>
         </ol>
+        <h3>Find default/current MinIO login</h3>
+        <p>
+          MinIO root login comes from <code>MINIO_ROOT_USER</code> and <code>MINIO_ROOT_PASSWORD</code>.
+        </p>
+        <p>Check values in this order:</p>
+        <ol>
+          <li>
+            <code>.env</code> (if present)
+          </li>
+          <li>
+            <code>.env.auto</code> (auto-generated secrets)
+          </li>
+          <li>
+            <code>docker-compose.yml</code> defaults
+          </li>
+        </ol>
+        <p>
+          Quick runtime check:
+        </p>
+        <ul>
+          <li>
+            Linux/macOS: <code>docker compose exec minio env | grep MINIO_ROOT_</code>
+          </li>
+          <li>
+            PowerShell: <code>docker compose exec minio env | findstr MINIO_ROOT_</code>
+          </li>
+        </ul>
+        <p>
+          If <code>MINIO_ROOT_USER</code> is not set, default username is usually <code>submify</code>.
+        </p>
+        <h3>Change MinIO root username/password</h3>
+        <ol>
+          <li>Set new values in <code>.env</code> (or <code>.env.auto</code>):</li>
+          <li>
+            <code>MINIO_ROOT_USER=&lt;new-user&gt;</code> and <code>MINIO_ROOT_PASSWORD=&lt;new-strong-password&gt;</code>
+          </li>
+          <li>Restart stack with your compose wrapper command.</li>
+          <li>Log in again to MinIO console with new credentials.</li>
+          <li>If app upload credentials changed, update Submify Settings/Projects storage fields.</li>
+        </ol>
         <h3>Configure Submify for uploads</h3>
         <p>In Settings (or Project storage config), fill:</p>
         <ul>
           <li>
-            <code>s3_endpoint</code>: <code>http://rustfs:9000</code> (Docker internal hostname for MinIO service)
+            <code>s3_endpoint</code>: <code>http://minio:9000</code> (Docker internal hostname for MinIO service)
           </li>
           <li>
             <code>s3_bucket</code>: your bucket (for example <code>submify-uploads</code>)
