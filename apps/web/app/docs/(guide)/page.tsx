@@ -242,8 +242,11 @@ export default function DocsPage() {
           <li>Keep large files out of your main database tables.</li>
           <li>Work with standard S3-compatible APIs.</li>
         </ul>
-        <h3>Generate strong passwords and keys</h3>
-        <p>Use strong random values for MinIO root password and app credentials.</p>
+        <h3>Step 0 — Go to project root</h3>
+        <pre>
+          <code>{`cd /path/to/your/project`}</code>
+        </pre>
+        <h3>Step 1 — Generate secure credentials</h3>
         <pre>
           <code>{`# Linux/macOS (example)
 openssl rand -base64 32`}</code>
@@ -252,9 +255,40 @@ openssl rand -base64 32`}</code>
           <code>{`# PowerShell (example)
 [Convert]::ToBase64String((1..32 | ForEach-Object {Get-Random -Maximum 256}))`}</code>
         </pre>
-        <h3>Login to MinIO console</h3>
+        <h3>Step 2 — Decide: delete .env.auto or keep it</h3>
+        <p>Recommended: delete <code>.env.auto</code> if you manage <code>.env</code> manually.</p>
+        <pre>
+          <code>{`# Linux/macOS
+rm -f .env.auto
+
+# PowerShell
+Remove-Item .env.auto -Force`}</code>
+        </pre>
+        <h3>Step 3 — Create/edit .env</h3>
+        <pre>
+          <code>{`MINIO_ROOT_USER=nodedr_admin
+MINIO_ROOT_PASSWORD=PASTE_YOUR_GENERATED_PASSWORD`}</code>
+        </pre>
+        <h3>Step 4 — Restart Docker stack</h3>
+        <pre>
+          <code>{`# Linux/macOS
+./scripts/compose-up.sh down
+./scripts/compose-up.sh up -d
+
+# PowerShell
+.\\scripts\\Compose-Up.ps1 down
+.\\scripts\\Compose-Up.ps1 up -d`}</code>
+        </pre>
+        <h3>Step 5 — Verify env variables</h3>
+        <pre>
+          <code>{`# Linux/macOS
+docker compose exec minio env | grep MINIO_ROOT_
+
+# PowerShell
+docker compose exec minio env | findstr MINIO_ROOT_`}</code>
+        </pre>
+        <h3>Step 6 — Login to MinIO console</h3>
         <ol>
-          <li>Start stack with Docker Compose.</li>
           <li>Open <code>http://127.0.0.1:9001</code> (or your mapped host port).</li>
           <li>
             Login with:
@@ -264,12 +298,17 @@ openssl rand -base64 32`}</code>
             </ul>
           </li>
           <li>Create a bucket (example: <code>submify-uploads</code>).</li>
-          <li>Create an access key + secret key dedicated for Submify.</li>
         </ol>
-        <h3>Find default/current MinIO login</h3>
+        <h3>Step 7 — Create bucket</h3>
+        <p>Use bucket name <code>submify-uploads</code> (or your preferred name).</p>
+        <h3>Step 8 — Create access key (important)</h3>
+        <p>Do not use MinIO root credentials in your application settings.</p>
         <p>
-          MinIO root login comes from <code>MINIO_ROOT_USER</code> and <code>MINIO_ROOT_PASSWORD</code>.
+          In MinIO UI, go to <strong>Access Keys</strong>, click <strong>Create Access Key</strong>, and copy Access
+          Key + Secret Key.
         </p>
+        <h3>Find default/current MinIO login</h3>
+        <p>MinIO root login comes from <code>MINIO_ROOT_USER</code> and <code>MINIO_ROOT_PASSWORD</code>.</p>
         <p>Check values in this order:</p>
         <ol>
           <li>
@@ -282,9 +321,7 @@ openssl rand -base64 32`}</code>
             <code>docker-compose.yml</code> defaults
           </li>
         </ol>
-        <p>
-          Quick runtime check:
-        </p>
+        <p>Quick runtime check:</p>
         <ul>
           <li>
             Linux/macOS: <code>docker compose exec minio env | grep MINIO_ROOT_</code>
@@ -352,6 +389,23 @@ await fetch(presign.upload_url, {
           <li>Do not put MinIO secret key in browser-exposed code.</li>
           <li>Rotate keys periodically and after suspected leakage.</li>
           <li>Back up both PostgreSQL data and MinIO data directories.</li>
+        </ul>
+        <h3>Common mistakes</h3>
+        <ul>
+          <li><code>.env.auto</code> overriding expected <code>.env</code> values</li>
+          <li>Forgetting to restart containers after env changes</li>
+          <li>Typo in MinIO environment variable names</li>
+          <li>Using root credentials in production app configuration</li>
+        </ul>
+        <h3>Final checklist</h3>
+        <ul>
+          <li><code>.env.auto</code> deleted or updated intentionally</li>
+          <li><code>.env</code> configured with MinIO root credentials</li>
+          <li>Stack restarted</li>
+          <li>Env verified from running MinIO container</li>
+          <li>Logged into MinIO console successfully</li>
+          <li>Bucket created</li>
+          <li>Access key created for app use</li>
         </ul>
       </section>
 

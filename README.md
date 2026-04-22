@@ -440,21 +440,143 @@ Submify stores normal form JSON in PostgreSQL. **MinIO** is used only as **file/
 
 In short: PostgreSQL = form data, MinIO = file objects.
 
-### MinIO quick setup (first time)
+### MinIO setup (Submify stack) — step-by-step
 
-1. Start the stack:
-   - Linux/macOS: `./scripts/compose-up.sh up -d`
-   - Windows: `.\scripts\Compose-Up.ps1 up -d`
-2. Generate a strong root password for MinIO:
-   - Linux/macOS: `openssl rand -base64 32`
-   - PowerShell: `[Convert]::ToBase64String((1..32 | ForEach-Object {Get-Random -Maximum 256}))`
-3. Set `MINIO_ROOT_PASSWORD` in `.env` (or let `.env.auto` manage it), then restart the stack.
-4. Open MinIO Console in browser (default): `http://127.0.0.1:9001`
-5. Login using:
-   - Username: value of `MINIO_ROOT_USER` (default `submify`)
-   - Password: value of `MINIO_ROOT_PASSWORD`
-6. Create a bucket for uploads (for example `submify-uploads`).
-7. Create an access key / secret key in MinIO (recommended: dedicated credentials for Submify app use).
+#### Step 0 — Go to project root
+
+Make sure you are inside your project folder (where `docker-compose.yml` exists):
+
+```bash
+cd /path/to/your/project
+```
+
+#### Step 1 — Generate secure credentials
+
+Linux/macOS:
+
+```bash
+openssl rand -base64 32
+```
+
+Windows (PowerShell):
+
+```powershell
+[Convert]::ToBase64String((1..32 | ForEach-Object {Get-Random -Maximum 256}))
+```
+
+Copy the output; this will be your MinIO root password.
+
+#### Step 2 — Decide: delete `.env.auto` or keep it
+
+Recommended (simpler): delete `.env.auto` if you manage `.env` manually.
+
+Why:
+
+- `.env.auto` can override expected values and cause confusion.
+- Manual `.env` management is easier to reason about.
+
+Delete `.env.auto`:
+
+Linux/macOS:
+
+```bash
+rm -f .env.auto
+```
+
+Windows (PowerShell):
+
+```powershell
+Remove-Item .env.auto -Force
+```
+
+Alternative: keep `.env.auto` and edit it with your MinIO values.
+
+#### Step 3 — Create/edit `.env`
+
+Open file:
+
+```bash
+nano .env
+```
+
+Add:
+
+```env
+MINIO_ROOT_USER=nodedr_admin
+MINIO_ROOT_PASSWORD=PASTE_YOUR_GENERATED_PASSWORD
+```
+
+Example:
+
+```env
+MINIO_ROOT_USER=nodedr_admin
+MINIO_ROOT_PASSWORD=y80tiIs8tOUsPLC5WUKb+9Ms0pmrih4otqCHpy2lwpA=
+```
+
+#### Step 4 — Restart Docker stack
+
+Linux/macOS:
+
+```bash
+./scripts/compose-up.sh down
+./scripts/compose-up.sh up -d
+```
+
+Windows:
+
+```powershell
+.\scripts\Compose-Up.ps1 down
+.\scripts\Compose-Up.ps1 up -d
+```
+
+#### Step 5 — Verify environment variables
+
+Linux/macOS:
+
+```bash
+docker compose exec minio env | grep MINIO_ROOT_
+```
+
+Windows:
+
+```powershell
+docker compose exec minio env | findstr MINIO_ROOT_
+```
+
+Expected output includes:
+
+- `MINIO_ROOT_USER=nodedr_admin`
+- `MINIO_ROOT_PASSWORD=your_password_here`
+
+#### Step 6 — Open MinIO console
+
+Open in browser:
+
+`http://127.0.0.1:9001`
+
+Login with your configured root credentials.
+
+#### Step 7 — Create bucket
+
+In MinIO UI:
+
+1. Go to **Buckets**
+2. Click **Create Bucket**
+3. Use name: `submify-uploads`
+
+#### Step 8 — Create access key (important)
+
+Do not use root credentials in your app.
+
+In MinIO UI:
+
+1. Go to **Access Keys**
+2. Click **Create Access Key**
+3. Copy:
+   - Access Key
+   - Secret Key
+
+Use these in Submify storage settings (`s3_access_key` / `s3_secret_key`).
 
 ### Find the current/default MinIO username and password
 
@@ -520,20 +642,22 @@ await fetch(presign.upload_url, {
 });
 ```
 
-### Security best practices for MinIO
+### Common mistakes
 
-- Never expose `s3_secret_key` in frontend/public JavaScript.
-- Use separate MinIO credentials per environment (dev/stage/prod).
-- Rotate MinIO root and app credentials regularly.
-- Keep MinIO endpoint private (internal Docker network), expose only via controlled proxy if needed.
-- Back up both `./data/minio` and `./data/postgres`.
+- `.env.auto` overrides expected `.env` values
+- forgot to restart containers after env changes
+- typo in environment variable names
+- using root credentials in production app configuration
 
-1. Authenticated user calls **`POST /api/v1/uploads/presign`** with `project_id`, `filename`, `content_type`, `size`.
-2. Response contains **`upload_url`** (HTTP PUT) and **`object_key`**.
-3. Client **`PUT`**s the file bytes to **`upload_url`**.
-4. Reference **`object_key`** (or your own metadata) inside submission JSON under **`files`** as your app requires.
+### Final checklist
 
-MIME types and max size are enforced server-side (`UPLOAD_ALLOWED_MIME`, `UPLOAD_MAX_SIZE_BYTES`).
+- `.env.auto` deleted or updated intentionally
+- `.env` configured with MinIO root credentials
+- stack restarted
+- runtime env verified inside container
+- logged into MinIO console
+- bucket created
+- access key created for app use
 
 ---
 
@@ -566,96 +690,7 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 - Rotate all project keys in one action (invalidates all old project public/secret keys)
 - Update S3/MinIO credentials used for presigned uploads
 - Save host bind/port preferences with copy-paste restart command
-
-#### How to use the Settings page (quick workflow)
-
-1. Open `Settings` from the top navigation.
-2. **Login password**: enter current password + new password + confirmation, then click **Update password**.
-3. **API key rotation**:
-   - Click **Rotate account API key** if your public key is exposed.
-   - Click **Rotate all project keys** if you suspect broader leakage.
-4. **S3-compatible storage**:
-   - Set `s3_endpoint`, `s3_bucket`, `s3_access_key`, `s3_secret_key`.
-   - For Docker Compose defaults, use the MinIO internal endpoint (`http://minio:9000`).
-5. **Port/bind preference**:
-   - Keep `127.0.0.1:2512` for Cloudflare Tunnel/local-only exposure.
-   - Use the shown command to apply and restart.
-
-### MinIO root password rotation (important)
-
-`MINIO_ROOT_PASSWORD` is an infrastructure-level runtime secret in Docker/Compose, so it is intentionally **not** changed from the web UI.
-
-Safe rotation flow (recommended):
-
-1. Update `MINIO_ROOT_PASSWORD` in `.env` (or `.env.auto` if you use generated secrets).
-2. Restart stack using the step-by-step process below.
-3. If your S3 access/secret pair also changed, update them in Submify Settings/Projects.
-4. Verify health endpoint returns OK: `/api/v1/system/health`.
-5. Test one presigned upload to confirm storage credentials and bucket permissions are still correct.
-
-If you also want to change MinIO root username, update `MINIO_ROOT_USER` at the same time, then restart and log in with the new pair.
-
-Windows PowerShell example:
-
-```powershell
-$env:MINIO_ROOT_PASSWORD='your-new-strong-password'
-.\scripts\Compose-Up.ps1 up -d
-```
-
-Linux/macOS example:
-
-```bash
-export MINIO_ROOT_PASSWORD='your-new-strong-password'
-./scripts/compose-up.sh up -d
-```
-
-#### Restart the stack (step-by-step)
-
-Use this when you changed `.env` / `.env.auto` and want new values to apply.
-
-Linux/macOS:
-
-```bash
-# 1) Go to your project folder
-cd /path/to/Submify
-
-# 2) Stop running containers for this project
-docker compose down
-
-# 3) Start again with env files applied (wrapper recommended)
-./scripts/compose-up.sh up -d
-
-# 4) Confirm services are healthy/running
-docker compose ps
-
-# 5) Check MinIO logs if needed
-docker compose logs --tail 200 minio
-```
-
-Windows PowerShell:
-
-```powershell
-# 1) Go to your project folder
-cd F:\webproject
-
-# 2) Stop running containers for this project
-docker compose down
-
-# 3) Start again with env files applied
-.\scripts\Compose-Up.ps1 up -d
-
-# 4) Confirm services are healthy/running
-docker compose ps
-
-# 5) Check MinIO logs if needed
-docker compose logs --tail 200 minio
-```
-
-If login still fails after restart:
-
-1. Run `docker compose exec minio env | grep MINIO_ROOT_` (Linux/macOS) or `docker compose exec minio env | findstr MINIO_ROOT_` (PowerShell) to confirm runtime values.
-2. Ensure only one value source is setting the password (`.env` overrides `.env.auto` when both exist).
-3. Restart once more after correcting env values.
+- For detailed MinIO credential setup and rotation, see **[Presigned uploads (optional)](#presigned-uploads-optional)**.
 
 ---
 
