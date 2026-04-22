@@ -55,11 +55,38 @@ Email notifications are **not** implemented in this release; you can send mail f
 
 ## Requirements
 
+- **Linux/macOS/Windows host** with admin access (on Linux, a sudo-capable user)
 - **Docker Engine** and **Docker Compose** (v2 plugin)
 - Host firewall / security group allowing inbound **TCP 2512** (or your reverse proxy port)
 - For production: TLS termination (reverse proxy or tunnel) is strongly recommended
 
 **Note:** Default Compose uses **`./data/postgres`** and **`./data/rustfs`** (next to the compose file) so the stack runs on **Windows, macOS, Linux, and CasaOS-style installs** without creating `/var/lib/...` paths. For a Linux VPS you can edit those volume lines to absolute host paths if you prefer.
+
+---
+
+## Before you install (host prep)
+
+Run these checks before cloning and starting Submify.
+
+### Linux (recommended for servers)
+
+1. Install Docker Engine and Compose plugin (official Docker docs for your distro).
+2. Verify install:
+   - `docker --version`
+   - `docker compose version`
+3. Add your user to the `docker` group (so you can run Docker without `sudo` each time):
+   - `sudo usermod -aG docker $USER`
+   - Re-login (or reboot) so group membership is applied.
+4. If you do not add your user to the `docker` group, run Docker commands with `sudo`.
+5. Keep a sudo-capable account for system operations (updates, firewall, backup, service management).
+
+### Windows / macOS
+
+1. Install Docker Desktop.
+2. Ensure Docker Desktop is running.
+3. Verify:
+   - `docker --version`
+   - `docker compose version`
 
 ---
 
@@ -72,17 +99,17 @@ git clone https://github.com/Raktim94/Submify.git
 cd Submify
 ```
 
-### 2. Environment and secrets (optional)
+### 2. Environment and secrets
 
-**Default:** no `.env` is required. **`docker-compose.yml`** ships **development-friendly defaults** for **`POSTGRES_PASSWORD`**, **`JWT_SECRET`**, and **`RUSTFS_ROOT_PASSWORD`**. **Change them for production** via a **`.env`** file (see **`.env.example`**) so your instance is unique.
+**Default:** no `.env` is required. Startup wrappers auto-create **`.env.auto`** with strong random values for **`POSTGRES_PASSWORD`**, **`JWT_SECRET`**, and **`RUSTFS_ROOT_PASSWORD`** on first run. You can still override with `.env` (see `.env.example`).
 
 | File | Role |
 |------|------|
 | **`.env`** (optional) | Overrides — copy from **`.env.example`** (`./scripts/setup-env.sh`) |
-| **`.env.auto`** (optional) | Strong random secrets if you set **`SUBMIFY_GENERATE_AUTO_ENV=1`** when running **`./scripts/compose-up.sh`** — back up with **`./data/`** |
+| **`.env.auto`** (auto-generated) | Strong random secrets created automatically by wrapper scripts; back up with **`./data/`** |
 | **`apps/web/.env.example`** | Optional Next.js / marketing contact-proxy vars (see [§5b](#5b-nextjs-marketing-contact-form-nodedr-hosted-api-proxy)) |
 
-**Wrapper scripts** (`./scripts/compose-up.sh`, **`Compose-Up.ps1`**) only add **`--env-file`** entries when **`.env.auto`** and/or **`.env`** exist; plain **`docker compose`** is always enough for a first run.
+**Wrapper scripts** (`./scripts/compose-up.sh`, **`Compose-Up.ps1`**) add **`--env-file`** entries when **`.env.auto`** and/or **`.env`** exist.
 
 ```bash
 # Optional one-liners when not using .env for these
@@ -94,20 +121,14 @@ export ALLOWED_ORIGINS="http://localhost:2512,https://yourdomain.com"
 ### 3. Start the stack
 
 ```bash
-docker compose up --build -d
+./scripts/compose-up.sh up --build -d
 docker compose ps
-```
-
-**Optional — strong random secrets** (first install only; creates **`.env.auto`**):
-
-```bash
-SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh up --build -d
 ```
 
 Windows:
 
 ```powershell
-$env:SUBMIFY_GENERATE_AUTO_ENV='1'; .\scripts\Compose-Up.ps1 up --build -d
+.\scripts\Compose-Up.ps1 up --build -d
 ```
 
 ### 3b. Recovering data after path or password changes
@@ -146,7 +167,7 @@ Same thing: **`./scripts/pull-latest.sh`** (runs that checkout, then **`git pull
 docker compose up --build -d
 ```
 
-If you start Compose via **`SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh`**, use the same wrapper here so **`--env-file`** stays consistent:
+If you start Compose via **`./scripts/compose-up.sh`**, use the same wrapper here so **`--env-file`** stays consistent:
 
 ```bash
 ./scripts/compose-up.sh up --build -d
@@ -193,7 +214,7 @@ Omit step 3 if you only need a quick pull and rebuild.
 
 ## URLs and ports (browser vs containers)
 
-Use the **host** machine’s address (your VPS IP, `localhost` on the same box, or your domain if DNS points here). **Nginx** is the only service that publishes a port in the default `docker-compose.yml`: **2512**.
+Use the **host** machine’s address (your VPS IP, `localhost` on the same box, or your domain if DNS points here). **Nginx** is the only service that publishes a port in the default `docker-compose.yml`: **2512**, bound to `127.0.0.1` by default.
 
 ### What you use in the browser (host)
 
@@ -236,7 +257,7 @@ Values used by the **API** container (see `docker-compose.yml` and `apps/api/int
 | `UPLOAD_ALLOWED_MIME` | `image/png,image/jpeg,application/pdf,text/plain` | Allowed MIME types for presign |
 | `PRESIGN_EXPIRY_MINUTES` | `10` | Presigned URL lifetime |
 | `ACCESS_TOKEN_TTL_MINUTES` | `30` | Access token lifetime |
-| `REFRESH_TOKEN_TTL_HOURS` | `168` | Refresh token lifetime |
+| `REFRESH_TOKEN_TTL_HOURS` | `24` | Refresh token lifetime |
 | `POSTGRES_PASSWORD` | Built-in default in **`docker-compose.yml`**, or **`.env`** / **`.env.auto`** | DB password; must match **`DATABASE_URL`** in the API service |
 | `TRUSTED_PROXIES` | private RFC1918 + loopback | CIDRs allowed to set `X-Forwarded-For` (trust Nginx / load balancers only) |
 | `RATE_LIMIT_SENSITIVE_PUBLIC_RPM` | `25` | Login / setup / refresh / logout per IP |
@@ -299,6 +320,9 @@ Summary:
 | Bulk delete | DELETE | `/api/v1/projects/{id}/submissions/bulk` | Bearer |
 | Presign | POST | `/api/v1/uploads/presign` | Bearer |
 | Export | GET | `/api/v1/projects/{id}/export?format=xlsx|pdf` | Bearer |
+| Security | PUT | `/api/v1/users/me/password` | Bearer |
+| Security | POST | `/api/v1/users/me/api-key/rotate` | Bearer |
+| Security | POST | `/api/v1/users/me/projects/rotate-keys` | Bearer |
 
 ---
 
@@ -407,6 +431,33 @@ Nginx forwards `X-Forwarded-For`; the API uses **`TRUSTED_PROXIES`** (CIDR list)
 
 ## Presigned uploads (optional)
 
+### What is MinIO in this codebase?
+
+Submify stores normal form JSON in PostgreSQL. **MinIO** (service name `rustfs`) is only for **S3-compatible object storage** when you want large file uploads.
+
+- Without MinIO/S3: form submissions still work.
+- With MinIO/S3: you can use `POST /api/v1/uploads/presign` to upload files directly to object storage, then save object references in submission data.
+
+In short: MinIO is the file-storage layer, not the main database.
+
+### How to use MinIO properly
+
+1. Start the stack (MinIO runs as `rustfs` in Compose).
+2. In Submify dashboard, open Settings or Project configuration and set:
+   - `s3_endpoint` (inside Docker this is commonly `http://rustfs:9000`)
+   - `s3_access_key`
+   - `s3_secret_key`
+   - `s3_bucket`
+3. Call `POST /api/v1/uploads/presign` from an authenticated session.
+4. Upload file bytes to returned `upload_url` using HTTP PUT.
+5. Store returned `object_key` in your form payload metadata.
+
+Security tips:
+
+- Do not expose `s3_secret_key` in frontend code.
+- Use unique credentials per environment.
+- Back up `./data/rustfs` with `./data/postgres`.
+
 1. Authenticated user calls **`POST /api/v1/uploads/presign`** with `project_id`, `filename`, `content_type`, `size`.
 2. Response contains **`upload_url`** (HTTP PUT) and **`object_key`**.
 3. Client **`PUT`**s the file bytes to **`upload_url`**.
@@ -436,7 +487,25 @@ MIME types and max size are enforced server-side (`UPLOAD_ALLOWED_MIME`, `UPLOAD
 | Rate limit | Tiered: see [Connecting → Rate limits](#6-rate-limits); authed users limited **per account**, not shared 10/min/IP |
 | Tenant isolation | Project ownership checked on authenticated routes |
 
-Use **HTTPS** in production. The **account `api_key`** is meant to be embedded in public sites (like a reCAPTCHA site key — not a secret admin password). If it leaks, plan to add a **rotate key** feature or re-provision the account; project-level keys can be rotated from **Projects** today.
+Use **HTTPS** in production. The **account `api_key`** is meant to be embedded in public sites (like a reCAPTCHA site key — not a secret admin password). If it leaks, rotate it from **Settings** immediately. Project-level keys can be rotated per project in **Projects** or all at once from **Settings**.
+
+### Security controls available in Settings
+
+- Change account login password
+- Rotate account API key (invalidates old key immediately)
+- Rotate all project keys in one action (invalidates all old project public/secret keys)
+- Update S3/MinIO credentials used for presigned uploads
+- Save host bind/port preferences with copy-paste restart command
+
+### MinIO root password rotation (important)
+
+`RUSTFS_ROOT_PASSWORD` is an infrastructure-level runtime secret in Docker/Compose, so it is intentionally **not** changed from the web UI.
+
+Safe rotation flow:
+
+1. Update `RUSTFS_ROOT_PASSWORD` in `.env` (or `.env.auto` if you use generated secrets).
+2. Restart stack: `./scripts/compose-up.sh up -d` (Linux/macOS) or `.\scripts\Compose-Up.ps1 up -d` (PowerShell).
+3. If your S3 access/secret pair also changed, update them in Submify Settings/Projects.
 
 ---
 
@@ -471,7 +540,7 @@ Or add a weekly cron job (see comments in the script; use the full path and **`s
 
 | Symptom | What to check |
 |---------|----------------|
-| API exits: **`JWT_SECRET` must be set…** | With **`GIN_MODE=release`**, the secret must be ≥32 characters. Set **`JWT_SECRET`** in **`.env`** or use **`SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh`** so **`.env.auto`** supplies one |
+| API exits: **`JWT_SECRET` must be set…** | With **`GIN_MODE=release`**, the secret must be ≥32 characters. Set **`JWT_SECRET`** in **`.env`** or run via **`./scripts/compose-up.sh`** so **`.env.auto`** supplies one |
 | Postgres auth errors after an upgrade or new **`.env.auto`** | **`POSTGRES_PASSWORD`** no longer matches the cluster on disk. Restore the old password in **`.env`**, or start from a fresh **`./data/postgres`** only if you accept losing DB contents |
 | **`Permission denied`** running **`./scripts/prune-docker.sh`** | Run **`sh ./scripts/prune-docker.sh`** (no execute bit needed), or **`chmod +x scripts/prune-docker.sh`**. New clones should get **`+x`** from Git after **`git pull`** |
 | Redeploy “hangs” after **`docker compose logs -f`** | **`-f`** follows logs until **Ctrl+C** — not stuck. Omit **`-f`** for a one-shot dump, or run logs **after** the deploy command instead of **`&&`** chaining |

@@ -9,7 +9,8 @@ const appLinks = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/projects', label: 'Projects' },
   { href: '/submissions', label: 'Submissions' },
-  { href: '/export', label: 'Export' }
+  { href: '/export', label: 'Export' },
+  { href: '/settings', label: 'Settings' }
 ];
 
 function linkIsActive(href: string, pathname: string): boolean {

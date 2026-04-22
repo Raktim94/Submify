@@ -60,7 +60,7 @@ func Load() Config {
 		UploadMaxSizeBytes:          int64(getEnvInt("UPLOAD_MAX_SIZE_BYTES", 25*1024*1024)),
 		AllowedMIMETypes:            toMIMEMap(splitCSV(getEnv("UPLOAD_ALLOWED_MIME", "image/png,image/jpeg,application/pdf,text/plain"))),
 		PresignExpiryMinutes:        getEnvInt("PRESIGN_EXPIRY_MINUTES", 10),
-		RefreshTokenTTLHours:        getEnvInt("REFRESH_TOKEN_TTL_HOURS", 168),
+		RefreshTokenTTLHours:        getEnvInt("REFRESH_TOKEN_TTL_HOURS", 24),
 		AccessTokenTTLMinutes:       getEnvInt("ACCESS_TOKEN_TTL_MINUTES", 30),
 		RateLimitSensitivePublicRPM: getEnvInt("RATE_LIMIT_SENSITIVE_PUBLIC_RPM", 25),
 		RateLimitSubmitIPRPM:        getEnvInt("RATE_LIMIT_SUBMIT_IP_RPM", 90),

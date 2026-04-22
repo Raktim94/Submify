@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Nav } from '../../components/nav';
-import { getMe, updateIntegrations, type MeResponse } from '../../lib/api';
+import { changePassword, getMe, rotateAccountAPIKey, rotateAllProjectKeys, updateIntegrations, type MeResponse } from '../../lib/api';
 
 export default function SettingsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -11,12 +11,28 @@ export default function SettingsPage() {
   const [s3Access, setS3Access] = useState('');
   const [s3Secret, setS3Secret] = useState('');
   const [status, setStatus] = useState('');
+  const [passwordStatus, setPasswordStatus] = useState('');
+  const [portStatus, setPortStatus] = useState('');
+  const [keyStatus, setKeyStatus] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [bindIP, setBindIP] = useState('127.0.0.1');
+  const [port, setPort] = useState('2512');
 
   useEffect(() => {
     getMe()
       .then((m) => setMe(m))
       .catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load profile'));
+  }, []);
+
+  useEffect(() => {
+    const savedIP = localStorage.getItem('submify_bind_ip');
+    const savedPort = localStorage.getItem('submify_port');
+    if (savedIP?.trim()) {
+      setBindIP(savedIP.trim());
+    }
+    if (savedPort?.trim()) {
+      setPort(savedPort.trim());
+    }
   }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -80,6 +96,75 @@ export default function SettingsPage() {
     }
   }
 
+  async function onChangePassword(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPasswordStatus('');
+    const form = new FormData(e.currentTarget);
+    const currentPassword = String(form.get('current_password') ?? '');
+    const newPassword = String(form.get('new_password') ?? '');
+    const confirmPassword = String(form.get('confirm_new_password') ?? '');
+    if (newPassword.length < 8) {
+      setPasswordStatus('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordStatus('New password and confirmation do not match.');
+      return;
+    }
+    try {
+      await changePassword({ current_password: currentPassword, new_password: newPassword });
+      e.currentTarget.reset();
+      setPasswordStatus('Password updated successfully.');
+    } catch (err) {
+      setPasswordStatus(err instanceof Error ? err.message : 'Password update failed');
+    }
+  }
+
+  function onSavePortPreference() {
+    setPortStatus('');
+    const normalizedIP = bindIP.trim() || '127.0.0.1';
+    const parsedPort = Number(port.trim());
+    if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+      setPortStatus('Port must be a number between 1 and 65535.');
+      return;
+    }
+    localStorage.setItem('submify_bind_ip', normalizedIP);
+    localStorage.setItem('submify_port', String(parsedPort));
+    setBindIP(normalizedIP);
+    setPort(String(parsedPort));
+    setPortStatus('Saved. Apply with the command below and restart containers.');
+  }
+
+  async function onRotateAccountKey() {
+    setKeyStatus('');
+    if (!confirm('Rotate your account API key now? Existing websites using the old key will stop submitting immediately.')) {
+      return;
+    }
+    try {
+      const res = await rotateAccountAPIKey();
+      const m = await getMe();
+      setMe(m);
+      setKeyStatus(`Account API key rotated. New key: ${res.api_key}`);
+    } catch (err) {
+      setKeyStatus(err instanceof Error ? err.message : 'Could not rotate account API key');
+    }
+  }
+
+  async function onRotateAllProjectKeys() {
+    setKeyStatus('');
+    if (!confirm('Rotate all project keys? Every old project public/secret key will stop working immediately.')) {
+      return;
+    }
+    const phrase = prompt('Type ROTATE to confirm key rotation for all projects.');
+    if (phrase !== 'ROTATE') return;
+    try {
+      const res = await rotateAllProjectKeys();
+      setKeyStatus(`Rotated keys for ${res.projects_rotated} project(s). Update all clients with the new keys from Projects page.`);
+    } catch (err) {
+      setKeyStatus(err instanceof Error ? err.message : 'Could not rotate project keys');
+    }
+  }
+
   if (loadError) {
     return (
       <main className="min-h-screen bg-slate-50 px-4 py-8">
@@ -131,6 +216,134 @@ export default function SettingsPage() {
               container can reach.
             </li>
           </ul>
+        </section>
+
+        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+          <h2 className="font-display text-xl font-bold text-slate-900">Login password</h2>
+          <p className="mt-1 text-sm leading-relaxed text-slate-600">
+            Change your account password here. This takes effect immediately for future logins.
+          </p>
+          <form className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={onChangePassword}>
+            <label className="block md:col-span-2">
+              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Current password</span>
+              <input className="w-full rounded-xl border-slate-300 px-4 py-3" name="current_password" type="password" required autoComplete="current-password" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">New password</span>
+              <input className="w-full rounded-xl border-slate-300 px-4 py-3" name="new_password" type="password" required minLength={8} autoComplete="new-password" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Confirm new password</span>
+              <input className="w-full rounded-xl border-slate-300 px-4 py-3" name="confirm_new_password" type="password" required minLength={8} autoComplete="new-password" />
+            </label>
+            <button type="submit" className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800 md:col-span-2 md:w-fit">
+              Update password
+            </button>
+          </form>
+          {passwordStatus ? (
+            <p
+              className={`mt-4 rounded-xl px-4 py-3 text-sm ${
+                passwordStatus.toLowerCase().includes('success')
+                  ? 'border border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : 'border border-red-200 bg-red-50 text-red-800'
+              }`}
+              role="status"
+            >
+              {passwordStatus}
+            </p>
+          ) : null}
+        </section>
+
+        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+          <h2 className="font-display text-xl font-bold text-slate-900">API key rotation</h2>
+          <p className="mt-1 text-sm leading-relaxed text-slate-600">
+            Rotate exposed keys immediately if you suspect leakage. Rotating invalidates old keys right away.
+          </p>
+          <div className="mt-4 grid gap-3">
+            <button
+              type="button"
+              className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 hover:bg-amber-100 sm:w-fit"
+              onClick={onRotateAccountKey}
+            >
+              Rotate account API key
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-900 hover:bg-rose-100 sm:w-fit"
+              onClick={onRotateAllProjectKeys}
+            >
+              Rotate all project keys
+            </button>
+            <p className="text-xs text-slate-600">
+              Per-project key rotation is also available from <Link href="/projects" className="font-medium text-brand-700 underline">Projects</Link>.
+            </p>
+          </div>
+          {keyStatus ? (
+            <p
+              className={`mt-4 rounded-xl px-4 py-3 text-sm ${
+                keyStatus.toLowerCase().includes('rotated')
+                  ? 'border border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : 'border border-red-200 bg-red-50 text-red-800'
+              }`}
+              role="status"
+            >
+              {keyStatus}
+            </p>
+          ) : null}
+        </section>
+
+        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+          <h2 className="font-display text-xl font-bold text-slate-900">Local port and bind address</h2>
+          <p className="mt-1 text-sm leading-relaxed text-slate-600">
+            Default is <code className="rounded bg-slate-100 px-1">127.0.0.1:2512</code> for safer local-only access. Keep this when using Cloudflare Tunnel.
+          </p>
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Bind IP</span>
+              <input className="w-full rounded-xl border-slate-300 px-4 py-3" value={bindIP} onChange={(e) => setBindIP(e.target.value)} placeholder="127.0.0.1" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Port</span>
+              <input className="w-full rounded-xl border-slate-300 px-4 py-3" value={port} onChange={(e) => setPort(e.target.value)} placeholder="2512" inputMode="numeric" />
+            </label>
+          </div>
+          <button
+            type="button"
+            className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
+            onClick={onSavePortPreference}
+          >
+            Save local preference
+          </button>
+          <p className="mt-4 text-xs text-slate-600">
+            Apply on host (PowerShell):{' '}
+            <code className="rounded bg-slate-100 px-1 py-0.5">
+              $env:SUBMIFY_BIND_IP='{bindIP.trim() || '127.0.0.1'}'; $env:SUBMIFY_PORT='{port.trim() || '2512'}'; .\scripts\Compose-Up.ps1 up -d
+            </code>
+          </p>
+          {portStatus ? (
+            <p
+              className={`mt-3 rounded-xl px-4 py-3 text-sm ${
+                portStatus.startsWith('Saved')
+                  ? 'border border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : 'border border-red-200 bg-red-50 text-red-800'
+              }`}
+              role="status"
+            >
+              {portStatus}
+            </p>
+          ) : null}
+        </section>
+
+        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+          <h2 className="font-display text-xl font-bold text-slate-900">MinIO root password (host-level)</h2>
+          <p className="mt-1 text-sm leading-relaxed text-slate-600">
+            The MinIO root password is a Docker runtime secret (<code className="rounded bg-slate-100 px-1">RUSTFS_ROOT_PASSWORD</code>).
+            It is not changed from the web UI by design.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-slate-700">
+            To rotate safely: update <code className="rounded bg-slate-100 px-1">.env</code> (or <code className="rounded bg-slate-100 px-1">.env.auto</code>),
+            then restart with <code className="rounded bg-slate-100 px-1">.\scripts\Compose-Up.ps1 up -d</code>. After rotating, update S3 access/secret credentials above if they changed.
+          </p>
         </section>
 
         <form

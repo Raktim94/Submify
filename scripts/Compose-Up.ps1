@@ -1,7 +1,7 @@
 # Thin wrapper: optional .env.auto (strong secrets) + optional .env.
 # Default: docker compose up --build -d (no script — defaults are in docker-compose.yml).
 #
-# First install with random secrets: $env:SUBMIFY_GENERATE_AUTO_ENV='1'; .\scripts\Compose-Up.ps1 up --build -d
+# First install with random secrets: .\scripts\Compose-Up.ps1 up --build -d
 #
 # Usage: .\scripts\Compose-Up.ps1 logs -f api
 
@@ -40,7 +40,8 @@ RUSTFS_ROOT_PASSWORD=$s3
     [System.IO.File]::WriteAllText($autoEnv, $content.TrimEnd() + "`n", $utf8NoBom)
 }
 
-if ($env:SUBMIFY_GENERATE_AUTO_ENV -eq "1") {
+# Auto-create strong random secrets unless explicitly disabled.
+if ($env:SUBMIFY_GENERATE_AUTO_ENV -ne "0") {
     Ensure-AutoEnv
 }
 

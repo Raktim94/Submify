@@ -266,3 +266,27 @@ export async function updateIntegrations(patch: IntegrationsPatch): Promise<{ st
     body: JSON.stringify(patch)
   });
 }
+
+export async function changePassword(payload: {
+  current_password: string;
+  new_password: string;
+}): Promise<{ status: string }> {
+  return api<{ status: string }>('/users/me/password', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function rotateAccountAPIKey(): Promise<{ status: string; api_key: string }> {
+  return api<{ status: string; api_key: string }>('/users/me/api-key/rotate', {
+    method: 'POST',
+    body: '{}'
+  });
+}
+
+export async function rotateAllProjectKeys(): Promise<{ status: string; projects_rotated: number }> {
+  return api<{ status: string; projects_rotated: number }>('/users/me/projects/rotate-keys', {
+    method: 'POST',
+    body: '{}'
+  });
+}

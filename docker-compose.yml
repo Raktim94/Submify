@@ -98,7 +98,7 @@ services:
     image: nginx:1.27-alpine
     container_name: submify-nginx
     ports:
-      - "2512:2512"
+      - "${SUBMIFY_BIND_IP:-127.0.0.1}:${SUBMIFY_PORT:-2512}:2512"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     logging: *default-logging

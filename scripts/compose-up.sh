@@ -3,8 +3,8 @@
 #
 # Default stack needs no script — run `docker compose up --build -d` (secrets have defaults in docker-compose.yml).
 #
-# To generate random secrets into .env.auto (first install only; keep the file with ./data/):
-#   SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh up --build -d
+# Random secrets are generated into .env.auto automatically (first install only; keep the file with ./data/):
+#   ./scripts/compose-up.sh up --build -d
 #
 # Usage: ./scripts/compose-up.sh logs -f api
 set -euo pipefail
@@ -37,7 +37,7 @@ RUSTFS_ROOT_PASSWORD=${s3}
 EOF
 }
 
-if [ "${SUBMIFY_GENERATE_AUTO_ENV:-}" = "1" ]; then
+if [ "${SUBMIFY_GENERATE_AUTO_ENV:-1}" = "1" ]; then
   ensure_auto_env
 fi
 

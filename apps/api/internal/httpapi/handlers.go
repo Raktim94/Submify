@@ -71,6 +71,11 @@ type userIntegrationsRequest struct {
 	S3Bucket         *string `json:"s3_bucket"`
 }
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required"`
+	NewPassword     string `json:"new_password" binding:"required,min=8"`
+}
+
 func (s *Server) cookieSameSite() http.SameSite {
 	switch s.cfg.AuthCookieSameSite {
 	case "strict":
@@ -831,5 +836,82 @@ func (s *Server) UpdateUserIntegrations(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+}
+
+func (s *Server) ChangePassword(c *gin.Context) {
+	var req changePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	u, err := s.store.FindUserByID(userIDFromContext(c))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !auth.VerifyPassword(req.CurrentPassword, u.PasswordHash) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "current password is incorrect"})
+		return
+	}
+	nextHash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.store.UpdateUserPassword(u.ID, nextHash); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "password updated"})
+}
+
+func (s *Server) RotateAccountAPIKey(c *gin.Context) {
+	userID := userIDFromContext(c)
+	nextKey, err := keys.NewAPIKey()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.store.UpdateUserAPIKey(userID, nextKey); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "rotated", "api_key": nextKey})
+}
+
+func (s *Server) RotateAllProjectKeys(c *gin.Context) {
+	userID := userIDFromContext(c)
+	projects, err := s.store.ListProjects(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	rotated := 0
+	for _, p := range projects {
+		pk, err := keys.NewAPIKey()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		sk, err := keys.NewAPISecret()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.store.RegenerateProjectKeys(userID, p.ID, pk, sk); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		rotated++
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "rotated", "projects_rotated": rotated})
 }
 

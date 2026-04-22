@@ -286,6 +286,38 @@ func (s *Store) UpdateUserIntegrations(userID, telegramToken, telegramChatID, s3
 	return err
 }
 
+func (s *Store) UpdateUserPassword(userID, passwordHash string) error {
+	res, err := s.DB.Exec(`
+		UPDATE users
+		SET password_hash = $2
+		WHERE id = $1::uuid
+	`, userID, strings.TrimSpace(passwordHash))
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) UpdateUserAPIKey(userID, newAPIKey string) error {
+	res, err := s.DB.Exec(`
+		UPDATE users
+		SET api_key = $2
+		WHERE id = $1::uuid
+	`, userID, strings.TrimSpace(newAPIKey))
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 const projectSelect = `id, user_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {

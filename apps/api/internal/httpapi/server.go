@@ -94,6 +94,9 @@ func (s *Server) Router() *gin.Engine {
 		secured.GET("/projects/:id/export", s.Export)
 		secured.GET("/dashboard/summary", s.DashboardSummary)
 		secured.PUT("/users/me/integrations", s.UpdateUserIntegrations)
+		secured.PUT("/users/me/password", s.ChangePassword)
+		secured.POST("/users/me/api-key/rotate", s.RotateAccountAPIKey)
+		secured.POST("/users/me/projects/rotate-keys", s.RotateAllProjectKeys)
 	}
 
 	return r
