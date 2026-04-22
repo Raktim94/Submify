@@ -139,6 +139,19 @@ If you previously used **`/var/lib/submify/data/...`** or an old **`.env`**, you
 
 See **[URLs and ports (browser vs containers)](#urls-and-ports-browser-vs-containers)** below for the full picture.
 
+### 4b. RustFS permissions on fresh Linux servers
+
+RustFS runs as a non-root user in the container. On some fresh hosts, bind-mount permissions can block startup (`Permission denied (os error 13)`).
+
+Run once:
+
+```bash
+mkdir -p ./data/rustfs
+sudo chown -R 10001:10001 ./data/rustfs
+sudo chmod -R u+rwX ./data/rustfs
+docker compose up -d rustfs
+```
+
 ### 5. View logs
 
 ```bash
@@ -731,7 +744,7 @@ Or add a weekly cron job (see comments in the script; use the full path and **`s
 | Redeploy “hangs” after **`docker compose logs -f`** | **`-f`** follows logs until **Ctrl+C** — not stuck. Omit **`-f`** for a one-shot dump, or run logs **after** the deploy command instead of **`&&`** chaining |
 | `docker compose build` / bake **exit status 1** | Run **`docker compose build --progress=plain api`** (or **`web`**) and read the **ERROR** block at the end. On a **small VPS**, parallel builds can OOM — try **`docker compose build --parallel 1`** or add **swap** |
 | Nothing on port 2512 | Firewall, `docker compose ps`, Nginx logs |
-| Locked out after recreating **`.env.auto`** but keeping old DB data | Restore the previous **`.env.auto`** (or reset Postgres / MinIO data to match new secrets) |
+| Locked out after recreating **`.env.auto`** but keeping old DB data | Restore the previous **`.env.auto`** (or reset Postgres / RustFS data to match new secrets) |
 | `401` on submit | `x-api-key` equals URL segment and matches a valid **`api_key`** or project **`public_api_key`** |
 | `429` on submit | Per-project **5000** cap, or submit IP/key rate limits |
 | CORS errors from browser | `ALLOWED_ORIGINS` includes your site’s exact origin (scheme + host + port) |

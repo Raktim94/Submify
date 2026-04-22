@@ -47,6 +47,17 @@ Data lives next to `docker-compose.yml` (not inside the API image):
 - `./data/postgres` — PostgreSQL
 - `./data/rustfs` — RustFS (S3-compatible)
 
+### RustFS permissions (fresh Linux hosts)
+
+RustFS container runs as UID `10001`. If RustFS exits with `Permission denied (os error 13)`, fix the bind mount once:
+
+```bash
+mkdir -p ./data/rustfs
+sudo chown -R 10001:10001 ./data/rustfs
+sudo chmod -R u+rwX ./data/rustfs
+docker compose up -d rustfs
+```
+
 Back up those folders with your backup policy. For production, override default passwords and **`JWT_SECRET`** via **`.env`**. Avoid `docker compose down -v` if you add named volumes later.
 
 ## Logs and Docker disk
