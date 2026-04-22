@@ -79,15 +79,6 @@ func client(ctx context.Context, endpoint, accessKey, secretKey string) (*s3.Cli
 	})
 }
 
-func CheckBucket(ctx context.Context, endpoint, accessKey, secretKey, bucket string) error {
-	c, err := client(ctx, endpoint, accessKey, secretKey)
-	if err != nil {
-		return err
-	}
-	_, err = c.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucket)})
-	return err
-}
-
 func PresignUpload(ctx context.Context, in PresignInput) (PresignResult, error) {
 	c, err := client(ctx, in.Endpoint, in.AccessKey, in.SecretKey)
 	if err != nil {
