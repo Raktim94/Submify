@@ -713,4 +713,5 @@ Submify is made by **NODEDR PRIVATE LIMITED**.
 - Repository: [https://github.com/Raktim94/Submify.git](https://github.com/Raktim94/Submify.git)
 - API detail: [docs/api.md](docs/api.md)
 - Deployment shortcuts: [docs/deployment.md](docs/deployment.md)
+- Third-party licenses: [THIRD_PARTY.md](THIRD_PARTY.md)
 - **AI builders:** Nodedr contact-proxy **copy-paste prompt** (in the running web app): `/docs/contact-proxy` → *For AI builders* / *Reuse prompt* (see [§5b](#5b-nextjs-marketing-contact-form-nodedr-hosted-api-proxy))

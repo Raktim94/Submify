@@ -3,15 +3,27 @@ Business Source License 1.1
 Parameters
 
 Licensor:           Raktim Ranjit / Nodedr
-Licensed Work:      Submify (including all Backend, Frontend, and RustFS integration code)
+Licensed Work:      Submify (including all Backend, Frontend, and MinIO integration code)
 Additional Use Grant:
-    1. Non-commercial use is permitted for individuals and students.
-    2. Internal business use (e.g., using Submify for your own company's
-       internal contact forms) is permitted.
-    3. Commercial hosting of the Licensed Work as a paid "Form Backend
-       as a Service" (FBaaS), "Submify-as-a-Service," or any competing
-       commercial form-handling platform is strictly prohibited without
-       prior written consent from the Licensor.
+
+1. Non-commercial use is permitted for individuals, students, and hobby projects.
+
+2. Any use of the Licensed Work for commercial purposes requires a valid commercial license from the Licensor.
+
+3. Commercial purposes include, but are not limited to:
+   - Offering the Licensed Work as a service (e.g., SaaS, FBaaS)
+   - Using the Licensed Work in a revenue-generating product or service
+   - Using the Licensed Work within a business, organization, or for internal business operations
+   - Providing the Licensed Work to third parties (clients or customers)
+   - Operating a competing form-handling platform
+
+4. Contributions are permitted; by submitting a contribution, you agree that it will be licensed under this same Business Source License 1.1.
+
+Commercial Licensing:
+
+For commercial use, licensing inquiries, or to obtain a commercial license, please contact:
+
+info@nodedr.com
 
 Change Date:        2030-01-01
 Change License:     GNU General Public License v3.0 or later
