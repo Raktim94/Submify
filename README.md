@@ -497,15 +497,45 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 - Update S3/MinIO credentials used for presigned uploads
 - Save host bind/port preferences with copy-paste restart command
 
+#### How to use the Settings page (quick workflow)
+
+1. Open `Settings` from the top navigation.
+2. **Login password**: enter current password + new password + confirmation, then click **Update password**.
+3. **API key rotation**:
+   - Click **Rotate account API key** if your public key is exposed.
+   - Click **Rotate all project keys** if you suspect broader leakage.
+4. **S3-compatible storage**:
+   - Set `s3_endpoint`, `s3_bucket`, `s3_access_key`, `s3_secret_key`.
+   - For Docker Compose defaults, endpoint is often `http://rustfs:9000`.
+5. **Port/bind preference**:
+   - Keep `127.0.0.1:2512` for Cloudflare Tunnel/local-only exposure.
+   - Use the shown command to apply and restart.
+
 ### MinIO root password rotation (important)
 
 `RUSTFS_ROOT_PASSWORD` is an infrastructure-level runtime secret in Docker/Compose, so it is intentionally **not** changed from the web UI.
 
-Safe rotation flow:
+Safe rotation flow (recommended):
 
 1. Update `RUSTFS_ROOT_PASSWORD` in `.env` (or `.env.auto` if you use generated secrets).
 2. Restart stack: `./scripts/compose-up.sh up -d` (Linux/macOS) or `.\scripts\Compose-Up.ps1 up -d` (PowerShell).
 3. If your S3 access/secret pair also changed, update them in Submify Settings/Projects.
+4. Verify health endpoint returns OK: `/api/v1/system/health`.
+5. Test one presigned upload to confirm storage credentials and bucket permissions are still correct.
+
+Windows PowerShell example:
+
+```powershell
+$env:RUSTFS_ROOT_PASSWORD='your-new-strong-password'
+.\scripts\Compose-Up.ps1 up -d
+```
+
+Linux/macOS example:
+
+```bash
+export RUSTFS_ROOT_PASSWORD='your-new-strong-password'
+./scripts/compose-up.sh up -d
+```
 
 ---
 
