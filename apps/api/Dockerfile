@@ -12,8 +12,8 @@ COPY . .
 # go build -o /out/... does not mkdir parents; /out must exist.
 # Avoid `go mod tidy` in image builds; it mutates module files and is brittle in CI/containers.
 RUN mkdir -p /out \
-  && go mod download \
-  && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o /out/submify-api ./cmd/server
+  && go mod download all \
+  && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -mod=mod -o /out/submify-api ./cmd/server
 
 # Docker CLI (optional in-container "update & restart" against mounted docker.sock).
 # --platform matches the final image so cross-builds do not embed the builder's arch.
