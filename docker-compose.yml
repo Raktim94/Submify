@@ -41,6 +41,9 @@ services:
     image: ${RUSTFS_IMAGE:-rustfs/rustfs:latest}
     container_name: submify-rustfs
     command: /data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     environment:
       RUSTFS_ROOT_USER: ${RUSTFS_ROOT_USER:-submify}
       RUSTFS_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:-b1c2d3e4f5a69788796a5b4c3d2e1f0c9d8e7f6a5b4938271605f4e3d2c1b0a9f8}
