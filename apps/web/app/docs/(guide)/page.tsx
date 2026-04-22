@@ -219,14 +219,100 @@ export default function DocsPage() {
       </section>
 
       <section id="settings">
-        <h2>Telegram &amp; S3 (Projects)</h2>
+        <h2>Settings</h2>
         <p>
-          <strong>Telegram</strong> — Optional bot token + chat ID for notifications on new submissions (configure per project).
+          <strong>Password</strong> — Change your account password from the Settings page.
         </p>
         <p>
-          <strong>S3-compatible storage</strong> — Optional endpoint, keys, and bucket for presigned uploads when you need large files
-          (configure per project).
+          <strong>API keys</strong> — Rotate account API key or all project keys if a key is exposed.
         </p>
+        <p>
+          <strong>Storage credentials</strong> — Configure MinIO/S3 endpoint, bucket, access key, and secret key for presigned uploads.
+        </p>
+      </section>
+
+      <section id="minio">
+        <h2>MinIO (file uploads) — full setup</h2>
+        <p>
+          Submify uses <strong>MinIO</strong> for file/object storage when you need large uploads. Form JSON data still goes to PostgreSQL.
+        </p>
+        <h3>What MinIO is used for</h3>
+        <ul>
+          <li>Store uploaded files via presigned URLs.</li>
+          <li>Keep large files out of your main database tables.</li>
+          <li>Work with standard S3-compatible APIs.</li>
+        </ul>
+        <h3>Generate strong passwords and keys</h3>
+        <p>Use strong random values for MinIO root password and app credentials.</p>
+        <pre>
+          <code>{`# Linux/macOS (example)
+openssl rand -base64 32`}</code>
+        </pre>
+        <pre>
+          <code>{`# PowerShell (example)
+[Convert]::ToBase64String((1..32 | ForEach-Object {Get-Random -Maximum 256}))`}</code>
+        </pre>
+        <h3>Login to MinIO console</h3>
+        <ol>
+          <li>Start stack with Docker Compose.</li>
+          <li>Open <code>http://127.0.0.1:9001</code> (or your mapped host port).</li>
+          <li>
+            Login with:
+            <ul>
+              <li><code>RUSTFS_ROOT_USER</code> (default often <code>submify</code>)</li>
+              <li><code>RUSTFS_ROOT_PASSWORD</code></li>
+            </ul>
+          </li>
+          <li>Create a bucket (example: <code>submify-uploads</code>).</li>
+          <li>Create an access key + secret key dedicated for Submify.</li>
+        </ol>
+        <h3>Configure Submify for uploads</h3>
+        <p>In Settings (or Project storage config), fill:</p>
+        <ul>
+          <li>
+            <code>s3_endpoint</code>: <code>http://rustfs:9000</code> (Docker internal hostname for MinIO service)
+          </li>
+          <li>
+            <code>s3_bucket</code>: your bucket (for example <code>submify-uploads</code>)
+          </li>
+          <li>
+            <code>s3_access_key</code>: MinIO access key
+          </li>
+          <li>
+            <code>s3_secret_key</code>: MinIO secret key
+          </li>
+        </ul>
+        <h3>Client-side upload flow</h3>
+        <ol>
+          <li>Call <code>POST /api/v1/uploads/presign</code> (authenticated user).</li>
+          <li>Receive <code>upload_url</code> and <code>object_key</code>.</li>
+          <li>Upload file bytes with HTTP <code>PUT</code> to <code>upload_url</code>.</li>
+          <li>Submit form JSON to <code>POST /api/submit</code> and include file reference/object key.</li>
+        </ol>
+        <pre>
+          <code>{`const presign = await fetch('/api/v1/uploads/presign', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${token}\` },
+  body: JSON.stringify({
+    project_id: projectId,
+    filename: file.name,
+    content_type: file.type,
+    size: file.size
+  })
+}).then((r) => r.json());
+
+await fetch(presign.upload_url, {
+  method: 'PUT',
+  headers: { 'Content-Type': file.type },
+  body: file
+});`}</code>
+        </pre>
+        <h3>Security notes</h3>
+        <ul>
+          <li>Do not put MinIO secret key in browser-exposed code.</li>
+          <li>Rotate keys periodically and after suspected leakage.</li>
+          <li>Back up both PostgreSQL data and MinIO data directories.</li>
+        </ul>
       </section>
 
       <section id="self-hosting">

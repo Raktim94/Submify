@@ -1,6 +1,6 @@
 # Submify
 
-Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin) API, Next.js dashboard, PostgreSQL, S3-compatible object storage (**MinIO** by default, Compose service name **`rustfs`**), and Nginx as a single entrypoint.
+Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin) API, Next.js dashboard, PostgreSQL, S3-compatible object storage (**MinIO** by default), and Nginx as a single entrypoint.
 
 **Upstream repository:** [https://github.com/Raktim94/Submify.git](https://github.com/Raktim94/Submify.git)
 
@@ -34,7 +34,7 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
   - `/api/*` → API (Go, port 8080 in the container)
   - `/*` → Next.js (port 3000 in the container)
 - **PostgreSQL** stores all tenants in one database (JSONB-friendly, battle-tested). Rows are scoped by `user_id` / `project_id`; the API never lists or mutates another user’s data.
-- **Object storage** — the Compose service is named **`rustfs`** (hostname `rustfs` inside the network). By default it runs **`minio/minio`** (S3-compatible API). Set **`RUSTFS_IMAGE`** to swap in another S3-compatible image if needed. Data is stored under **`./data/rustfs`** next to `docker-compose.yml` (portable bind mounts).
+- **Object storage (MinIO)** — by default the stack runs **`minio/minio`** (S3-compatible API). MinIO data is stored under **`./data/rustfs`** next to `docker-compose.yml` (portable bind mounts).
 
 The browser and external clients should use **one origin** for dashboard + API (e.g. `https://forms.example.com:2512/api/v1/...`) or configure **CORS** for separate sites (see [Connecting a client website](#connecting-a-client-website-forms)).
 
@@ -431,32 +431,81 @@ Nginx forwards `X-Forwarded-For`; the API uses **`TRUSTED_PROXIES`** (CIDR list)
 
 ## Presigned uploads (optional)
 
-### What is MinIO in this codebase?
+### MinIO: what it does in Submify
 
-Submify stores normal form JSON in PostgreSQL. **MinIO** (service name `rustfs`) is only for **S3-compatible object storage** when you want large file uploads.
+Submify stores normal form JSON in PostgreSQL. **MinIO** is used only as **file/object storage** for large uploads via presigned URLs.
 
-- Without MinIO/S3: form submissions still work.
-- With MinIO/S3: you can use `POST /api/v1/uploads/presign` to upload files directly to object storage, then save object references in submission data.
+- Without MinIO: submissions still work (JSON-only).
+- With MinIO: users upload large files directly to object storage, then store file references in submissions.
 
-In short: MinIO is the file-storage layer, not the main database.
+In short: PostgreSQL = form data, MinIO = file objects.
 
-### How to use MinIO properly
+### MinIO quick setup (first time)
 
-1. Start the stack (MinIO runs as `rustfs` in Compose).
-2. In Submify dashboard, open Settings or Project configuration and set:
-   - `s3_endpoint` (inside Docker this is commonly `http://rustfs:9000`)
-   - `s3_access_key`
-   - `s3_secret_key`
-   - `s3_bucket`
-3. Call `POST /api/v1/uploads/presign` from an authenticated session.
-4. Upload file bytes to returned `upload_url` using HTTP PUT.
-5. Store returned `object_key` in your form payload metadata.
+1. Start the stack:
+   - Linux/macOS: `./scripts/compose-up.sh up -d`
+   - Windows: `.\scripts\Compose-Up.ps1 up -d`
+2. Generate a strong root password for MinIO:
+   - Linux/macOS: `openssl rand -base64 32`
+   - PowerShell: `[Convert]::ToBase64String((1..32 | ForEach-Object {Get-Random -Maximum 256}))`
+3. Set `RUSTFS_ROOT_PASSWORD` in `.env` (or let `.env.auto` manage it), then restart the stack.
+4. Open MinIO Console in browser (default): `http://127.0.0.1:9001`
+5. Login using:
+   - Username: value of `RUSTFS_ROOT_USER` (default `submify`)
+   - Password: value of `RUSTFS_ROOT_PASSWORD`
+6. Create a bucket for uploads (for example `submify-uploads`).
+7. Create an access key / secret key in MinIO (recommended: dedicated credentials for Submify app use).
 
-Security tips:
+### Configure Submify Settings for file upload
 
-- Do not expose `s3_secret_key` in frontend code.
-- Use unique credentials per environment.
-- Back up `./data/rustfs` with `./data/postgres`.
+Open **Settings** (or Project-level storage in **Projects**) and set:
+
+- `s3_endpoint`: MinIO internal endpoint (default in this Compose stack: `http://rustfs:9000`)
+- `s3_bucket`: your bucket name (for example `submify-uploads`)
+- `s3_access_key`: MinIO access key
+- `s3_secret_key`: MinIO secret key
+
+### Client-side upload flow (correct way)
+
+1. Your app calls `POST /api/v1/uploads/presign` with:
+   - `project_id`
+   - `filename`
+   - `content_type`
+   - `size`
+2. Submify returns:
+   - `upload_url` (one-time/short-lived PUT URL)
+   - `object_key`
+3. Browser/client uploads bytes directly to `upload_url` with HTTP PUT.
+4. Your app sends normal `POST /api/submit` and includes `object_key` in `files` metadata.
+
+Minimal client example:
+
+```javascript
+const presign = await fetch('/api/v1/uploads/presign', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  body: JSON.stringify({
+    project_id: projectId,
+    filename: file.name,
+    content_type: file.type,
+    size: file.size
+  })
+}).then((r) => r.json());
+
+await fetch(presign.upload_url, {
+  method: 'PUT',
+  headers: { 'Content-Type': file.type },
+  body: file
+});
+```
+
+### Security best practices for MinIO
+
+- Never expose `s3_secret_key` in frontend/public JavaScript.
+- Use separate MinIO credentials per environment (dev/stage/prod).
+- Rotate MinIO root and app credentials regularly.
+- Keep MinIO endpoint private (internal Docker network), expose only via controlled proxy if needed.
+- Back up both `./data/rustfs` and `./data/postgres`.
 
 1. Authenticated user calls **`POST /api/v1/uploads/presign`** with `project_id`, `filename`, `content_type`, `size`.
 2. Response contains **`upload_url`** (HTTP PUT) and **`object_key`**.
@@ -506,7 +555,7 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
    - Click **Rotate all project keys** if you suspect broader leakage.
 4. **S3-compatible storage**:
    - Set `s3_endpoint`, `s3_bucket`, `s3_access_key`, `s3_secret_key`.
-   - For Docker Compose defaults, endpoint is often `http://rustfs:9000`.
+   - For Docker Compose defaults, use the MinIO internal endpoint (`http://rustfs:9000`).
 5. **Port/bind preference**:
    - Keep `127.0.0.1:2512` for Cloudflare Tunnel/local-only exposure.
    - Use the shown command to apply and restart.
