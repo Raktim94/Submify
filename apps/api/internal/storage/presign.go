@@ -74,7 +74,7 @@ func client(ctx context.Context, endpoint, accessKey, secretKey string) (*s3.Cli
 		return nil, err
 	}
 	return s3.NewFromConfig(cfg, func(o *s3.Options) {
-		// RustFS (like many S3-compatible services) works reliably with path-style addressing.
+		// Many S3-compatible providers (self-hosted and managed) work reliably with path-style addressing.
 		o.UsePathStyle = true
 	}), nil
 }

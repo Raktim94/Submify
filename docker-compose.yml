@@ -1,7 +1,7 @@
 # Submify — `docker compose up --build -d` works out of the box (CasaOS / desktop friendly).
 #
-# Defaults: Postgres, JWT, and object-storage passwords are defined below via ${VAR:-...} (change in `.env` for production).
-# Data: `./data/postgres` and `./data/rustfs` next to this file (portable; add to backups).
+# Defaults: Postgres and JWT secrets are defined below via ${VAR:-...} (change in `.env` for production).
+# Data: `./data/postgres` next to this file (portable; add to backups).
 #
 # Strong random secrets (optional): SUBMIFY_GENERATE_AUTO_ENV=1 ./scripts/compose-up.sh up --build -d
 #
@@ -37,24 +37,6 @@ services:
       timeout: 5s
       retries: 10
 
-  rustfs:
-    image: ${RUSTFS_IMAGE:-rustfs/rustfs:latest}
-    container_name: submify-rustfs
-    command: /data
-    ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
-    environment:
-      RUSTFS_ROOT_USER: ${RUSTFS_ROOT_USER:-submify}
-      RUSTFS_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:-b1c2d3e4f5a69788796a5b4c3d2e1f0c9d8e7f6a5b4938271605f4e3d2c1b0a9f8}
-      RUSTFS_ACCESS_KEY: ${RUSTFS_ROOT_USER:-submify}
-      RUSTFS_SECRET_KEY: ${RUSTFS_ROOT_PASSWORD:-b1c2d3e4f5a69788796a5b4c3d2e1f0c9d8e7f6a5b4938271605f4e3d2c1b0a9f8}
-      RUSTFS_CONSOLE_ENABLE: "true"
-    volumes:
-      - ./data/rustfs:/data
-      - ./data/rustfs/logs:/logs
-    logging: *default-logging
-
   api:
     build:
       context: ./apps/api
@@ -83,8 +65,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      rustfs:
-        condition: service_started
 
   web:
     build:

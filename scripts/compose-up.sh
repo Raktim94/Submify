@@ -27,13 +27,11 @@ ensure_auto_env() {
   umask 077
   pg="$(openssl rand -hex 32)"
   jwt="$(openssl rand -hex 32)"
-  rustfs="$(openssl rand -hex 32)"
   cat >"$AUTO_ENV" <<EOF
 # Auto-generated — do not commit. Keep with ./data/
 
 POSTGRES_PASSWORD=${pg}
 JWT_SECRET=${jwt}
-RUSTFS_ROOT_PASSWORD=${rustfs}
 EOF
 }
 

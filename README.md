@@ -1,6 +1,6 @@
 # Submify
 
-Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin) API, Next.js dashboard, PostgreSQL, S3-compatible object storage (**RustFS** by default), and Nginx as a single entrypoint.
+Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin) API, Next.js dashboard, PostgreSQL, optional external S3-compatible storage, and Nginx as a single entrypoint.
 
 **Upstream repository:** [https://github.com/Raktim94/Submify.git](https://github.com/Raktim94/Submify.git)
 
@@ -18,7 +18,7 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
 8. [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel)
 9. [API overview](#api-overview)
 10. [Connecting a client website (forms)](#connecting-a-client-website-forms)
-11. [Presigned uploads (optional)](#presigned-uploads-optional)
+11. [External S3 uploads (optional)](#external-s3-uploads-optional)
 12. [Dashboard workflow](#dashboard-workflow)
 13. [Limits and security defaults](#limits-and-security-defaults)
 14. [Operations: logs, backup, updates](#operations-logs-backup-updates)
@@ -34,7 +34,7 @@ Submify is a self-hosted **Form Backend as a Service (FBaaS)** stack: a Go (Gin)
   - `/api/*` → API (Go, port 8080 in the container)
   - `/*` → Next.js (port 3000 in the container)
 - **PostgreSQL** stores all tenants in one database (JSONB-friendly, battle-tested). Rows are scoped by `user_id` / `project_id`; the API never lists or mutates another user’s data.
-- **Object storage (RustFS)** — by default the stack runs **`rustfs/rustfs`** (S3-compatible API). Data is stored under **`./data/rustfs`** next to `docker-compose.yml` (portable bind mounts).
+- **Object storage (optional)** — connect any external S3-compatible provider (AWS S3, Cloudflare R2, MinIO, Wasabi, etc.) using endpoint, bucket, access key, and secret key in the dashboard.
 
 The browser and external clients should use **one origin** for dashboard + API (e.g. `https://forms.example.com:2512/api/v1/...`) or configure **CORS** for separate sites (see [Connecting a client website](#connecting-a-client-website-forms)).
 
@@ -60,7 +60,7 @@ Email notifications are **not** implemented in this release; you can send mail f
 - Host firewall / security group allowing inbound **TCP 2512** (or your reverse proxy port)
 - For production: TLS termination (reverse proxy or tunnel) is strongly recommended
 
-**Note:** Default Compose uses **`./data/postgres`** and **`./data/rustfs`** (next to the compose file) so the stack runs on **Windows, macOS, Linux, and CasaOS-style installs** without creating `/var/lib/...` paths. For a Linux VPS you can edit those volume lines to absolute host paths if you prefer.
+**Note:** Default Compose uses **`./data/postgres`** (next to the compose file) so the stack runs on **Windows, macOS, Linux, and CasaOS-style installs** without creating `/var/lib/...` paths. For a Linux VPS you can edit that volume line to an absolute host path if you prefer.
 
 ---
 
@@ -101,7 +101,7 @@ cd Submify
 
 ### 2. Environment and secrets
 
-**Default:** no `.env` is required. Startup wrappers auto-create **`.env.auto`** with strong random values for **`POSTGRES_PASSWORD`**, **`JWT_SECRET`**, and **`RUSTFS_ROOT_PASSWORD`** on first run. You can still override with `.env` (see `.env.example`).
+**Default:** no `.env` is required. Startup wrappers auto-create **`.env.auto`** with strong random values for **`POSTGRES_PASSWORD`** and **`JWT_SECRET`** on first run. You can still override with `.env` (see `.env.example`).
 
 | File | Role |
 |------|------|
@@ -138,19 +138,6 @@ If you previously used **`/var/lib/submify/data/...`** or an old **`.env`**, you
 ### 4. Open the app
 
 See **[URLs and ports (browser vs containers)](#urls-and-ports-browser-vs-containers)** below for the full picture.
-
-### 4b. RustFS permissions on fresh Linux servers
-
-RustFS runs as a non-root user in the container. On some fresh hosts, bind-mount permissions can block startup (`Permission denied (os error 13)`).
-
-Run once:
-
-```bash
-mkdir -p ./data/rustfs
-sudo chown -R 10001:10001 ./data/rustfs
-sudo chmod -R u+rwX ./data/rustfs
-docker compose up -d rustfs
-```
 
 ### 5. View logs
 
@@ -298,7 +285,7 @@ After setup:
 2. Open **Dashboard** — your **form API key** is shown there (a **Default** inbox project is created for you automatically)
 3. Use that **`api_key`** on every website integration (see [Connecting a client website](#connecting-a-client-website-forms)); add more **Projects** only if you want separate legacy ingest keys or organization
 
-**S3 note:** JSON submissions work without S3. Configure S3 per project only when you need presigned uploads.
+**S3 note:** JSON submissions work without S3. Configure external S3 per project only when you need presigned uploads.
 
 ---
 
@@ -442,184 +429,20 @@ Nginx forwards `X-Forwarded-For`; the API uses **`TRUSTED_PROXIES`** (CIDR list)
 
 ---
 
-## Presigned uploads (optional)
+## External S3 uploads (optional)
 
-### RustFS: what it does in Submify
+Submify stores normal form JSON in PostgreSQL. File uploads are optional and use any external S3-compatible provider.
 
-Submify stores normal form JSON in PostgreSQL. **RustFS** is used only as **file/object storage** for large uploads via presigned URLs.
-
-- Without RustFS: submissions still work (JSON-only).
-- With RustFS: users upload large files directly to object storage, then store file references in submissions.
-
-In short: PostgreSQL = form data, RustFS = file objects.
-
-### RustFS setup (Submify stack) — step-by-step
-
-#### Step 0 — Go to project root
-
-Make sure you are inside your project folder (where `docker-compose.yml` exists):
-
-```bash
-cd /path/to/your/project
-```
-
-#### Step 1 — Generate secure credentials
-
-Linux/macOS:
-
-```bash
-openssl rand -base64 32
-```
-
-Windows (PowerShell):
-
-```powershell
-[Convert]::ToBase64String((1..32 | ForEach-Object {Get-Random -Maximum 256}))
-```
-
-Copy the output; this will be your object storage admin password.
-
-#### Step 2 — Decide: delete `.env.auto` or keep it
-
-Recommended (simpler): delete `.env.auto` if you manage `.env` manually.
-
-Why:
-
-- `.env.auto` can override expected values and cause confusion.
-- Manual `.env` management is easier to reason about.
-
-Delete `.env.auto`:
-
-Linux/macOS:
-
-```bash
-rm -f .env.auto
-```
-
-Windows (PowerShell):
-
-```powershell
-Remove-Item .env.auto -Force
-```
-
-Alternative: keep `.env.auto` and edit it with your storage values.
-
-#### Step 3 — Create/edit `.env`
-
-Open file:
-
-```bash
-nano .env
-```
-
-Add:
-
-```env
-RUSTFS_ROOT_USER=nodedr_admin
-RUSTFS_ROOT_PASSWORD=PASTE_YOUR_GENERATED_PASSWORD
-```
-
-Example:
-
-```env
-RUSTFS_ROOT_USER=nodedr_admin
-RUSTFS_ROOT_PASSWORD=y80tiIs8tOUsPLC5WUKb+9Ms0pmrih4otqCHpy2lwpA=
-```
-
-#### Step 4 — Restart Docker stack
-
-Linux/macOS:
-
-```bash
-./scripts/compose-up.sh down
-./scripts/compose-up.sh up -d
-```
-
-Windows:
-
-```powershell
-.\scripts\Compose-Up.ps1 down
-.\scripts\Compose-Up.ps1 up -d
-```
-
-#### Step 5 — Verify environment variables
-
-Linux/macOS:
-
-```bash
-docker compose exec rustfs env | grep RUSTFS_ROOT_
-```
-
-Windows:
-
-```powershell
-docker compose exec rustfs env | findstr RUSTFS_ROOT_
-```
-
-Expected output includes:
-
-- `RUSTFS_ROOT_USER=nodedr_admin`
-- `RUSTFS_ROOT_PASSWORD=your_password_here`
-
-#### Step 6 — Open RustFS console
-
-Open in browser:
-
-`http://127.0.0.1:9001`
-
-Login with your configured root credentials.
-
-#### Step 7 — Create bucket
-
-In RustFS UI:
-
-1. Go to **Buckets**
-2. Click **Create Bucket**
-3. Use name: `submify-uploads`
-
-#### Step 8 — Create access key (important)
-
-Do not use root credentials in your app.
-
-In RustFS UI:
-
-1. Go to **Access Keys**
-2. Click **Create Access Key**
-3. Copy:
-   - Access Key
-   - Secret Key
-
-Use these in Submify storage settings (`s3_access_key` / `s3_secret_key`).
-
-### Find the current/default storage username and password
-
-Compose keeps compatibility keys and maps them to RustFS:
-
-- Username: `RUSTFS_ROOT_USER`
-- Password: `RUSTFS_ROOT_PASSWORD`
-
-Where to check (in priority order):
-
-1. `.env` (if you created one)
-2. `.env.auto` (auto-generated by wrapper scripts)
-3. `docker-compose.yml` defaults (only used when not set in env files)
-
-Practical checks:
-
-- Open `.env` and `.env.auto` in your project root and search for `RUSTFS_ROOT_USER` / `RUSTFS_ROOT_PASSWORD`.
-- If `RUSTFS_ROOT_USER` is not set, default is usually `submify`.
-- To inspect the effective runtime values for the running container:
-  - `docker compose exec rustfs env | grep RUSTFS_ROOT_` (Linux/macOS)
-  - `docker compose exec rustfs env | findstr RUSTFS_ROOT_` (PowerShell)
-
-### Configure Submify Settings for file upload
+### Configure Submify settings for file upload
 
 Open **Settings** (or Project-level storage in **Projects**) and set:
 
-- `s3_endpoint`: RustFS internal endpoint (default in this Compose stack: `http://rustfs:9000`)
-- `s3_bucket`: your bucket name (for example `submify-uploads`)
-- `s3_access_key`: RustFS access key
-- `s3_secret_key`: RustFS secret key
+- `s3_endpoint`: provider API endpoint (for example AWS S3/R2/MinIO endpoint URL)
+- `s3_bucket`: your bucket name
+- `s3_access_key`: provider access key
+- `s3_secret_key`: provider secret key
+
+Use provider-issued API credentials only. Do not store root/admin credentials for your storage account.
 
 ### Client-side upload flow (correct way)
 
@@ -657,20 +480,10 @@ await fetch(presign.upload_url, {
 
 ### Common mistakes
 
-- `.env.auto` overrides expected `.env` values
-- forgot to restart containers after env changes
-- typo in environment variable names
-- using root credentials in production app configuration
-
-### Final checklist
-
-- `.env.auto` deleted or updated intentionally
-- `.env` configured with storage credentials
-- stack restarted
-- runtime env verified inside container
-- logged into RustFS console
-- bucket created
-- access key created for app use
+- provider endpoint URL is wrong for your region/account
+- credentials do not have bucket read/write permissions
+- bucket name typo
+- using browser-exposed secret keys instead of server-side signing
 
 ---
 
@@ -703,7 +516,7 @@ Use **HTTPS** in production. The **account `api_key`** is meant to be embedded i
 - Rotate all project keys in one action (invalidates all old project public/secret keys)
 - Update S3/storage credentials used for presigned uploads
 - Save host bind/port preferences with copy-paste restart command
-- For detailed RustFS credential setup and rotation, see **[Presigned uploads (optional)](#presigned-uploads-optional)**.
+- For storage setup and key rotation, see **[External S3 uploads (optional)](#external-s3-uploads-optional)**.
 
 ---
 
@@ -718,7 +531,6 @@ The prune script only clears unused images/cache — **not** **`./data/`** (see 
 **Backups:** Persisted data (see `docker-compose.yml`):
 
 - `./data/postgres`
-- `./data/rustfs`
 
 Back up these directories on a schedule appropriate to your RPO/RTO.
 
@@ -744,7 +556,7 @@ Or add a weekly cron job (see comments in the script; use the full path and **`s
 | Redeploy “hangs” after **`docker compose logs -f`** | **`-f`** follows logs until **Ctrl+C** — not stuck. Omit **`-f`** for a one-shot dump, or run logs **after** the deploy command instead of **`&&`** chaining |
 | `docker compose build` / bake **exit status 1** | Run **`docker compose build --progress=plain api`** (or **`web`**) and read the **ERROR** block at the end. On a **small VPS**, parallel builds can OOM — try **`docker compose build --parallel 1`** or add **swap** |
 | Nothing on port 2512 | Firewall, `docker compose ps`, Nginx logs |
-| Locked out after recreating **`.env.auto`** but keeping old DB data | Restore the previous **`.env.auto`** (or reset Postgres / RustFS data to match new secrets) |
+| Locked out after recreating **`.env.auto`** but keeping old DB data | Restore the previous **`.env.auto`** (or reset Postgres data to match new secrets) |
 | `401` on submit | `x-api-key` equals URL segment and matches a valid **`api_key`** or project **`public_api_key`** |
 | `429` on submit | Per-project **5000** cap, or submit IP/key rate limits |
 | CORS errors from browser | `ALLOWED_ORIGINS` includes your site’s exact origin (scheme + host + port) |

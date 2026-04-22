@@ -1,8 +1,8 @@
 #!/bin/sh
 # Remove old Docker images and build cache so new builds do not fill the disk.
 #
-# SAFE: Does not remove volumes or bind mounts — PostgreSQL and RustFS data under
-# ./data/postgres and ./data/rustfs (default compose) are untouched. Never run `docker volume prune` or
+# SAFE: Does not remove volumes or bind mounts — PostgreSQL data under
+# ./data/postgres (default compose) is untouched. Never run `docker volume prune` or
 # `docker system prune --volumes` here unless you intend to wipe named volumes.
 #
 # Suggested cron (weekly, as root or docker group user):
