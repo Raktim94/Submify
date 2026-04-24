@@ -24,6 +24,7 @@ services:
   db:
     image: postgres:16-alpine
     container_name: submify-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: submify
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-7f3a9c2e8b1d4f6a0e5c8b2d9f4a6e1c3b7d0f5a8e2c6b9d4f1a7e0c5b8d3f6}
@@ -41,6 +42,7 @@ services:
     build:
       context: ./apps/api
     container_name: submify-api
+    restart: unless-stopped
     environment:
       PORT: 8080
       # Same default POSTGRES_PASSWORD as db service (compose substitutes each ${} independently).
@@ -72,6 +74,7 @@ services:
       args:
         NEXT_PUBLIC_API_BASE: /api/v1
     container_name: submify-web
+    restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_BASE: /api/v1
       NODEDR_SUBMIT_PUBLIC_KEY: ${NODEDR_SUBMIT_PUBLIC_KEY:-}
@@ -84,6 +87,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     container_name: submify-nginx
+    restart: unless-stopped
     ports:
       - "${SUBMIFY_BIND_IP:-127.0.0.1}:${SUBMIFY_PORT:-2512}:2512"
     volumes:
@@ -98,6 +102,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: submify-cloudflared
+    restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
