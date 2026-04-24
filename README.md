@@ -433,7 +433,7 @@ Nginx forwards `X-Forwarded-For`; the API uses **`TRUSTED_PROXIES`** (CIDR list)
 
 Submify stores normal form JSON in PostgreSQL. File uploads are optional and use any external S3-compatible provider.
 
-### Configure Submify settings for file upload
+### 1. Configure storage in Submify
 
 Open **Settings** (or Project-level storage in **Projects**) and set:
 
@@ -444,7 +444,17 @@ Open **Settings** (or Project-level storage in **Projects**) and set:
 
 Use provider-issued API credentials only. Do not store root/admin credentials for your storage account.
 
-### Client-side upload flow (correct way)
+### 2. Connect your container to the S3 provider
+
+Your **API container** (not just your browser) must be able to reach `s3_endpoint`.
+
+- If using AWS S3: endpoint usually looks like `https://s3.<region>.amazonaws.com` (or your virtual-hosted endpoint).
+- If using Cloudflare R2: endpoint looks like `https://<accountid>.r2.cloudflarestorage.com`.
+- If using self-hosted MinIO/RustFS: use an endpoint reachable from the API container (for example `http://minio:9000` inside Docker network, or a reachable host URL).
+- Ensure firewall/security group/NACL rules allow outbound access from the API container to that endpoint.
+- Ensure the access key has required permissions on the target bucket (`PutObject`, and related object operations).
+
+### 3. Client-side upload flow (how to send S3 signals to your app)
 
 1. Your app calls `POST /api/v1/uploads/presign` with:
    - `project_id`
@@ -454,8 +464,9 @@ Use provider-issued API credentials only. Do not store root/admin credentials fo
 2. Submify returns:
    - `upload_url` (one-time/short-lived PUT URL)
    - `object_key`
-3. Browser/client uploads bytes directly to `upload_url` with HTTP PUT.
-4. Your app sends normal `POST /api/submit` and includes `object_key` in `files` metadata.
+3. Browser/client uploads file bytes directly to `upload_url` with HTTP `PUT` (this is the S3 upload signal).
+4. After upload succeeds, your app sends normal `POST /api/submit` and includes `object_key` in `files` metadata.
+5. Submify stores that metadata with the form submission so your app can map submission data to uploaded files.
 
 Minimal client example:
 
@@ -476,6 +487,18 @@ await fetch(presign.upload_url, {
   headers: { 'Content-Type': file.type },
   body: file
 });
+
+await fetch('/api/submit', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': projectPublicKey
+  },
+  body: JSON.stringify({
+    data: { name: 'Jane Doe', email: 'jane@example.com' },
+    files: [{ object_key: presign.object_key, name: file.name, content_type: file.type }]
+  })
+});
 ```
 
 ### Common mistakes
@@ -483,6 +506,8 @@ await fetch(presign.upload_url, {
 - provider endpoint URL is wrong for your region/account
 - credentials do not have bucket read/write permissions
 - bucket name typo
+- calling `/uploads/presign` without Bearer auth or with a project ID you do not own
+- passing an unsupported MIME type or a file larger than `UPLOAD_MAX_SIZE_BYTES`
 - using browser-exposed secret keys instead of server-side signing
 
 ---
@@ -491,7 +516,7 @@ await fetch(presign.upload_url, {
 
 1. Log in  
 2. Copy your **account form API key** from the dashboard (one key for all sites)  
-3. Point website forms at **`POST /api/v1/submit/{api_key}`** with matching **`x-api-key`**  
+3. Point website forms at **`POST /api/submit`** with `x-api-key: <project_public_key>`  
 4. Review submissions (default inbox under **Default** project; optional extra projects for separation)  
 5. Export **XLSX** or **PDF**; use **bulk delete** to stay under the per-project cap  
 
