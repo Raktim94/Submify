@@ -633,10 +633,10 @@ This project is licensed under **Business Source License 1.1** — see [LICENSE]
 
 ## Developer & Ownership
 
-Submify is made by **NODEDR PRIVATE LIMITED**.
+Submify is made by **NODEDR INFOTECH PRIVATE LIMITED**.
 
 - **Lead Developer & Founder:** **RAKTIM RANJIT**
-- **Company:** NODEDR PRIVATE LIMITED
+- **Company:** NODEDR INFOTECH PRIVATE LIMITED
 - **Website:** [www.nodedr.com](https://www.nodedr.com)
 
 ---

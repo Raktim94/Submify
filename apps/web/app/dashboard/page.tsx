@@ -235,7 +235,7 @@ export default function DashboardPage() {
         <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
           <h2 className="font-display text-lg font-bold text-slate-900">Developer &amp; ownership</h2>
           <p className="mt-2 text-sm leading-relaxed text-slate-600">
-            Submify is made by <strong className="text-slate-900">NODEDR PRIVATE LIMITED</strong>.
+            Submify is made by <strong className="text-slate-900">NODEDR INFOTECH PRIVATE LIMITED</strong>.
           </p>
           <ul className="mt-3 space-y-1 text-sm text-slate-700">
             <li>

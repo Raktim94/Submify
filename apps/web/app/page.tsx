@@ -389,7 +389,7 @@ export default function HomePage() {
             Built for teams that want data sovereignty, predictable costs, and full control of their form pipeline without platform lock-in.
           </p>
           <p className="mb-2 text-slate-600">
-            Made by <strong className="text-slate-800">NODEDR PRIVATE LIMITED</strong>.
+            Made by <strong className="text-slate-800">NODEDR INFOTECH PRIVATE LIMITED</strong>.
           </p>
           <p className="mb-3 text-slate-600">
             <strong className="text-slate-800">RAKTIM RANJIT</strong> — Lead Developer &amp; Founder
@@ -405,7 +405,7 @@ export default function HomePage() {
             </a>
           </p>
           <p className="mb-3 text-xs text-slate-500">
-            Copyright © {new Date().getFullYear()} NODEDR PRIVATE LIMITED. All rights reserved.
+            Copyright © {new Date().getFullYear()} NODEDR INFOTECH PRIVATE LIMITED. All rights reserved.
           </p>
           <p>
             <Link href="/docs" className="font-medium text-brand-700 underline decoration-indigo-300 underline-offset-2 hover:text-brand-900">
