@@ -7,7 +7,13 @@
 
 ## Run
 
-Out of the box (defaults in `docker-compose.yml`, data in `./data/`):
+One command (clones the repo and starts the stack with auto-generated secrets):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Raktim94/Submify/main/install.sh | bash
+```
+
+Or, if you already have a clone, out of the box (defaults in `docker-compose.yml`, data in `./data/`):
 
 ```bash
 docker compose up --build -d
