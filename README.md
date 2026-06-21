@@ -7,12 +7,13 @@
 **Self-hosted Form Backend as a Service (FBaaS).**
 One Docker stack, one API key, every form on every site you own.
 
-[![License: BSL 1.1](https://img.shields.io/badge/license-BSL%201.1-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go&logoColor=white)](apps/api/go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](apps/api/go.mod)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white)](apps/web/package.json)
 [![Docker](https://img.shields.io/badge/deploy-docker%20compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![Built by Nodedr](https://img.shields.io/badge/built%20by-Nodedr%20Infotech-6d28d9)](https://www.nodedr.com)
 
-[Quick start](#quick-start) · [Architecture](#architecture) · [API](#api-overview) · [S3 uploads](#external-s3-uploads-optional) · [Docs](docs/api.md)
+[Quick start](#quick-start) · [How it works](#how-it-works) · [Architecture](#architecture) · [API](#api-overview) · [S3 uploads](#external-s3-uploads-optional) · [Docs](docs/api.md)
 
 </div>
 
@@ -20,7 +21,19 @@ One Docker stack, one API key, every form on every site you own.
 
 Submify gives you a private Formspree/Form-to-email replacement you run yourself: a Go (Gin) API, a Next.js dashboard, PostgreSQL for storage, optional external S3-compatible storage for file uploads, and Nginx as a single entrypoint. Point any website's contact form at it, log in to read submissions, export to XLSX/PDF, and optionally get a Telegram ping when something new comes in.
 
+Submify is built and maintained by **[Nodedr Infotech Private Limited](https://www.nodedr.com)**, and released under the MIT license — free to self-host, modify, and use commercially.
+
 **Repository:** [github.com/Raktim94/Submify](https://github.com/Raktim94/Submify)
+
+## How it works
+
+1. **You create an account and a project.** Registering gives you an account-level `api_key` and a default project with its own `pk_live_...` public key.
+2. **You embed that key in your website's form.** No SDK needed — any HTML form or `fetch()` call can `POST` JSON straight to `https://your-host:2512/api/submit` with the key in the `x-api-key` header.
+3. **Submify validates and stores it.** The Go API checks the key, applies rate limits, and writes the submission's JSON payload into PostgreSQL under that project — isolated from every other account and project in the same database.
+4. **You read it from the dashboard.** The Next.js app calls the same API over `/api/v1/...` with a Bearer session token, lists submissions per project, and can export them as XLSX or PDF.
+5. **Optional add-ons fire on submit.** If Telegram is configured, you get a chat notification. If a file was attached, the browser already uploaded it directly to your own S3-compatible bucket via a short-lived presigned URL — Submify only stores the resulting object key, never the file bytes.
+
+Everything — Postgres, the API, the dashboard, and Nginx in front of both — runs as one Docker Compose stack you control. There's no third-party SaaS in the request path.
 
 ## Why Submify
 
@@ -83,22 +96,26 @@ docker compose logs -f api # follow API logs
 
 ## Table of contents
 
-1. [Architecture](#architecture)
-2. [Requirements](#requirements)
-3. [Quick start](#quick-start)
-4. [URLs and ports](#urls-and-ports-browser-vs-containers)
-5. [Configuration and environment variables](#configuration-and-environment-variables)
-6. [First-time access](#first-time-access)
-7. [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel)
-8. [API overview](#api-overview)
-9. [Connecting a client website (forms)](#connecting-a-client-website-forms)
-10. [External S3 uploads (optional)](#external-s3-uploads-optional)
-11. [Dashboard workflow](#dashboard-workflow)
-12. [Limits and security defaults](#limits-and-security-defaults)
-13. [Operations: logs, backup, updates](#operations-logs-backup-updates)
-14. [Troubleshooting](#troubleshooting)
-15. [License](#license)
-16. [Developer & ownership](#developer--ownership)
+1. [How it works](#how-it-works)
+2. [Architecture](#architecture)
+3. [Requirements](#requirements)
+4. [Quick start](#quick-start)
+5. [URLs and ports](#urls-and-ports-browser-vs-containers)
+6. [Configuration and environment variables](#configuration-and-environment-variables)
+7. [First-time access](#first-time-access)
+8. [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel)
+9. [API overview](#api-overview)
+10. [Connecting a client website (forms)](#connecting-a-client-website-forms)
+11. [Integrating with an AI coding assistant](#integrating-with-an-ai-coding-assistant)
+12. [External S3 uploads (optional)](#external-s3-uploads-optional)
+13. [Dashboard workflow](#dashboard-workflow)
+14. [Limits and security defaults](#limits-and-security-defaults)
+15. [Security and vulnerability scanning](#security-and-vulnerability-scanning)
+16. [Using GitHub Actions secrets](#using-github-actions-secrets)
+17. [Operations: logs, backup, updates](#operations-logs-backup-updates)
+18. [Troubleshooting](#troubleshooting)
+19. [License](#license)
+20. [Developer & ownership](#developer--ownership)
 
 ---
 
@@ -288,6 +305,27 @@ await fetch(SUBMIT_URL, {
 
 > This repo's own Next.js dashboard (`apps/web`) ships an example of this pattern — a contact form posting through a Route Handler. See **`/docs/contact-proxy`** in the running app for the full guide, including a copy-paste prompt for AI coding assistants.
 
+### Integrating with an AI coding assistant
+
+If you're wiring Submify into a site using Cursor, Claude Code, Copilot, or ChatGPT, paste this prompt and fill in the bracketed parts:
+
+````text
+Integrate Submify form submission into this project.
+
+Submify is a self-hosted form backend. My instance's API base is [https://your-submify-host:2512/api]. My project's public API key is [pk_live_xxx] (treat it like a public site key, not a secret — it's safe in client code, but read it from an env var, not hardcoded).
+
+Requirements:
+1. Add a submit handler (server-side route/action if this framework supports one, otherwise a client-side fetch) that POSTs JSON to `${API_BASE}/submit` with header `x-api-key: <the public key>` and body `{ "data": { ...form fields }, "files": [] }`.
+2. Validate the form client-side before sending (required fields, email format) and show inline success/error states based on the HTTP status (`200` success, `400` validation error from Submify, `401` bad key, `429` rate limited).
+3. Add a hidden honeypot field (e.g. `_gotcha`) to the form; if it has a value, skip the request and show success anyway (silently drops bot submissions without calling Submify).
+4. Do not log or expose the API key in client-visible source if a server-side option exists for this framework; prefer an env var named `SUBMIFY_API_KEY` (or `NEXT_PUBLIC_SUBMIFY_API_KEY` only if this must run fully client-side and the project has no backend).
+5. Keep the request body under common upload limits — if the form has file inputs, use Submify's presign flow (`POST /api/v1/uploads/presign`, then `PUT` the file to the returned `upload_url`, then include `object_key` in `files` on the submit call) instead of inlining file bytes.
+
+Match this project's existing form/component conventions and error-handling style rather than introducing a new pattern.
+````
+
+That's enough context for most assistants to wire up a working integration without you re-explaining the API shape each time.
+
 **Rate limits** are tiered so logged-in dashboard use isn't punished by anonymous caps:
 
 - `GET /system/bootstrap-status` and `GET /system/health` — unlimited (use your own WAF/monitoring if needed)
@@ -378,6 +416,82 @@ Use HTTPS in production. The account `api_key` is meant to be embedded in public
 
 ---
 
+## Security and vulnerability scanning
+
+Submify runs on **Go 1.26** and **Node.js 24 LTS**, with dependencies kept current — `apps/api/go.sum` and `apps/web/package-lock.json` are committed so every build resolves the exact same, checksum-verified dependency tree (no silent drift between your build and the one this repo was tested against).
+
+Before each release, dependencies are checked with the official scanners:
+
+```bash
+# Go API — apps/api
+go install golang.org/x/vuln/cmd/govulncheck@latest
+govulncheck ./...
+
+# Next.js dashboard — apps/web
+npm audit
+```
+
+Both currently report **zero known vulnerabilities**. If you fork this project, re-run both commands after any dependency bump, and keep `go.sum` / `package-lock.json` committed so `govulncheck` and `npm audit` are checking what actually ships.
+
+If you discover a security issue, please report it privately to **info@nodedr.com** rather than opening a public issue.
+
+---
+
+## Using GitHub Actions secrets
+
+Two common situations call for storing secrets in **GitHub → Settings → Secrets and variables → Actions → New repository secret** instead of committing them:
+
+### 1. Your website's CI calls Submify
+
+If a site you deploy via GitHub Actions submits forms to Submify, store the project's public key (and, for the Nodedr contact-proxy pattern, the secret key) as repository secrets rather than hardcoding them:
+
+| Secret name | Value |
+|-------------|-------|
+| `SUBMIFY_API_KEY` | Project public key (`pk_live_...`) from your dashboard |
+| `NODEDR_SUBMIT_PUBLIC_KEY` | Only if using the `apps/web` contact-proxy pattern in your own site |
+| `NODEDR_SUBMIT_SECRET_KEY` | Same — never expose this one to the client bundle |
+
+Reference them in a workflow step that builds your site's Docker image or static export:
+
+```yaml
+- name: Build site
+  env:
+    SUBMIFY_API_KEY: ${{ secrets.SUBMIFY_API_KEY }}
+  run: docker build --build-arg SUBMIFY_API_KEY="$SUBMIFY_API_KEY" -t my-site .
+```
+
+`${{ secrets.NAME }}` is masked in logs automatically — never `echo` a secret directly, and never pass it as a plain `--build-arg` without `RUN --mount=type=secret` in the Dockerfile if the layer could be inspected later.
+
+### 2. You deploy Submify itself via GitHub Actions
+
+If you run Submify on a self-hosted runner (matching the `runs-on: [self-hosted, ...]` pattern used for Docker Compose deploys), store these as repository (or environment) secrets instead of relying on `docker-compose.yml`'s built-in defaults:
+
+| Secret name | Used for |
+|-------------|----------|
+| `POSTGRES_PASSWORD` | Database password (must stay stable across redeploys — changing it without migrating `./data/postgres` locks you out) |
+| `JWT_SECRET` | Session signing key, ≥32 random characters |
+| `TUNNEL_TOKEN` | Only if using the Cloudflare Tunnel profile |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Only if you provision S3 credentials at deploy time rather than via the dashboard |
+
+A deploy step then writes them into `.env` on the runner before bringing the stack up:
+
+```yaml
+- name: Write secrets and deploy
+  env:
+    POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+    JWT_SECRET: ${{ secrets.JWT_SECRET }}
+  run: |
+    cat > .env <<EOF
+    POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    JWT_SECRET=${JWT_SECRET}
+    EOF
+    ./scripts/compose-up.sh up --build -d
+```
+
+Never commit the generated `.env` — it's already excluded via `.gitignore`. For a single VPS without CI, the auto-generated `.env.auto` from `./scripts/compose-up.sh` is simpler and equally secure; reach for GitHub Actions secrets only once a CI/CD pipeline is doing the deploy.
+
+---
+
 ## Operations: logs, backup, updates
 
 **Logs:** `docker compose logs -f [api|nginx|web|db]`
@@ -417,7 +531,7 @@ If you installed with `./scripts/compose-up.sh`, substitute it for the bare `doc
 
 ## License
 
-Submify is licensed under the **Business Source License 1.1** — see [LICENSE](LICENSE). Free for individuals, students, and hobby projects; commercial use requires a license from the licensor. Third-party dependency licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
+Submify is open source under the **MIT License** — see [LICENSE](LICENSE). Use it, modify it, self-host it, and build commercial products on it freely. Third-party dependency licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ---
 

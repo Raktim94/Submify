@@ -3,7 +3,7 @@
 ARG TARGETPLATFORM=linux/amd64
 ARG TARGETARCH=amd64
 
-FROM --platform=${TARGETPLATFORM} golang:1.24-alpine AS builder
+FROM --platform=${TARGETPLATFORM} golang:1.26-alpine AS builder
 # Default when classic docker build omits BuildKit platform args (empty GOARCH breaks compile).
 ARG TARGETARCH=amd64
 WORKDIR /src
