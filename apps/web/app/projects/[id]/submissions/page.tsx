@@ -5,6 +5,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Nav } from '../../../../components/nav';
 import { api } from '../../../../lib/api';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 type Submission = {
   id: string;
@@ -100,6 +103,7 @@ export default function SubmissionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [projectName, setProjectName] = useState('');
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   const dataKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -133,6 +137,7 @@ export default function SubmissionsPage() {
   }, [projectId, load]);
 
   async function bulkDelete() {
+    setConfirmBulkDelete(false);
     const submission_ids = Object.entries(selected)
       .filter(([, v]) => v)
       .map(([k]) => k);
@@ -165,6 +170,7 @@ export default function SubmissionsPage() {
   const allSelected =
     items.length > 0 && items.every((i) => selected[i.id]);
   const someSelected = items.some((i) => selected[i.id]);
+  const selectedCount = Object.values(selected).filter(Boolean).length;
 
   function toggleSelectAll() {
     if (allSelected) {
@@ -212,9 +218,7 @@ export default function SubmissionsPage() {
             <p className="text-slate-600">Loading submissions…</p>
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-red-800" role="alert">
-            {error}
-          </div>
+          <Alert variant="error">{error}</Alert>
         ) : (
           <>
             <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -231,22 +235,23 @@ export default function SubmissionsPage() {
                   All
                 </label>
               </div>
-              <button
-                type="button"
-                className="rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-900 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={() => void bulkDelete()}
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-rose-200 text-rose-900 hover:bg-rose-50"
+                onClick={() => setConfirmBulkDelete(true)}
                 disabled={!someSelected}
               >
                 Bulk delete selected
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              </Button>
+              <Button
+                size="sm"
+                className="bg-emerald-600 from-emerald-600 to-emerald-600 hover:bg-emerald-700"
                 onClick={downloadPageCsv}
                 disabled={items.length === 0}
               >
                 Download CSV (this page)
-              </button>
+              </Button>
               <span className="text-sm text-slate-500">
                 {items.length} submission{items.length === 1 ? '' : 's'}
                 {dataKeys.length > 0
@@ -334,6 +339,16 @@ export default function SubmissionsPage() {
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title={`Delete ${selectedCount} submission${selectedCount === 1 ? '' : 's'}?`}
+        description="This permanently deletes the selected submissions. This cannot be undone."
+        confirmLabel="Delete selected"
+        danger
+        onConfirm={bulkDelete}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
     </main>
   );
 }

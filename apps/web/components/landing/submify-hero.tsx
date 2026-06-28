@@ -6,9 +6,10 @@ const GITHUB_REPO = 'https://github.com/Raktim94/Submify';
 
 type Props = {
   signedIn: boolean;
+  setupRequired?: boolean;
 };
 
-export function SubmifyHero({ signedIn }: Props) {
+export function SubmifyHero({ signedIn, setupRequired = false }: Props) {
   return (
     <section className="relative border-b border-slate-200/80 bg-gradient-to-b from-slate-50 via-white to-indigo-50/40">
       <div
@@ -58,12 +59,19 @@ export function SubmifyHero({ signedIn }: Props) {
             >
               Dashboard
             </Link>
-          ) : (
+          ) : setupRequired ? (
             <Link
               href="/register"
               className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition hover:from-indigo-500 hover:to-violet-500"
             >
               Create account
+            </Link>
+          ) : (
+            <Link
+              href="/login"
+              className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition hover:from-indigo-500 hover:to-violet-500"
+            >
+              Sign in
             </Link>
           )}
         </div>

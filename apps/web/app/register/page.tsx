@@ -5,21 +5,51 @@ import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
 import { useRouter } from 'next/navigation';
 import { getBootstrapStatus, registerAccount } from '../../lib/api';
+import { Card } from '@/components/ui/card';
+import { Field, Input } from '@/components/ui/field';
+import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
 
 export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState('');
   const [firstAccount, setFirstAccount] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     void getBootstrapStatus()
-      .then((b) => setFirstAccount(b.setup_required))
-      .catch(() => {});
-  }, []);
+      .then((b) => {
+        if (cancelled) return;
+        if (!b.setup_required) {
+          router.replace('/login');
+          return;
+        }
+        setFirstAccount(true);
+        setChecking(false);
+      })
+      .catch(() => {
+        if (!cancelled) setChecking(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  if (checking) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-50 via-white to-violet-50/40">
+        <div className="h-10 w-10 animate-pulse rounded-full bg-indigo-200/80" aria-hidden />
+        <span className="sr-only">Loading</span>
+      </main>
+    );
+  }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError('');
+    setSubmitting(true);
     const form = new FormData(e.currentTarget);
     const full_name = String(form.get('full_name') ?? '').trim();
     const phone = String(form.get('phone') ?? '').trim();
@@ -33,6 +63,7 @@ export default function RegisterPage() {
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
+      setSubmitting(false);
     }
   }
 
@@ -52,38 +83,57 @@ export default function RegisterPage() {
             </Link>
           </div>
         </div>
-      <h1 className="mb-2 text-3xl font-bold">Create account</h1>
-      {firstAccount ? (
-        <p className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/80 p-3 text-sm leading-relaxed text-indigo-950">
-          You are creating the <strong>first account</strong> for this Submify instance. The password you enter below is the one you
-          will use to sign in — it is not configured via server <code className="rounded bg-indigo-100/80 px-1 py-0.5 text-xs">.env</code>{' '}
-          files.
-        </p>
-      ) : null}
-      <p className="mb-6 text-slate-600">
-        Already have an account?{' '}
-        <Link href="/login" className="text-brand-700 underline">
-          Sign in
-        </Link>
-      </p>
-      <form className="space-y-3" onSubmit={onSubmit}>
-        <input className="w-full" name="full_name" placeholder="Full name" required autoComplete="name" />
-        <input className="w-full" name="phone" placeholder="Mobile number" required type="tel" autoComplete="tel" />
-        <input className="w-full" name="email" placeholder="Email" required type="email" autoComplete="email" />
-        <input
-          className="w-full"
-          name="password"
-          placeholder="Password (min 8 characters)"
-          required
-          type="password"
-          minLength={8}
-          autoComplete="new-password"
-        />
-        <button className="w-full" type="submit">
-          Register
-        </button>
-      </form>
-      {error && <pre className="mt-4 whitespace-pre-wrap rounded-md bg-red-100 p-3 text-sm text-red-700">{error}</pre>}
+
+        <Card>
+          <h1 className="font-display mb-2 text-3xl font-bold text-slate-900">Create account</h1>
+
+          {firstAccount ? (
+            <Alert variant="info" className="mt-4">
+              You are creating the <strong>first account</strong> for this Submify instance. The password you enter below is the
+              one you will use to sign in — it is not configured via server <code className="rounded bg-indigo-100/80 px-1 py-0.5 text-xs">.env</code>{' '}
+              files.
+            </Alert>
+          ) : null}
+
+          <p className="mt-4 text-sm text-slate-600">
+            Already have an account?{' '}
+            <Link href="/login" className="font-medium text-brand-700 underline">
+              Sign in
+            </Link>
+          </p>
+
+          <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+            <Field label="Full name" htmlFor="register-name">
+              <Input id="register-name" name="full_name" placeholder="Jane Doe" required autoComplete="name" />
+            </Field>
+            <Field label="Mobile number" htmlFor="register-phone">
+              <Input id="register-phone" name="phone" placeholder="+1 555 0100" required type="tel" autoComplete="tel" />
+            </Field>
+            <Field label="Email" htmlFor="register-email">
+              <Input id="register-email" name="email" placeholder="you@example.com" required type="email" autoComplete="email" />
+            </Field>
+            <Field label="Password" htmlFor="register-password" hint="Minimum 8 characters">
+              <Input
+                id="register-password"
+                name="password"
+                placeholder="••••••••"
+                required
+                type="password"
+                minLength={8}
+                autoComplete="new-password"
+              />
+            </Field>
+            <Button className="w-full" type="submit" loading={submitting}>
+              Register
+            </Button>
+          </form>
+
+          {error ? (
+            <Alert variant="error" className="mt-4">
+              {error}
+            </Alert>
+          ) : null}
+        </Card>
       </div>
     </main>
   );

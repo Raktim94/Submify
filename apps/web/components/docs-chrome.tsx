@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
-import { isSessionValid } from '@/lib/api';
+import { getBootstrapStatus, isSessionValid } from '@/lib/api';
 import { useEffect, useState } from 'react';
 
 const defaultNav = [
@@ -34,11 +34,20 @@ export function DocsChrome({
 }) {
   const nav = sidebarSections === undefined ? defaultNav : sidebarSections;
   const [signedIn, setSignedIn] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void isSessionValid().then((ok) => {
-      if (!cancelled) setSignedIn(ok);
+      if (cancelled) return;
+      setSignedIn(ok);
+      if (!ok) {
+        void getBootstrapStatus()
+          .then((b) => {
+            if (!cancelled) setSetupRequired(b.setup_required);
+          })
+          .catch(() => {});
+      }
     });
     return () => {
       cancelled = true;
@@ -92,15 +101,17 @@ export function DocsChrome({
               </Link>
             ) : (
               <>
-                <Link href="/login" className="rounded-xl px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-                  Sign in
-                </Link>
                 <Link
-                  href="/register"
+                  href="/login"
                   className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
                 >
-                  Create account
+                  Sign in
                 </Link>
+                {setupRequired ? (
+                  <Link href="/register" className="rounded-xl px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+                    Create account
+                  </Link>
+                ) : null}
               </>
             )}
           </nav>

@@ -218,7 +218,7 @@ No `.env` is required — defaults live in `docker-compose.yml`, and `./scripts/
 
 ## First-time access
 
-1. Open **`/register`** (or `POST /api/v1/auth/register`) and create your first account.
+1. Open **`/register`** (or `POST /api/v1/auth/register`) and create your first account. Each instance supports exactly one account — once it exists, `/register` redirects to `/login` and the API rejects further `POST /auth/register` calls with `403`.
 2. Log in at **`/login`**.
 3. Open **Dashboard** — your **form API key** is shown there, with a **Default** inbox project created automatically.
 4. Use that `api_key` on every website integration ([details below](#connecting-a-client-website-forms)). Add extra **Projects** only if you want separate ingest keys or organization.

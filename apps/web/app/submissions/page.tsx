@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Nav } from '../../components/nav';
 import { api } from '../../lib/api';
+import { Card } from '@/components/ui/card';
+import { Alert } from '@/components/ui/alert';
 
 type Project = {
   id: string;
@@ -46,9 +48,7 @@ export default function SubmissionsHubPage() {
             <p className="text-slate-600">Loading projects…</p>
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-red-800" role="alert">
-            {error}
-          </div>
+          <Alert variant="error">{error}</Alert>
         ) : projects.length === 0 ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-6 py-10 text-center">
             <p className="text-slate-800">No projects yet.</p>
@@ -62,20 +62,19 @@ export default function SubmissionsHubPage() {
         ) : (
           <ul className="space-y-4">
             {projects.map((p) => (
-              <li
-                key={p.id}
-                className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-md shadow-indigo-100/30 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <h2 className="font-display text-lg font-semibold text-slate-900">{p.name}</h2>
-                  <p className="mt-1 text-xs text-slate-500">Created {new Date(p.created_at).toLocaleString()}</p>
-                </div>
-                <Link
-                  href={`/projects/${p.id}/submissions`}
-                  className="inline-flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-brand-500 to-violet-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-indigo-500/40"
-                >
-                  View inbox
-                </Link>
+              <li key={p.id}>
+                <Card className="flex flex-col gap-4 shadow-md shadow-indigo-100/30 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="font-display text-lg font-semibold text-slate-900">{p.name}</h2>
+                    <p className="mt-1 text-xs text-slate-500">Created {new Date(p.created_at).toLocaleString()}</p>
+                  </div>
+                  <Link
+                    href={`/projects/${p.id}/submissions`}
+                    className="inline-flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-brand-500 to-violet-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-indigo-500/40"
+                  >
+                    View inbox
+                  </Link>
+                </Card>
               </li>
             ))}
           </ul>

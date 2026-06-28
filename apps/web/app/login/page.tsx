@@ -5,11 +5,16 @@ import Link from 'next/link';
 import { SubmifyLogo } from '@/components/submify-logo';
 import { useRouter } from 'next/navigation';
 import { apiBase, getBootstrapStatus, userFacingApiError } from '../../lib/api';
+import { Card } from '@/components/ui/card';
+import { Field, Input } from '@/components/ui/field';
+import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState('');
   const [setupRequired, setSetupRequired] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     void getBootstrapStatus()
@@ -20,6 +25,7 @@ export default function LoginPage() {
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError('');
+    setSubmitting(true);
     const form = new FormData(e.currentTarget);
     const payload = Object.fromEntries(form.entries());
 
@@ -33,17 +39,20 @@ export default function LoginPage() {
       });
     } catch {
       setError('Network error. Check your connection and try again.');
+      setSubmitting(false);
       return;
     }
 
     const text = await res.text();
     if (!res.ok) {
       setError(userFacingApiError(text, res.status));
+      setSubmitting(false);
       return;
     }
 
     if (!text.trim()) {
       setError('Empty response from server');
+      setSubmitting(false);
       return;
     }
 
@@ -58,6 +67,7 @@ export default function LoginPage() {
       data = JSON.parse(text) as typeof data;
     } catch {
       setError('Invalid response from server');
+      setSubmitting(false);
       return;
     }
     if (typeof data.full_name === 'string') {
@@ -85,33 +95,54 @@ export default function LoginPage() {
             </Link>
           </div>
         </div>
-      <h1 className="mb-2 text-3xl font-bold">Sign in</h1>
-      {setupRequired ? (
-        <div
-          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-950"
-          role="status"
-        >
-          No accounts exist on this instance yet.{' '}
-          <Link href="/register" className="font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-950">
-            Create the first account
-          </Link>{' '}
-          and set your password on that page — not in environment variables.
-        </div>
-      ) : null}
-      <p className="mb-6 text-slate-600">
-        New here?{' '}
-        <Link href="/register" className="text-brand-700 underline">
-          Create an account
-        </Link>
-      </p>
-      <form className="space-y-3" onSubmit={onSubmit}>
-        <input className="w-full" name="email" placeholder="Email" required type="email" autoComplete="email" />
-        <input className="w-full" name="password" placeholder="Password" required type="password" autoComplete="current-password" />
-        <button className="w-full" type="submit">
-          Sign in
-        </button>
-      </form>
-      {error && <pre className="mt-4 whitespace-pre-wrap rounded-md bg-red-100 p-3 text-sm text-red-700">{error}</pre>}
+
+        <Card>
+          <h1 className="font-display mb-2 text-3xl font-bold text-slate-900">Sign in</h1>
+
+          {setupRequired ? (
+            <Alert variant="info" className="mt-4">
+              No accounts exist on this instance yet.{' '}
+              <Link href="/register" className="font-semibold underline underline-offset-2">
+                Create the first account
+              </Link>{' '}
+              and set your password on that page — not in environment variables.
+            </Alert>
+          ) : null}
+
+          {setupRequired ? (
+            <p className="mt-4 text-sm text-slate-600">
+              New here?{' '}
+              <Link href="/register" className="font-medium text-brand-700 underline">
+                Create an account
+              </Link>
+            </p>
+          ) : null}
+
+          <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+            <Field label="Email" htmlFor="login-email">
+              <Input id="login-email" name="email" placeholder="you@example.com" required type="email" autoComplete="email" />
+            </Field>
+            <Field label="Password" htmlFor="login-password">
+              <Input
+                id="login-password"
+                name="password"
+                placeholder="••••••••"
+                required
+                type="password"
+                autoComplete="current-password"
+              />
+            </Field>
+            <Button className="w-full" type="submit" loading={submitting}>
+              Sign in
+            </Button>
+          </form>
+
+          {error ? (
+            <Alert variant="error" className="mt-4">
+              {error}
+            </Alert>
+          ) : null}
+        </Card>
       </div>
     </main>
   );

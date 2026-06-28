@@ -87,6 +87,20 @@ export default function DocsPage() {
 
       <section id="quick-start" className="animate-fade-in-up motion-reduce:animate-none [animation-delay:120ms]">
         <h2>Quick start</h2>
+        <div className="callout">
+          <strong>One account per instance</strong> — registration is only open while no account exists yet. Once the first
+          account is created, <code>/register</code> redirects to <code>/login</code> and{' '}
+          <code>POST /api/v1/auth/register</code> returns <code>403</code>. See the full contract in{' '}
+          <a
+            href="https://github.com/Raktim94/Submify/blob/main/docs/api.md"
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold underline"
+          >
+            docs/api.md
+          </a>
+          .
+        </div>
         <ol>
           <li>
             <strong>Create an account</strong> — Register with name, phone, email, and password (8+ characters). You are signed in with

@@ -55,16 +55,18 @@ export function SiteHeader({
             <>
               <Link
                 href="/login"
-                className="rounded-lg px-2.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 sm:px-3"
+                className="rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 px-3 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:shadow-lg sm:px-4"
               >
                 Sign in
               </Link>
-              <Link
-                href="/register"
-                className="rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 px-3 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:shadow-lg sm:px-4"
-              >
-                Create account
-              </Link>
+              {setupRequired ? (
+                <Link
+                  href="/register"
+                  className="rounded-lg px-2.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 sm:px-3"
+                >
+                  Create account
+                </Link>
+              ) : null}
             </>
           )}
         </nav>

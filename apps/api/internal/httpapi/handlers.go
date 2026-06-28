@@ -166,6 +166,16 @@ func (s *Server) SetupSystem(c *gin.Context) {
 }
 
 func (s *Server) Register(c *gin.Context) {
+	has, err := s.store.HasAnyUser()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if has {
+		c.JSON(http.StatusForbidden, gin.H{"error": "registration is closed; this instance already has an account — sign in instead"})
+		return
+	}
+
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

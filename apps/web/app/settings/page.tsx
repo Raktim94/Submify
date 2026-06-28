@@ -4,6 +4,19 @@ import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Nav } from '../../components/nav';
 import { changePassword, getMe, rotateAccountAPIKey, rotateAllProjectKeys, updateIntegrations, type MeResponse } from '../../lib/api';
+import { Card, CardBody, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Field, Input } from '@/components/ui/field';
+import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+
+function StatusMessage({ message, isError }: { message: string; isError: boolean }) {
+  return (
+    <Alert variant={isError ? 'error' : 'success'} className="mt-4">
+      {message}
+    </Alert>
+  );
+}
 
 export default function SettingsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -17,6 +30,10 @@ export default function SettingsPage() {
   const [loadError, setLoadError] = useState('');
   const [bindIP, setBindIP] = useState('127.0.0.1');
   const [port, setPort] = useState('2512');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [confirmRotateAccount, setConfirmRotateAccount] = useState(false);
+  const [confirmRotateProjects, setConfirmRotateProjects] = useState(false);
 
   useEffect(() => {
     getMe()
@@ -38,6 +55,7 @@ export default function SettingsPage() {
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setStatus('');
+    setSavingSettings(true);
     const form = new FormData(e.currentTarget);
     const patch: Record<string, string> = {
       telegram_chat_id: String(form.get('telegram_chat_id') ?? '').trim(),
@@ -61,6 +79,8 @@ export default function SettingsPage() {
       setStatus('Settings saved.');
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSavingSettings(false);
     }
   }
 
@@ -111,12 +131,15 @@ export default function SettingsPage() {
       setPasswordStatus('New password and confirmation do not match.');
       return;
     }
+    setSavingPassword(true);
     try {
       await changePassword({ current_password: currentPassword, new_password: newPassword });
       e.currentTarget.reset();
       setPasswordStatus('Password updated successfully.');
     } catch (err) {
       setPasswordStatus(err instanceof Error ? err.message : 'Password update failed');
+    } finally {
+      setSavingPassword(false);
     }
   }
 
@@ -136,10 +159,8 @@ export default function SettingsPage() {
   }
 
   async function onRotateAccountKey() {
+    setConfirmRotateAccount(false);
     setKeyStatus('');
-    if (!confirm('Rotate your account API key now? Existing websites using the old key will stop submitting immediately.')) {
-      return;
-    }
     try {
       const res = await rotateAccountAPIKey();
       const m = await getMe();
@@ -151,12 +172,8 @@ export default function SettingsPage() {
   }
 
   async function onRotateAllProjectKeys() {
+    setConfirmRotateProjects(false);
     setKeyStatus('');
-    if (!confirm('Rotate all project keys? Every old project public/secret key will stop working immediately.')) {
-      return;
-    }
-    const phrase = prompt('Type ROTATE to confirm key rotation for all projects.');
-    if (phrase !== 'ROTATE') return;
     try {
       const res = await rotateAllProjectKeys();
       setKeyStatus(`Rotated keys for ${res.projects_rotated} project(s). Update all clients with the new keys from Projects page.`);
@@ -170,7 +187,7 @@ export default function SettingsPage() {
       <main className="min-h-screen bg-slate-50 px-4 py-8">
         <div className="mx-auto max-w-4xl">
           <Nav />
-          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">{loadError}</p>
+          <Alert variant="error">{loadError}</Alert>
         </div>
       </main>
     );
@@ -217,141 +234,119 @@ export default function SettingsPage() {
           </ul>
         </section>
 
-        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
-          <h2 className="font-display text-xl font-bold text-slate-900">Login password</h2>
-          <p className="mt-1 text-sm leading-relaxed text-slate-600">
-            Change your account password here. This takes effect immediately for future logins.
-          </p>
-          <form className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={onChangePassword}>
-            <label className="block md:col-span-2">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Current password</span>
-              <input className="w-full rounded-xl border-slate-300 px-4 py-3" name="current_password" type="password" required autoComplete="current-password" />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">New password</span>
-              <input className="w-full rounded-xl border-slate-300 px-4 py-3" name="new_password" type="password" required minLength={8} autoComplete="new-password" />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Confirm new password</span>
-              <input className="w-full rounded-xl border-slate-300 px-4 py-3" name="confirm_new_password" type="password" required minLength={8} autoComplete="new-password" />
-            </label>
-            <button type="submit" className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800 md:col-span-2 md:w-fit">
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Login password</CardTitle>
+            <CardDescription>Change your account password here. This takes effect immediately for future logins.</CardDescription>
+          </CardHeader>
+          <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={onChangePassword}>
+            <div className="md:col-span-2">
+              <Field label="Current password" htmlFor="current_password">
+                <Input id="current_password" name="current_password" type="password" required autoComplete="current-password" />
+              </Field>
+            </div>
+            <Field label="New password" htmlFor="new_password">
+              <Input id="new_password" name="new_password" type="password" required minLength={8} autoComplete="new-password" />
+            </Field>
+            <Field label="Confirm new password" htmlFor="confirm_new_password">
+              <Input id="confirm_new_password" name="confirm_new_password" type="password" required minLength={8} autoComplete="new-password" />
+            </Field>
+            <Button type="submit" loading={savingPassword} className="md:col-span-2 md:w-fit">
               Update password
-            </button>
+            </Button>
           </form>
           {passwordStatus ? (
-            <p
-              className={`mt-4 rounded-xl px-4 py-3 text-sm ${
-                passwordStatus.toLowerCase().includes('success')
-                  ? 'border border-emerald-200 bg-emerald-50 text-emerald-900'
-                  : 'border border-red-200 bg-red-50 text-red-800'
-              }`}
-              role="status"
-            >
-              {passwordStatus}
-            </p>
+            <StatusMessage message={passwordStatus} isError={!passwordStatus.toLowerCase().includes('success')} />
           ) : null}
-        </section>
+        </Card>
 
-        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
-          <h2 className="font-display text-xl font-bold text-slate-900">API key rotation</h2>
-          <p className="mt-1 text-sm leading-relaxed text-slate-600">
-            Rotate exposed keys immediately if you suspect leakage. Rotating invalidates old keys right away.
-          </p>
-          <div className="mt-4 grid gap-3">
-            <button
-              type="button"
-              className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 hover:bg-amber-100 sm:w-fit"
-              onClick={onRotateAccountKey}
-            >
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>API key rotation</CardTitle>
+            <CardDescription>Rotate exposed keys immediately if you suspect leakage. Rotating invalidates old keys right away.</CardDescription>
+          </CardHeader>
+          <div className="grid gap-3">
+            <Button variant="outline" className="sm:w-fit" onClick={() => setConfirmRotateAccount(true)}>
               Rotate account API key
-            </button>
-            <button
-              type="button"
-              className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-900 hover:bg-rose-100 sm:w-fit"
-              onClick={onRotateAllProjectKeys}
-            >
+            </Button>
+            <Button variant="danger" className="sm:w-fit" onClick={() => setConfirmRotateProjects(true)}>
               Rotate all project keys
-            </button>
+            </Button>
             <p className="text-xs text-slate-600">
               Per-project key rotation is also available from <Link href="/projects" className="font-medium text-brand-700 underline">Projects</Link>.
             </p>
           </div>
-          {keyStatus ? (
-            <p
-              className={`mt-4 rounded-xl px-4 py-3 text-sm ${
-                keyStatus.toLowerCase().includes('rotated')
-                  ? 'border border-emerald-200 bg-emerald-50 text-emerald-900'
-                  : 'border border-red-200 bg-red-50 text-red-800'
-              }`}
-              role="status"
-            >
-              {keyStatus}
-            </p>
-          ) : null}
-        </section>
+          {keyStatus ? <StatusMessage message={keyStatus} isError={!keyStatus.toLowerCase().includes('rotated')} /> : null}
+        </Card>
 
-        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
-          <h2 className="font-display text-xl font-bold text-slate-900">Local port and bind address</h2>
-          <p className="mt-1 text-sm leading-relaxed text-slate-600">
-            Default is <code className="rounded bg-slate-100 px-1">127.0.0.1:2512</code> for safer local-only access. Keep this when using Cloudflare Tunnel.
-          </p>
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Bind IP</span>
-              <input className="w-full rounded-xl border-slate-300 px-4 py-3" value={bindIP} onChange={(e) => setBindIP(e.target.value)} placeholder="127.0.0.1" />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Port</span>
-              <input className="w-full rounded-xl border-slate-300 px-4 py-3" value={port} onChange={(e) => setPort(e.target.value)} placeholder="2512" inputMode="numeric" />
-            </label>
+        <ConfirmDialog
+          open={confirmRotateAccount}
+          title="Rotate account API key?"
+          description="Existing websites using the old key will stop submitting immediately."
+          confirmLabel="Rotate key"
+          onConfirm={onRotateAccountKey}
+          onCancel={() => setConfirmRotateAccount(false)}
+        />
+        <ConfirmDialog
+          open={confirmRotateProjects}
+          title="Rotate all project keys?"
+          description="Every old project public/secret key will stop working immediately."
+          confirmText="ROTATE"
+          confirmLabel="Rotate all keys"
+          danger
+          onConfirm={onRotateAllProjectKeys}
+          onCancel={() => setConfirmRotateProjects(false)}
+        />
+
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Local port and bind address</CardTitle>
+            <CardDescription>
+              Default is <code className="rounded bg-slate-100 px-1">127.0.0.1:2512</code> for safer local-only access. Keep this
+              when using Cloudflare Tunnel.
+            </CardDescription>
+          </CardHeader>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Bind IP" htmlFor="bind_ip">
+              <Input id="bind_ip" value={bindIP} onChange={(e) => setBindIP(e.target.value)} placeholder="127.0.0.1" />
+            </Field>
+            <Field label="Port" htmlFor="bind_port">
+              <Input id="bind_port" value={port} onChange={(e) => setPort(e.target.value)} placeholder="2512" inputMode="numeric" />
+            </Field>
           </div>
-          <button
-            type="button"
-            className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
-            onClick={onSavePortPreference}
-          >
+          <Button variant="outline" className="mt-4" onClick={onSavePortPreference}>
             Save local preference
-          </button>
+          </Button>
           <p className="mt-4 text-xs text-slate-600">
             Apply on host (PowerShell):{' '}
             <code className="rounded bg-slate-100 px-1 py-0.5">
-              $env:SUBMIFY_BIND_IP='{bindIP.trim() || '127.0.0.1'}'; $env:SUBMIFY_PORT='{port.trim() || '2512'}'; .\scripts\Compose-Up.ps1 up -d
+              $env:SUBMIFY_BIND_IP=&apos;{bindIP.trim() || '127.0.0.1'}&apos;; $env:SUBMIFY_PORT=&apos;{port.trim() || '2512'}&apos;;
+              .\scripts\Compose-Up.ps1 up -d
             </code>
           </p>
-          {portStatus ? (
-            <p
-              className={`mt-3 rounded-xl px-4 py-3 text-sm ${
-                portStatus.startsWith('Saved')
-                  ? 'border border-emerald-200 bg-emerald-50 text-emerald-900'
-                  : 'border border-red-200 bg-red-50 text-red-800'
-              }`}
-              role="status"
-            >
-              {portStatus}
-            </p>
-          ) : null}
-        </section>
+          {portStatus ? <StatusMessage message={portStatus} isError={!portStatus.startsWith('Saved')} /> : null}
+        </Card>
 
-        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
-          <h2 className="font-display text-xl font-bold text-slate-900">Remote storage credentials</h2>
-          <p className="mt-1 text-sm leading-relaxed text-slate-600">
-            Storage keys are managed by your external provider and are not generated by this app.
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Remote storage credentials</CardTitle>
+            <CardDescription>Storage keys are managed by your external provider and are not generated by this app.</CardDescription>
+          </CardHeader>
+          <p className="text-sm leading-relaxed text-slate-700">
+            To rotate safely, create new provider keys first, update them here, test presigned uploads, then revoke old keys in
+            your provider console.
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-slate-700">
-            To rotate safely, create new provider keys first, update them here, test presigned uploads, then revoke old keys in your provider console.
-          </p>
-        </section>
+        </Card>
 
         <form
           key={`${me.telegram_configured}-${me.s3_configured}-${me.telegram_chat_id}-${me.s3_endpoint}-${me.s3_bucket}`}
           className="space-y-8"
           onSubmit={onSubmit}
         >
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <Card>
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="font-display text-xl font-bold text-slate-900">Telegram notifications</h2>
+                <CardTitle>Telegram notifications</CardTitle>
                 <p className="mt-1 text-sm text-slate-500">
                   Status:{' '}
                   <span className={me.telegram_configured ? 'font-semibold text-emerald-700' : 'font-medium text-slate-600'}>
@@ -360,7 +355,7 @@ export default function SettingsPage() {
                 </p>
               </div>
             </div>
-            <div className="mt-5 space-y-3 text-sm leading-relaxed text-slate-700">
+            <div className="mb-6 space-y-3 text-sm leading-relaxed text-slate-700">
               <p>
                 <strong className="text-slate-900">1.</strong> Open Telegram, talk to{' '}
                 <strong className="text-slate-900">@BotFather</strong>, run <code className="rounded bg-slate-100 px-1">/newbot</code>, and copy
@@ -376,40 +371,29 @@ export default function SettingsPage() {
                 Leave the token empty if you only want to update the chat ID.
               </p>
             </div>
-            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Chat ID</span>
-                <input
-                  className="w-full rounded-xl border-slate-300 px-4 py-3"
-                  name="telegram_chat_id"
-                  placeholder="e.g. -1001234567890"
-                  defaultValue={me.telegram_chat_id}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Bot token</span>
-                <input
-                  className="w-full rounded-xl border-slate-300 px-4 py-3"
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label="Chat ID" htmlFor="telegram_chat_id">
+                <Input id="telegram_chat_id" name="telegram_chat_id" placeholder="e.g. -1001234567890" defaultValue={me.telegram_chat_id} />
+              </Field>
+              <Field label="Bot token" htmlFor="telegram_bot_token">
+                <Input
+                  id="telegram_bot_token"
                   value={telegramToken}
                   onChange={(e) => setTelegramToken(e.target.value)}
                   placeholder={me.telegram_configured ? 'New token (leave blank to keep)' : 'Paste token from BotFather'}
                   type="password"
                   autoComplete="off"
                 />
-              </label>
+              </Field>
             </div>
-            <button
-              type="button"
-              className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
-              onClick={clearTelegram}
-            >
+            <Button type="button" variant="outline" className="mt-4" onClick={clearTelegram}>
               Remove Telegram
-            </button>
-          </section>
+            </Button>
+          </Card>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+          <Card>
             <div className="mb-4">
-              <h2 className="font-display text-xl font-bold text-slate-900">S3-compatible storage</h2>
+              <CardTitle>S3-compatible storage</CardTitle>
               <p className="mt-1 text-sm text-slate-500">
                 Status:{' '}
                 <span className={me.s3_configured ? 'font-semibold text-emerald-700' : 'font-medium text-slate-600'}>
@@ -417,7 +401,7 @@ export default function SettingsPage() {
                 </span>
               </p>
             </div>
-            <div className="space-y-3 text-sm leading-relaxed text-slate-700">
+            <div className="mb-6 space-y-3 text-sm leading-relaxed text-slate-700">
               <p>
                 Use this when you want <strong className="text-slate-900">large file uploads</strong> via presigned URLs.
                 Regular small JSON submissions do <strong className="text-slate-900">not</strong> require S3.
@@ -428,67 +412,49 @@ export default function SettingsPage() {
                 Match the same region and credentials you use elsewhere.
               </p>
             </div>
-            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <label className="block md:col-span-2">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Endpoint URL</span>
-                <input
-                  className="w-full rounded-xl border-slate-300 px-4 py-3"
-                  name="s3_endpoint"
-                  placeholder="https://s3.your-provider.com"
-                  defaultValue={me.s3_endpoint}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Bucket</span>
-                <input className="w-full rounded-xl border-slate-300 px-4 py-3" name="s3_bucket" placeholder="Bucket name" defaultValue={me.s3_bucket} />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Access key</span>
-                <input
-                  className="w-full rounded-xl border-slate-300 px-4 py-3"
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <Field label="Endpoint URL" htmlFor="s3_endpoint">
+                  <Input id="s3_endpoint" name="s3_endpoint" placeholder="https://s3.your-provider.com" defaultValue={me.s3_endpoint} />
+                </Field>
+              </div>
+              <Field label="Bucket" htmlFor="s3_bucket">
+                <Input id="s3_bucket" name="s3_bucket" placeholder="Bucket name" defaultValue={me.s3_bucket} />
+              </Field>
+              <Field label="Access key" htmlFor="s3_access_key">
+                <Input
+                  id="s3_access_key"
                   value={s3Access}
                   onChange={(e) => setS3Access(e.target.value)}
                   placeholder={me.s3_configured ? 'Leave blank to keep' : 'Access key'}
                   type="password"
                   autoComplete="off"
                 />
-              </label>
-              <label className="block md:col-span-2">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-600">Secret key</span>
-                <input
-                  className="w-full rounded-xl border-slate-300 px-4 py-3"
-                  value={s3Secret}
-                  onChange={(e) => setS3Secret(e.target.value)}
-                  placeholder={me.s3_configured ? 'Leave blank to keep' : 'Secret key'}
-                  type="password"
-                  autoComplete="off"
-                />
-              </label>
+              </Field>
+              <div className="md:col-span-2">
+                <Field label="Secret key" htmlFor="s3_secret_key">
+                  <Input
+                    id="s3_secret_key"
+                    value={s3Secret}
+                    onChange={(e) => setS3Secret(e.target.value)}
+                    placeholder={me.s3_configured ? 'Leave blank to keep' : 'Secret key'}
+                    type="password"
+                    autoComplete="off"
+                  />
+                </Field>
+              </div>
             </div>
-            <button
-              type="button"
-              className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
-              onClick={clearS3}
-            >
+            <Button type="button" variant="outline" className="mt-4" onClick={clearS3}>
               Clear S3 credentials
-            </button>
-          </section>
+            </Button>
+          </Card>
 
-          <button type="submit" className="w-full rounded-xl bg-brand-500 py-3.5 text-base font-semibold text-white shadow-lg hover:bg-brand-700 sm:w-auto sm:px-12">
+          <Button type="submit" loading={savingSettings} className="w-full sm:w-auto sm:px-12">
             Save changes
-          </button>
+          </Button>
         </form>
 
-        {status ? (
-          <p
-            className={`mt-6 rounded-xl px-4 py-3 text-sm ${
-              status.startsWith('Save failed') || status.includes('Failed') ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-emerald-200 bg-emerald-50 text-emerald-900'
-            }`}
-            role="status"
-          >
-            {status}
-          </p>
-        ) : null}
+        {status ? <StatusMessage message={status} isError={status.includes('Failed') || status.startsWith('Save failed')} /> : null}
       </div>
     </main>
   );

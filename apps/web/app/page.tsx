@@ -143,7 +143,7 @@ export default function HomePage() {
         }}
       />
       <SiteHeader signedIn={signedIn} setupRequired={setupRequired} />
-      <SubmifyHero signedIn={signedIn} />
+      <SubmifyHero signedIn={signedIn} setupRequired={setupRequired} />
 
       <div className="relative overflow-hidden bg-gradient-to-b from-slate-50 via-white to-indigo-50/30">
         <div
@@ -348,21 +348,38 @@ export default function HomePage() {
           <div className="pointer-events-none absolute -right-10 bottom-0 h-32 w-32 rounded-full bg-cyan-400/20 blur-2xl" />
           <h2 className="font-display relative text-2xl font-bold text-white sm:text-3xl">Ready to own your form pipeline?</h2>
           <p className="relative mx-auto mt-3 max-w-lg text-indigo-100">
-            Create an account in seconds — configure Telegram and S3 later from Settings.
+            {signedIn
+              ? 'Jump back into your dashboard to manage projects and submissions.'
+              : setupRequired
+                ? 'Create an account in seconds — configure Telegram and S3 later from Settings.'
+                : 'Sign in to manage your projects and submissions.'}
           </p>
           <div className="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link
-              href="/register"
-              className="inline-flex min-w-[180px] items-center justify-center rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-indigo-800 shadow-lg transition hover:bg-indigo-50 active:scale-[0.98]"
-            >
-              Create account
-            </Link>
-            <Link
-              href="/login"
-              className="inline-flex min-w-[180px] items-center justify-center rounded-xl border-2 border-white/40 bg-transparent px-8 py-3.5 text-base font-semibold text-white transition hover:bg-white/10 active:scale-[0.98]"
-            >
-              Sign in
-            </Link>
+            {signedIn ? (
+              <Link
+                href="/dashboard"
+                className="inline-flex min-w-[180px] items-center justify-center rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-indigo-800 shadow-lg transition hover:bg-indigo-50 active:scale-[0.98]"
+              >
+                Dashboard
+              </Link>
+            ) : (
+              <>
+                {setupRequired ? (
+                  <Link
+                    href="/register"
+                    className="inline-flex min-w-[180px] items-center justify-center rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-indigo-800 shadow-lg transition hover:bg-indigo-50 active:scale-[0.98]"
+                  >
+                    Create account
+                  </Link>
+                ) : null}
+                <Link
+                  href="/login"
+                  className="inline-flex min-w-[180px] items-center justify-center rounded-xl border-2 border-white/40 bg-transparent px-8 py-3.5 text-base font-semibold text-white transition hover:bg-white/10 active:scale-[0.98]"
+                >
+                  Sign in
+                </Link>
+              </>
+            )}
           </div>
         </section>
 

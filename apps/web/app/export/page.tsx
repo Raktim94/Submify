@@ -4,6 +4,10 @@ import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Nav } from '../../components/nav';
 import { api, apiBase, userFacingApiError } from '../../lib/api';
+import { Card } from '@/components/ui/card';
+import { Field, Select } from '@/components/ui/field';
+import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
 
 type Project = { id: string; name: string };
 
@@ -64,7 +68,7 @@ export default function ExportPage() {
           </p>
         </header>
 
-        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+        <Card className="mb-8">
           <h2 className="font-display text-sm font-semibold uppercase tracking-wide text-slate-600">Steps</h2>
           <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-700 marker:text-brand-600 sm:text-base">
             <li>
@@ -83,56 +87,50 @@ export default function ExportPage() {
               happens, check pop-up blockers.
             </li>
           </ol>
-        </section>
+        </Card>
 
         {loading ? (
           <p className="text-slate-500">Loading projects…</p>
         ) : projects.length === 0 ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-8 text-center text-amber-950">
+          <Alert variant="info" className="text-center">
             <p className="font-medium">No projects found.</p>
             <p className="mt-2 text-sm">
               Create a project on the{' '}
-              <Link className="font-semibold text-brand-800 underline" href="/projects">
+              <Link className="font-semibold underline" href="/projects">
                 Projects
               </Link>{' '}
               page first.
             </p>
-          </div>
+          </Alert>
         ) : (
           <form
             className="rounded-2xl border border-slate-200 bg-white p-6 shadow-lg shadow-slate-100 sm:p-8"
             onSubmit={onSubmit}
           >
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Project</span>
-                <select
-                  className="w-full rounded-xl border-slate-300 px-4 py-3 text-slate-900"
-                  value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
-                >
+              <Field label="Project" htmlFor="export-project">
+                <Select id="export-project" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
                   {projects.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
                   ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Format</span>
-                <select className="w-full rounded-xl border-slate-300 px-4 py-3 text-slate-900" name="format" defaultValue="xlsx">
+                </Select>
+              </Field>
+              <Field label="Format" htmlFor="export-format">
+                <Select id="export-format" name="format" defaultValue="xlsx">
                   <option value="xlsx">Excel (.xlsx)</option>
                   <option value="pdf">PDF (.pdf)</option>
-                </select>
-              </label>
+                </Select>
+              </Field>
             </div>
-            <button type="submit" className="mt-6 w-full rounded-xl bg-brand-500 py-3.5 text-base font-semibold text-white shadow-md hover:bg-brand-700 sm:w-auto sm:px-10">
+            <Button type="submit" className="mt-6 w-full sm:w-auto sm:px-10">
               Download export
-            </button>
+            </Button>
             {error ? (
-              <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+              <Alert variant="error" className="mt-4">
                 {error}
-              </p>
+              </Alert>
             ) : null}
           </form>
         )}
