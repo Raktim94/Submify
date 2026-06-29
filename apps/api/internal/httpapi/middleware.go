@@ -74,3 +74,20 @@ func userIDFromContext(c *gin.Context) string {
 	id, _ := v.(string)
 	return id
 }
+
+// AdminGuard restricts a route to the instance's admin account (the first user that ever registered).
+// It must run after AuthGuard so user_id is already set in the context.
+func (s *Server) AdminGuard() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		u, err := s.store.FindUserByID(userIDFromContext(c))
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !u.IsAdmin {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+			return
+		}
+		c.Next()
+	}
+}

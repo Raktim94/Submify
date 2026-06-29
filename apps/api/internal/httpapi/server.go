@@ -99,6 +99,14 @@ func (s *Server) Router() *gin.Engine {
 		secured.POST("/users/me/projects/rotate-keys", s.RotateAllProjectKeys)
 	}
 
+	admin := secured.Group("")
+	admin.Use(s.AdminGuard())
+	{
+		admin.GET("/users", s.ListUsers)
+		admin.POST("/users", s.CreateUser)
+		admin.DELETE("/users/:id", s.DeleteUser)
+	}
+
 	return r
 }
 

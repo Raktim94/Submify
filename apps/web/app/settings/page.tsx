@@ -3,7 +3,18 @@
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Nav } from '../../components/nav';
-import { changePassword, getMe, rotateAccountAPIKey, rotateAllProjectKeys, updateIntegrations, type MeResponse } from '../../lib/api';
+import {
+  changePassword,
+  createUser,
+  deleteUser,
+  getMe,
+  listUsers,
+  rotateAccountAPIKey,
+  rotateAllProjectKeys,
+  updateIntegrations,
+  type AccountUser,
+  type MeResponse
+} from '../../lib/api';
 import { Card, CardBody, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -34,12 +45,63 @@ export default function SettingsPage() {
   const [savingPassword, setSavingPassword] = useState(false);
   const [confirmRotateAccount, setConfirmRotateAccount] = useState(false);
   const [confirmRotateProjects, setConfirmRotateProjects] = useState(false);
+  const [users, setUsers] = useState<AccountUser[]>([]);
+  const [usersStatus, setUsersStatus] = useState('');
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<AccountUser | null>(null);
 
   useEffect(() => {
     getMe()
       .then((m) => setMe(m))
       .catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load profile'));
   }, []);
+
+  useEffect(() => {
+    if (!me?.is_admin) return;
+    listUsers()
+      .then((res) => setUsers(res.users))
+      .catch((e) => setUsersStatus(e instanceof Error ? e.message : 'Failed to load accounts'));
+  }, [me?.is_admin]);
+
+  async function onCreateUser(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setUsersStatus('');
+    const form = new FormData(e.currentTarget);
+    const full_name = String(form.get('new_user_full_name') ?? '').trim();
+    const phone = String(form.get('new_user_phone') ?? '').trim();
+    const email = String(form.get('new_user_email') ?? '').trim();
+    const password = String(form.get('new_user_password') ?? '');
+    if (password.length < 8) {
+      setUsersStatus('Password must be at least 8 characters.');
+      return;
+    }
+    setCreatingUser(true);
+    try {
+      await createUser({ full_name, phone, email, password });
+      e.currentTarget.reset();
+      const res = await listUsers();
+      setUsers(res.users);
+      setUsersStatus(`Account created for ${email}. Share the password with them directly — it is not emailed.`);
+    } catch (err) {
+      setUsersStatus(err instanceof Error ? err.message : 'Could not create account');
+    } finally {
+      setCreatingUser(false);
+    }
+  }
+
+  async function onDeleteUser() {
+    if (!confirmDeleteUser) return;
+    const target = confirmDeleteUser;
+    setConfirmDeleteUser(null);
+    setUsersStatus('');
+    try {
+      await deleteUser(target.id);
+      setUsers((prev) => prev.filter((u) => u.id !== target.id));
+      setUsersStatus(`Removed ${target.email}.`);
+    } catch (err) {
+      setUsersStatus(err instanceof Error ? err.message : 'Could not remove account');
+    }
+  }
 
   useEffect(() => {
     const savedIP = localStorage.getItem('submify_bind_ip');
@@ -259,6 +321,69 @@ export default function SettingsPage() {
             <StatusMessage message={passwordStatus} isError={!passwordStatus.toLowerCase().includes('success')} />
           ) : null}
         </Card>
+
+        {me.is_admin ? (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Team accounts</CardTitle>
+              <CardDescription>
+                Public sign-up is closed on this instance for security. As the admin, you can create additional accounts here
+                for teammates — each gets their own login and projects, separate from yours.
+              </CardDescription>
+            </CardHeader>
+
+            {users.length > 0 ? (
+              <ul className="mb-6 divide-y divide-slate-100 rounded-xl border border-slate-200">
+                {users.map((u) => (
+                  <li key={u.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">
+                        {u.full_name || u.email} {u.is_admin ? <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">Admin</span> : null}
+                      </p>
+                      <p className="text-xs text-slate-500">{u.email}</p>
+                    </div>
+                    {!u.is_admin ? (
+                      <Button variant="danger" className="text-xs" onClick={() => setConfirmDeleteUser(u)}>
+                        Remove
+                      </Button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={onCreateUser}>
+              <Field label="Full name" htmlFor="new_user_full_name">
+                <Input id="new_user_full_name" name="new_user_full_name" required autoComplete="off" />
+              </Field>
+              <Field label="Mobile number" htmlFor="new_user_phone">
+                <Input id="new_user_phone" name="new_user_phone" type="tel" required autoComplete="off" />
+              </Field>
+              <Field label="Email" htmlFor="new_user_email">
+                <Input id="new_user_email" name="new_user_email" type="email" required autoComplete="off" />
+              </Field>
+              <Field label="Initial password" htmlFor="new_user_password" hint="Minimum 8 characters">
+                <Input id="new_user_password" name="new_user_password" type="password" required minLength={8} autoComplete="new-password" />
+              </Field>
+              <Button type="submit" loading={creatingUser} className="md:col-span-2 md:w-fit">
+                Create account
+              </Button>
+            </form>
+            {usersStatus ? (
+              <StatusMessage message={usersStatus} isError={!/^(Account created|Removed)/.test(usersStatus)} />
+            ) : null}
+          </Card>
+        ) : null}
+
+        <ConfirmDialog
+          open={Boolean(confirmDeleteUser)}
+          title={`Remove ${confirmDeleteUser?.email ?? 'this account'}?`}
+          description="Their projects and submissions are deleted right away; any active session expires shortly after."
+          confirmLabel="Remove account"
+          danger
+          onConfirm={onDeleteUser}
+          onCancel={() => setConfirmDeleteUser(null)}
+        />
 
         <Card className="mb-8">
           <CardHeader>
