@@ -18,6 +18,15 @@ command -v git >/dev/null 2>&1 || die "git is required. Install git and re-run."
 command -v docker >/dev/null 2>&1 || die "Docker is required: https://docs.docker.com/engine/install/"
 docker compose version >/dev/null 2>&1 || die "Docker Compose v2 plugin is required (docker compose version failed)."
 
+# Verify the current directory is writable before attempting a clone.
+if [ ! -w "." ]; then
+  die "Current directory ($(pwd)) is not writable by this user.
+       Run the installer from your home directory instead:
+         cd ~ && curl -fsSL https://raw.githubusercontent.com/Raktim94/Submify/main/install.sh | bash
+       Or set a custom install path:
+         SUBMIFY_INSTALL_DIR=/path/to/writable/dir curl -fsSL ... | bash"
+fi
+
 if [ -d "$INSTALL_DIR/.git" ]; then
   log "Existing clone found at ./$INSTALL_DIR — updating."
   git -C "$INSTALL_DIR" checkout -- scripts/prune-docker.sh >/dev/null 2>&1 || true
