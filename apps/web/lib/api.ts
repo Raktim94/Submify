@@ -199,6 +199,7 @@ export type MeResponse = {
   api_key: string;
   full_name: string;
   phone: string;
+  is_admin: boolean;
   telegram_chat_id: string;
   s3_endpoint: string;
   s3_bucket: string;
@@ -288,5 +289,39 @@ export async function rotateAllProjectKeys(): Promise<{ status: string; projects
   return api<{ status: string; projects_rotated: number }>('/users/me/projects/rotate-keys', {
     method: 'POST',
     body: '{}'
+  });
+}
+
+export type AccountUser = {
+  id: string;
+  email: string;
+  full_name: string;
+  phone: string;
+  is_admin: boolean;
+  created_at: string;
+};
+
+/** Admin-only: every account on this instance. */
+export async function listUsers(): Promise<{ users: AccountUser[] }> {
+  return api<{ users: AccountUser[] }>('/users');
+}
+
+/** Admin-only: create an additional, non-admin account. Public self-registration stays closed. */
+export async function createUser(body: {
+  full_name: string;
+  phone: string;
+  email: string;
+  password: string;
+}): Promise<AccountUser> {
+  return api<AccountUser>('/users', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
+/** Admin-only: remove a non-admin account. */
+export async function deleteUser(userId: string): Promise<{ status: string }> {
+  return api<{ status: string }>(`/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE'
   });
 }

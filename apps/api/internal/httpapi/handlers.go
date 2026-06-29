@@ -76,6 +76,13 @@ type changePasswordRequest struct {
 	NewPassword     string `json:"new_password" binding:"required,min=8"`
 }
 
+type createUserRequest struct {
+	FullName string `json:"full_name" binding:"required"`
+	Phone    string `json:"phone" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
+}
+
 func (s *Server) cookieSameSite() http.SameSite {
 	switch s.cfg.AuthCookieSameSite {
 	case "strict":
@@ -305,6 +312,7 @@ func (s *Server) GetMe(c *gin.Context) {
 		"api_key":             u.APIKey,
 		"full_name":           u.FullName,
 		"phone":               u.Phone,
+		"is_admin":            u.IsAdmin,
 		"telegram_chat_id":    strings.TrimSpace(u.TelegramChatID),
 		"s3_endpoint":         strings.TrimSpace(u.S3Endpoint),
 		"s3_bucket":           strings.TrimSpace(u.S3Bucket),
@@ -877,6 +885,77 @@ func (s *Server) ChangePassword(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "password updated"})
+}
+
+// ListUsers returns every account on this instance. Admin-only: lets the instance owner see who has access.
+func (s *Server) ListUsers(c *gin.Context) {
+	users, err := s.store.ListUsers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(users))
+	for _, u := range users {
+		out = append(out, gin.H{
+			"id":         u.ID,
+			"email":      u.Email,
+			"full_name":  u.FullName,
+			"phone":      u.Phone,
+			"is_admin":   u.IsAdmin,
+			"created_at": u.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"users": out})
+}
+
+// CreateUser lets the admin create an additional, non-admin account on this instance.
+// Public self-registration stays closed (see Register) — this is the only way to add more accounts.
+func (s *Server) CreateUser(c *gin.Context) {
+	var req createUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	u, err := s.store.CreateUserByAdmin(strings.TrimSpace(req.FullName), strings.TrimSpace(req.Phone), strings.TrimSpace(req.Email), hash)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+			return
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(err.Error(), "unique") {
+			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"id": u.ID, "email": u.Email, "full_name": u.FullName, "phone": u.Phone, "is_admin": u.IsAdmin,
+	})
+}
+
+// DeleteUser lets the admin remove a non-admin account (and its projects/submissions via cascade).
+func (s *Server) DeleteUser(c *gin.Context) {
+	targetID := c.Param("id")
+	if targetID == userIDFromContext(c) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete your own account"})
+		return
+	}
+	if err := s.store.DeleteUser(targetID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found or is an admin account"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
 func (s *Server) RotateAccountAPIKey(c *gin.Context) {

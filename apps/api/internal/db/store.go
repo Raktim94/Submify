@@ -30,6 +30,7 @@ type User struct {
 	FullName         string    `json:"full_name"`
 	Phone            string    `json:"phone"`
 	APIKey           string    `json:"api_key"`
+	IsAdmin          bool      `json:"is_admin"`
 	PasswordHash     string    `json:"-"`
 	TelegramBotToken string    `json:"-"`
 	TelegramChatID   string    `json:"-"`
@@ -198,7 +199,7 @@ func scanUser(row *sql.Row) (User, error) {
 	var u User
 	err := row.Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.APIKey,
-		&u.FullName, &u.Phone,
+		&u.FullName, &u.Phone, &u.IsAdmin,
 		&u.TelegramBotToken, &u.TelegramChatID,
 		&u.S3Endpoint, &u.S3AccessKey, &u.S3SecretKey, &u.S3Bucket,
 		&u.CreatedAt,
@@ -207,7 +208,7 @@ func scanUser(row *sql.Row) (User, error) {
 }
 
 const userSelect = `id,email,password_hash,api_key,
-COALESCE(full_name,''),COALESCE(phone,''),
+COALESCE(full_name,''),COALESCE(phone,''),is_admin,
 COALESCE(telegram_bot_token,''),COALESCE(telegram_chat_id,''),
 COALESCE(s3_endpoint,''),COALESCE(s3_access_key,''),COALESCE(s3_secret_key,''),COALESCE(s3_bucket,''),
 created_at`
@@ -224,8 +225,56 @@ func (s *Store) FindUserByAPIKey(key string) (User, error) {
 	return scanUser(s.DB.QueryRow(`SELECT `+userSelect+` FROM users WHERE api_key=$1`, key))
 }
 
-// RegisterUser creates the first (or additional) account with a default inbox project and ensures system_configs row 1 exists for update metadata.
+// ListUsers returns all accounts on this instance, oldest first, for the admin user-management view.
+func (s *Store) ListUsers() ([]User, error) {
+	rows, err := s.DB.Query(`SELECT ` + userSelect + ` FROM users ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(
+			&u.ID, &u.Email, &u.PasswordHash, &u.APIKey,
+			&u.FullName, &u.Phone, &u.IsAdmin,
+			&u.TelegramBotToken, &u.TelegramChatID,
+			&u.S3Endpoint, &u.S3AccessKey, &u.S3SecretKey, &u.S3Bucket,
+			&u.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// DeleteUser removes a non-admin account and cascades to its projects/submissions. Admins cannot be deleted this way.
+func (s *Store) DeleteUser(userID string) error {
+	res, err := s.DB.Exec(`DELETE FROM users WHERE id = $1::uuid AND is_admin = FALSE`, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// RegisterUser creates the first account on this instance (always admin) with a default inbox project,
+// and ensures system_configs row 1 exists for update metadata.
 func (s *Store) RegisterUser(fullName, phone, email, passwordHash string) (User, error) {
+	return s.createUser(fullName, phone, email, passwordHash, true)
+}
+
+// CreateUserByAdmin creates an additional, non-admin account on an already-bootstrapped instance.
+func (s *Store) CreateUserByAdmin(fullName, phone, email, passwordHash string) (User, error) {
+	return s.createUser(fullName, phone, email, passwordHash, false)
+}
+
+func (s *Store) createUser(fullName, phone, email, passwordHash string, isAdmin bool) (User, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return User{}, err
@@ -244,9 +293,9 @@ func (s *Store) RegisterUser(fullName, phone, email, passwordHash string) (User,
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO users(id, email, password_hash, api_key, full_name, phone)
-		VALUES ($1,$2,$3,$4,$5,$6)
-	`, userID, email, passwordHash, userAPIKey, fullName, phone); err != nil {
+		INSERT INTO users(id, email, password_hash, api_key, full_name, phone, is_admin)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)
+	`, userID, email, passwordHash, userAPIKey, fullName, phone, isAdmin); err != nil {
 		return User{}, err
 	}
 
