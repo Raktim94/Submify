@@ -257,6 +257,44 @@ export default function DocsPage() {
         </p>
       </section>
 
+      <section id="expose-via-ip">
+        <h2>Accessing from another device (LAN / network IP)</h2>
+        <p>
+          By default Nginx binds to <code>127.0.0.1</code>, so only the local machine can reach the dashboard and API. To open
+          access from other devices on your network (or from the internet), add the following to your <code>.env</code> file and
+          restart the stack:
+        </p>
+        <pre>
+          <code>{`# Bind to all interfaces so other devices can reach port 2512.
+# Replace 0.0.0.0 with a specific IP to restrict to one interface.
+SUBMIFY_BIND_IP=0.0.0.0
+
+# Add your server IP or hostname to the CORS allowlist.
+# Replace 192.168.1.100 with your actual server IP or domain.
+ALLOWED_ORIGINS=http://localhost:2512,http://127.0.0.1:2512,http://192.168.1.100:2512`}</code>
+        </pre>
+        <pre>
+          <code>{`docker compose up -d`}</code>
+        </pre>
+        <p>
+          Also open port <code>2512</code> on your host firewall (UFW: <code>sudo ufw allow 2512/tcp</code>), then open{' '}
+          <code>http://&lt;server-ip&gt;:2512</code> from any device on the network.
+        </p>
+        <div className="callout">
+          <strong>Production tip</strong> — For internet-facing deployments, put Submify behind a reverse proxy (Nginx, Caddy,
+          Traefik) or a{' '}
+          <a
+            href="https://github.com/Raktim94/Submify/blob/main/README.md#optional-cloudflare-tunnel"
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold underline"
+          >
+            Cloudflare Tunnel
+          </a>{' '}
+          with TLS rather than exposing port 2512 directly.
+        </div>
+      </section>
+
       <section id="env-vars">
         <h2>Environment variables (reference)</h2>
         <p>

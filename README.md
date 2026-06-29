@@ -101,21 +101,22 @@ docker compose logs -f api # follow API logs
 3. [Requirements](#requirements)
 4. [Quick start](#quick-start)
 5. [URLs and ports](#urls-and-ports-browser-vs-containers)
-6. [Configuration and environment variables](#configuration-and-environment-variables)
-7. [First-time access](#first-time-access)
-8. [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel)
-9. [API overview](#api-overview)
-10. [Connecting a client website (forms)](#connecting-a-client-website-forms)
-11. [Integrating with an AI coding assistant](#integrating-with-an-ai-coding-assistant)
-12. [External S3 uploads (optional)](#external-s3-uploads-optional)
-13. [Dashboard workflow](#dashboard-workflow)
-14. [Limits and security defaults](#limits-and-security-defaults)
-15. [Security and vulnerability scanning](#security-and-vulnerability-scanning)
-16. [Using GitHub Actions secrets](#using-github-actions-secrets)
-17. [Operations: logs, backup, updates](#operations-logs-backup-updates)
-18. [Troubleshooting](#troubleshooting)
-19. [License](#license)
-20. [Developer & ownership](#developer--ownership)
+6. [Accessing via network IP](#accessing-submify-from-another-device-lan--network-ip)
+7. [Configuration and environment variables](#configuration-and-environment-variables)
+8. [First-time access](#first-time-access)
+9. [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel)
+10. [API overview](#api-overview)
+11. [Connecting a client website (forms)](#connecting-a-client-website-forms)
+12. [Integrating with an AI coding assistant](#integrating-with-an-ai-coding-assistant)
+13. [External S3 uploads (optional)](#external-s3-uploads-optional)
+14. [Dashboard workflow](#dashboard-workflow)
+15. [Limits and security defaults](#limits-and-security-defaults)
+16. [Security and vulnerability scanning](#security-and-vulnerability-scanning)
+17. [Using GitHub Actions secrets](#using-github-actions-secrets)
+18. [Operations: logs, backup, updates](#operations-logs-backup-updates)
+19. [Troubleshooting](#troubleshooting)
+20. [License](#license)
+21. [Developer & ownership](#developer--ownership)
 
 ---
 
@@ -226,6 +227,50 @@ Nginx is the only service that publishes a port in the default `docker-compose.y
 You don't open port 8080 on the host — that's only the API listening *inside* its container. Traffic flow: `Browser → :2512 (nginx) → /api/* → api:8080` and `→ /* → web:3000`.
 
 Allow TCP **2512** from whatever networks should reach the UI/API (or 80/443 if you terminate TLS in front).
+
+### Accessing Submify from another device (LAN / network IP)
+
+By default the stack binds only to `127.0.0.1`, so it is reachable from the same machine only. To reach it from other devices on your network (or from the internet), do the following:
+
+**Step 1 — Bind to all interfaces (or a specific IP)**
+
+Add these two lines to your `.env` file (create it if it doesn't exist — copy `.env.example` as a starting point):
+
+```bash
+# Bind Nginx to all interfaces so other devices can reach port 2512.
+# Replace 0.0.0.0 with a specific IP if you want to restrict to one interface.
+SUBMIFY_BIND_IP=0.0.0.0
+
+# Tell the API to allow requests coming from your server's IP.
+# Replace 192.168.1.100 with your actual server IP (or domain).
+# Keep localhost/127.0.0.1 entries so the dashboard still works locally.
+ALLOWED_ORIGINS=http://localhost:2512,http://127.0.0.1:2512,http://192.168.1.100:2512
+```
+
+**Step 2 — Restart the stack**
+
+```bash
+docker compose up -d
+```
+
+**Step 3 — Open your firewall**
+
+Make sure the host firewall allows inbound TCP on port 2512:
+
+```bash
+# UFW (Ubuntu / Debian)
+sudo ufw allow 2512/tcp
+
+# firewalld (Fedora / RHEL / CentOS)
+sudo firewall-cmd --add-port=2512/tcp --permanent && sudo firewall-cmd --reload
+
+# iptables
+sudo iptables -I INPUT -p tcp --dport 2512 -j ACCEPT
+```
+
+Now open **`http://<server-ip>:2512`** from any device on the same network.
+
+> **Production note:** For internet-facing deployments, put Submify behind a reverse proxy (Nginx, Caddy, Traefik) or a Cloudflare Tunnel with TLS instead of exposing port 2512 directly. See [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel).
 
 ---
 

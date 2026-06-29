@@ -37,6 +37,44 @@ Open:
 1. Open **`/register`** and create the first account (password is chosen in the browser).
 2. Optional: configure Telegram and external S3-compatible storage in the dashboard **Settings** after login.
 
+## Exposing via network IP (LAN or internet)
+
+By default Nginx binds to `127.0.0.1` — the stack is only reachable from the same machine. To access it from other devices, follow these steps.
+
+**1. Set `SUBMIFY_BIND_IP` and `ALLOWED_ORIGINS` in `.env`:**
+
+```bash
+# Listen on all interfaces (use a specific IP to restrict to one interface).
+SUBMIFY_BIND_IP=0.0.0.0
+
+# Add your server's IP or hostname to the CORS allowlist.
+# Replace 192.168.1.100 with your actual server IP or domain.
+ALLOWED_ORIGINS=http://localhost:2512,http://127.0.0.1:2512,http://192.168.1.100:2512
+```
+
+**2. Restart the stack:**
+
+```bash
+docker compose up -d
+```
+
+**3. Open the host firewall on port 2512:**
+
+```bash
+# UFW
+sudo ufw allow 2512/tcp
+
+# firewalld
+sudo firewall-cmd --add-port=2512/tcp --permanent && sudo firewall-cmd --reload
+
+# iptables
+sudo iptables -I INPUT -p tcp --dport 2512 -j ACCEPT
+```
+
+Then open `http://<server-ip>:2512` from any other device on the network.
+
+> For internet-facing deployments, prefer a reverse proxy with TLS or a Cloudflare Tunnel rather than exposing port 2512 directly.
+
 ## Cloudflare Tunnel (CGNAT)
 
 Set tunnel token and run tunnel profile:
