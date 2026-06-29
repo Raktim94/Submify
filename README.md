@@ -164,6 +164,53 @@ Default Compose uses **`./data/postgres`** next to the compose file, so the stac
 
 **Windows / macOS:** install Docker Desktop, make sure it's running, then verify the same two commands above.
 
+> **Debian users — common pitfall:** If you installed Docker from the Debian repositories (`apt install docker.io`), the Compose v2 plugin is **not included**. Running `docker compose version` will return `docker: 'compose' is not a docker command`. Follow the fix below before running the installer.
+
+#### Fix: Docker Compose v2 on Debian (`docker.io` install)
+
+This happens when Docker was installed from Debian's package (`docker.io`) instead of Docker's official repository. The two package trees conflict — Debian ships its own `docker-buildx` that blocks Docker's official `docker-buildx-plugin`.
+
+**Step 1 — Add Docker's official repository:**
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+| sudo tee /etc/apt/sources.list.d/docker.list
+
+sudo apt update
+```
+
+**Step 2 — Remove the conflicting Debian buildx package:**
+
+```bash
+sudo apt remove docker-buildx
+```
+
+**Step 3 — Install the official Compose and Buildx plugins:**
+
+```bash
+sudo apt install docker-buildx-plugin docker-compose-plugin
+```
+
+If `apt install` still reports broken packages, run:
+
+```bash
+sudo apt --fix-broken install
+sudo apt install docker-buildx-plugin docker-compose-plugin
+```
+
+**Step 4 — Verify and re-run the installer:**
+
+```bash
+docker buildx version
+docker compose version
+curl -fsSL https://raw.githubusercontent.com/Raktim94/Submify/main/install.sh | bash
+```
+
 ---
 
 ## URLs and ports (browser vs. containers)
@@ -514,6 +561,8 @@ If you installed with `./scripts/compose-up.sh`, substitute it for the bare `doc
 
 | Symptom | What to check |
 |---------|----------------|
+| `docker: 'compose' is not a docker command` | Docker was installed from Debian's `docker.io` package — the Compose v2 plugin is not included. See the [Debian fix](#fix-docker-compose-v2-on-debian-dockerio-install) in the Requirements section |
+| `trying to overwrite /usr/libexec/docker/cli-plugins/docker-buildx` | Package conflict between Debian's `docker-buildx` and Docker's official `docker-buildx-plugin`. Run `sudo apt remove docker-buildx` then `sudo apt install docker-buildx-plugin docker-compose-plugin` |
 | API exits: `JWT_SECRET must be set…` | With `GIN_MODE=release`, the secret must be ≥32 characters. Set it in `.env`, or run via `./scripts/compose-up.sh` so `.env.auto` supplies one |
 | Postgres auth errors after an upgrade | `POSTGRES_PASSWORD` no longer matches the existing `./data/postgres` cluster — restore the original password, or start from a fresh data dir if you accept losing the DB |
 | `Permission denied` on `./scripts/prune-docker.sh` | Run `sh ./scripts/prune-docker.sh`, or `chmod +x scripts/prune-docker.sh` |
