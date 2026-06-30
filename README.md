@@ -67,6 +67,16 @@ That single command clones the repo into `./Submify`, generates strong random se
 
 Once the containers are up, open **http://localhost:2512** and create your first account at `/register`.
 
+**Updating to the latest version:**
+
+```bash
+cd ~/Submify
+git pull
+docker compose up -d --build
+```
+
+See [Operations: logs, backup, updates](#operations-logs-backup-updates) for the full version with build-cache pruning.
+
 Prefer to see exactly what you're running first? Use the manual steps below instead.
 
 ### Manual install
