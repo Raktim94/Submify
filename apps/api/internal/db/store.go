@@ -57,6 +57,10 @@ type Project struct {
 	S3SecretKey      string  `json:"-"`
 	S3Bucket         string  `json:"s3_bucket"`
 	S3Configured     bool    `json:"s3_configured"`
+	PortalSlug         string `json:"portal_slug"`
+	PortalEnabled      bool   `json:"portal_enabled"`
+	PortalPasswordSet  bool   `json:"portal_password_set"`
+	PortalPasswordHash string `json:"-"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -367,7 +371,7 @@ func (s *Store) UpdateUserAPIKey(userID, newAPIKey string) error {
 	return nil
 }
 
-const projectSelect = `id, user_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), created_at`
+const projectSelect = `id, user_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), COALESCE(portal_slug, ''), portal_enabled, COALESCE(portal_password_hash, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {
 	s = strings.TrimSpace(s)
@@ -381,39 +385,42 @@ func parseOriginsJSON(s string) ([]string, error) {
 	return out, nil
 }
 
-func projectFromRow(row *sql.Row) (Project, error) {
-	var p Project
-	var originsRaw string
-	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.CreatedAt)
-	if err != nil {
-		return Project{}, err
-	}
+func hydrateProject(p *Project, originsRaw string) error {
 	origins, err := parseOriginsJSON(originsRaw)
 	if err != nil {
-		return Project{}, err
+		return err
 	}
 	p.AllowedOrigins = origins
 	p.TelegramConfigured = strings.TrimSpace(p.TelegramBotToken) != "" && strings.TrimSpace(p.TelegramChatID) != ""
 	p.S3Configured = strings.TrimSpace(p.S3Endpoint) != "" && strings.TrimSpace(p.S3Bucket) != "" &&
 		strings.TrimSpace(p.S3AccessKey) != "" && strings.TrimSpace(p.S3SecretKey) != ""
+	p.PortalPasswordSet = strings.TrimSpace(p.PortalPasswordHash) != ""
+	return nil
+}
+
+func projectFromRow(row *sql.Row) (Project, error) {
+	var p Project
+	var originsRaw string
+	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.CreatedAt)
+	if err != nil {
+		return Project{}, err
+	}
+	if err := hydrateProject(&p, originsRaw); err != nil {
+		return Project{}, err
+	}
 	return p, nil
 }
 
 func projectFromRows(rows *sql.Rows) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.CreatedAt)
+	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
-	origins, err := parseOriginsJSON(originsRaw)
-	if err != nil {
+	if err := hydrateProject(&p, originsRaw); err != nil {
 		return Project{}, err
 	}
-	p.AllowedOrigins = origins
-	p.TelegramConfigured = strings.TrimSpace(p.TelegramBotToken) != "" && strings.TrimSpace(p.TelegramChatID) != ""
-	p.S3Configured = strings.TrimSpace(p.S3Endpoint) != "" && strings.TrimSpace(p.S3Bucket) != "" &&
-		strings.TrimSpace(p.S3AccessKey) != "" && strings.TrimSpace(p.S3SecretKey) != ""
 	return p, nil
 }
 
@@ -581,6 +588,69 @@ func (s *Store) FindProjectByPublicKey(header string) (Project, error) {
 		return projectFromRow(row2)
 	}
 	return Project{}, sql.ErrNoRows
+}
+
+// FindProjectByPortalSlug resolves the project served at /<slug> (case-insensitive).
+func (s *Store) FindProjectByPortalSlug(slug string) (Project, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return Project{}, sql.ErrNoRows
+	}
+	row := s.DB.QueryRow(`SELECT `+projectSelect+` FROM projects WHERE lower(portal_slug)=lower($1)`, slug)
+	return projectFromRow(row)
+}
+
+// FindProjectByID resolves a project by id without an owner scope. Used by the portal
+// guard, which is already scoped by a project-bound token.
+func (s *Store) FindProjectByID(projectID string) (Project, error) {
+	row := s.DB.QueryRow(`SELECT `+projectSelect+` FROM projects WHERE id=$1`, projectID)
+	return projectFromRow(row)
+}
+
+// PortalSlugTaken reports whether another project already uses the given slug.
+func (s *Store) PortalSlugTaken(slug, exceptProjectID string) (bool, error) {
+	var exists bool
+	err := s.DB.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM projects WHERE lower(portal_slug)=lower($1) AND id <> $2::uuid)`,
+		strings.TrimSpace(slug), exceptProjectID,
+	).Scan(&exists)
+	return exists, err
+}
+
+func (s *Store) UpdateProjectPortalSlug(userID, projectID, slug string) error {
+	res, err := s.DB.Exec(`UPDATE projects SET portal_slug=NULLIF($1,'') WHERE id=$2 AND user_id=$3`, strings.TrimSpace(slug), projectID, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) UpdateProjectPortalPassword(userID, projectID, passwordHash string) error {
+	res, err := s.DB.Exec(`UPDATE projects SET portal_password_hash=NULLIF($1,'') WHERE id=$2 AND user_id=$3`, strings.TrimSpace(passwordHash), projectID, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) SetProjectPortalEnabled(userID, projectID string, enabled bool) error {
+	res, err := s.DB.Exec(`UPDATE projects SET portal_enabled=$1 WHERE id=$2 AND user_id=$3`, enabled, projectID, userID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) CountSubmissions(projectID string) (int, error) {

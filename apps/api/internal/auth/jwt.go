@@ -19,6 +19,9 @@ type Claims struct {
 	Email  string `json:"email"`
 	Type   string `json:"type"`
 	JTI    string `json:"jti"`
+	// ProjectID is set only on "portal" tokens; it scopes a client-portal session to a
+	// single project (read-only view/export), never to the owner's account.
+	ProjectID string `json:"pid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -52,6 +55,30 @@ func (m *TokenManager) GeneratePairWithClaims(userID, email string) (string, *Cl
 		return "", nil, "", nil, err
 	}
 	return access, accessClaims, refresh, refreshClaims, nil
+}
+
+// GeneratePortalToken issues a read-only "portal" access token scoped to one project.
+// It carries no user identity — only the project it may view/export.
+func (m *TokenManager) GeneratePortalToken(projectID string, ttl time.Duration) (string, *Claims, error) {
+	now := time.Now()
+	jti := uuid.NewString()
+	claims := Claims{
+		Type:      "portal",
+		JTI:       jti,
+		ProjectID: projectID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   projectID,
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ID:        jti,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString(m.secret)
+	if err != nil {
+		return "", nil, err
+	}
+	return signed, &claims, nil
 }
 
 func (m *TokenManager) generate(userID, email, tokenType string, ttl time.Duration) (string, *Claims, error) {

@@ -28,6 +28,7 @@ type Server struct {
 	submitLimitIP          *KeyedRateLimiter
 	submitLimitKey         *KeyedRateLimiter
 	authedUserLimiter      *KeyedRateLimiter
+	portalLoginLimiter     *KeyedRateLimiter
 }
 
 func NewServer(cfg config.Config, store *db.Store) *Server {
@@ -35,6 +36,7 @@ func NewServer(cfg config.Config, store *db.Store) *Server {
 	subIPBurst := max(15, cfg.RateLimitSubmitIPRPM/3)
 	subKeyBurst := max(30, cfg.RateLimitSubmitKeyRPM/3)
 	authBurst := max(40, cfg.RateLimitAuthedUserRPM/5)
+	portalLoginRPM := max(10, cfg.RateLimitSensitivePublicRPM/2)
 	return &Server{
 		cfg:                    cfg,
 		store:                  store,
@@ -43,6 +45,7 @@ func NewServer(cfg config.Config, store *db.Store) *Server {
 		submitLimitIP:          NewKeyedRateLimiter(cfg.RateLimitSubmitIPRPM, subIPBurst),
 		submitLimitKey:         NewKeyedRateLimiter(cfg.RateLimitSubmitKeyRPM, subKeyBurst),
 		authedUserLimiter:      NewKeyedRateLimiter(cfg.RateLimitAuthedUserRPM, authBurst),
+		portalLoginLimiter:     NewKeyedRateLimiter(portalLoginRPM, max(5, portalLoginRPM/2)),
 	}
 }
 
@@ -76,6 +79,20 @@ func (s *Server) Router() *gin.Engine {
 		sens.POST("/auth/refresh", s.Refresh)
 		sens.POST("/system/setup", s.SetupSystem)
 		sens.POST("/auth/logout", s.Logout)
+		// Public client-portal auth (rate-limited like other login endpoints).
+		sens.GET("/portal/lookup", s.PortalLookup)
+		sens.POST("/portal/login", s.PortalLogin)
+		sens.POST("/portal/logout", s.PortalLogout)
+	}
+
+	// Read-only client portal, scoped to a single project by a portal token.
+	portal := api.Group("/portal")
+	portal.Use(s.PortalGuard())
+	portal.Use(KeyedRateLimitMiddleware(s.authedUserLimiter, portalProjectKey, "rate limit exceeded; try again shortly"))
+	{
+		portal.GET("/info", s.PortalInfo)
+		portal.GET("/submissions", s.PortalSubmissions)
+		portal.GET("/export", s.PortalExport)
 	}
 
 	secured := api.Group("")

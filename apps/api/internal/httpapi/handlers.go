@@ -42,6 +42,10 @@ type updateProjectRequest struct {
 	S3AccessKey      *string   `json:"s3_access_key"`
 	S3SecretKey      *string   `json:"s3_secret_key"`
 	S3Bucket         *string   `json:"s3_bucket"`
+	PortalSlug               *string `json:"portal_slug"`
+	PortalEnabled            *bool   `json:"portal_enabled"`
+	PortalPassword           *string `json:"portal_password"`
+	RegeneratePortalPassword bool    `json:"regenerate_portal_password"`
 }
 
 type presignRequest struct {
@@ -444,12 +448,23 @@ func (s *Server) CreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	project, err := s.store.CreateProject(userIDFromContext(c), req.Name, false)
+	userID := userIDFromContext(c)
+	project, err := s.store.CreateProject(userID, req.Name, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, project)
+	// Auto-provision a client portal (URL slug + one-time password) for the new project.
+	// Non-fatal: if it fails, the project still exists and the owner can set up the portal later.
+	slug, password, perr := s.assignDefaultPortal(userID, project)
+	if perr != nil {
+		log.Printf("portal provisioning failed for project %s: %v", project.ID, perr)
+		c.JSON(http.StatusCreated, projectWithSecret{Project: project})
+		return
+	}
+	project.PortalSlug = slug
+	project.PortalPasswordSet = true
+	c.JSON(http.StatusCreated, projectWithSecret{Project: project, PortalPassword: password})
 }
 
 func (s *Server) ListProjects(c *gin.Context) {
@@ -554,6 +569,79 @@ func (s *Server) UpdateProject(c *gin.Context) {
 			return
 		}
 	}
+	var newPortalPassword string
+	if req.PortalSlug != nil {
+		slug, verr := normalizePortalSlug(*req.PortalSlug)
+		if verr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": verr.Error()})
+			return
+		}
+		taken, terr := s.store.PortalSlugTaken(slug, id)
+		if terr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": terr.Error()})
+			return
+		}
+		if taken {
+			c.JSON(http.StatusConflict, gin.H{"error": "that portal slug is already in use"})
+			return
+		}
+		if err := s.store.UpdateProjectPortalSlug(userID, id, slug); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if req.PortalEnabled != nil {
+		if err := s.store.SetProjectPortalEnabled(userID, id, *req.PortalEnabled); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	// Password: regenerate a random one, set an explicit one, or clear it (empty string).
+	if req.RegeneratePortalPassword || (req.PortalPassword != nil && strings.TrimSpace(*req.PortalPassword) != "") {
+		pw := ""
+		if req.RegeneratePortalPassword {
+			gen, gerr := keys.NewPortalPassword()
+			if gerr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": gerr.Error()})
+				return
+			}
+			pw = gen
+		} else {
+			pw = strings.TrimSpace(*req.PortalPassword)
+		}
+		hash, herr := auth.HashPassword(pw)
+		if herr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": herr.Error()})
+			return
+		}
+		if err := s.store.UpdateProjectPortalPassword(userID, id, hash); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		newPortalPassword = pw
+	} else if req.PortalPassword != nil && strings.TrimSpace(*req.PortalPassword) == "" {
+		if err := s.store.UpdateProjectPortalPassword(userID, id, ""); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	p, err := s.store.ProjectOwnedBy(userID, id)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -563,7 +651,11 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "updated", "project": p})
+	resp := gin.H{"status": "updated", "project": p}
+	if newPortalPassword != "" {
+		resp["portal_password"] = newPortalPassword
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (s *Server) DeleteProject(c *gin.Context) {

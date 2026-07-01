@@ -48,6 +48,7 @@ Everything — Postgres, the API, the dashboard, and Nginx in front of both — 
 - Admin dashboard with JWT (access + refresh token) login
 - Projects CRUD, submission inbox, bulk delete
 - Export submissions as **XLSX** or **PDF**
+- **Client portal** — share a per-project, password-protected `/(slug)` URL so a client can view and export *their* submissions only (no dashboard account)
 - Optional **Telegram** notification on new submission
 - Optional **presigned PUT** uploads to any S3-compatible storage
 
@@ -120,13 +121,14 @@ docker compose logs -f api # follow API logs
 12. [Integrating with an AI coding assistant](#integrating-with-an-ai-coding-assistant)
 13. [External S3 uploads (optional)](#external-s3-uploads-optional)
 14. [Dashboard workflow](#dashboard-workflow)
-15. [Limits and security defaults](#limits-and-security-defaults)
-16. [Security and vulnerability scanning](#security-and-vulnerability-scanning)
-17. [Using GitHub Actions secrets](#using-github-actions-secrets)
-18. [Operations: logs, backup, updates](#operations-logs-backup-updates)
-19. [Troubleshooting](#troubleshooting)
-20. [License](#license)
-21. [Developer & ownership](#developer--ownership)
+15. [Client portal (share view-only access)](#client-portal-share-view-only-access)
+16. [Limits and security defaults](#limits-and-security-defaults)
+17. [Security and vulnerability scanning](#security-and-vulnerability-scanning)
+18. [Using GitHub Actions secrets](#using-github-actions-secrets)
+19. [Operations: logs, backup, updates](#operations-logs-backup-updates)
+20. [Troubleshooting](#troubleshooting)
+21. [License](#license)
+22. [Developer & ownership](#developer--ownership)
 
 ---
 
@@ -499,6 +501,34 @@ await fetch('/api/submit', {
 3. Point website forms at `POST /api/submit` with `x-api-key: <project_public_key>`.
 4. Review submissions in the **Default** inbox (or additional projects for separation).
 5. Export **XLSX** or **PDF**; use **bulk delete** to stay under the per-project cap.
+
+---
+
+## Client portal (share view-only access)
+
+Sometimes the person who needs to *see* submissions isn't you — it's the client whose site the
+form lives on. The **client portal** gives each project a public, password-protected URL where
+that client can **view and export submissions — and nothing else**. They never get a dashboard
+account, API keys, delete rights, or visibility into your other projects.
+
+- **Every project has its own URL:** `https://your-host:2512/<slug>` (e.g. `/acme-contact`). The
+  slug is generated from the project name and can be renamed from **Projects**.
+- **Auto-generated password.** Creating a project mints a strong random portal password, shown
+  **once** so you can copy and share it. Only its Argon2id hash is stored — regenerate a fresh one
+  any time, or set your own from the dashboard.
+- **You control access.** Enable/disable the portal per project, rotate or clear the password, and
+  change the slug — all from the project card in **Projects**.
+- **You skip the password.** Opening your own project's portal while signed in to the dashboard lets
+  you straight through (no password prompt).
+
+**How it's kept safe:** portal sessions are project-scoped, stored in an **HttpOnly** cookie (never
+exposed to JavaScript), and can only reach the read-only `/(slug)` view and export endpoints. Login
+is rate-limited **per project** (on top of the per-IP limit) to blunt brute-force guessing, and every
+portal response is sent `Cache-Control: no-store`. Slugs are validated against a reserved-word list
+so a portal can never shadow a dashboard route.
+
+> Share the **URL + password** with your client. To revoke access, disable the portal or regenerate
+> the password from the project card.
 
 ---
 

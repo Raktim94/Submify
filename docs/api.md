@@ -231,3 +231,61 @@ Rotates the account's primary `api_key`. Old key stops working immediately.
 Rotates the public/secret key pair for **every** project owned by the account.
 
 **Response:** `200` `{ "status": "rotated", "projects_rotated": <number> }`
+
+## Client portal (per-project, read-only)
+
+Each project can expose a public, read-only portal at `https://<host>/<portal_slug>` so a
+client can **view and export** that project's submissions — and nothing else. A project's
+portal is created with an auto-generated password (shown once on project creation). The
+account owner can change the slug, (re)generate the password, and enable/disable the portal
+from **Projects** in the dashboard, then share the URL + password with the client.
+
+Portal sessions use a project-scoped `portal` token stored in an HttpOnly cookie
+(`submify_portal_token`, path `/api/v1/portal`). They carry no account identity and can only
+reach the endpoints below. A signed-in account owner opening their own project's portal is
+let in without the portal password.
+
+### `GET /portal/lookup?slug=<slug>`
+
+Public. Reports whether an accessible portal exists at `<slug>`.
+
+**Response:** `200` `{ "exists": true, "project_name": "...", "owner_access": <bool>, "password_required": <bool> }`
+or `404` when there is no accessible portal.
+
+### `POST /portal/login`
+
+Public (rate-limited). Body: `{ "slug": "...", "password": "..." }`. Grants a portal session
+via the correct portal password, or via the owner's dashboard session (password ignored).
+
+**Response:** `200` `{ "ok": true, "project_name": "...", "portal_slug": "...", "token": "..." }`
+(also sets the HttpOnly portal cookie). **Errors:** `401` incorrect password, `403` portal not
+available, `404` unknown slug.
+
+### `POST /portal/logout`
+
+Clears the portal cookie.
+
+### `GET /portal/info`
+
+Portal session required. **Response:** `200` `{ "project_name": "...", "submission_count": <n> }`
+
+### `GET /portal/submissions?limit=&offset=`
+
+Portal session required. Same shape as `GET /projects/{id}/submissions`, scoped to the
+session's project.
+
+### `GET /portal/export?format=xlsx|pdf`
+
+Portal session required. File download of the project's submissions (first 5,000 rows).
+
+### Project portal fields (owner endpoints)
+
+`POST /projects` now also returns the new project's `portal_slug`, `portal_enabled`,
+`portal_password_set`, and a one-time `portal_password`.
+
+`PATCH /projects/{id}` additionally accepts:
+
+- `portal_slug` — set a custom URL slug (lowercase letters, numbers, hyphens; not a reserved word).
+- `portal_enabled` — enable/disable the portal.
+- `regenerate_portal_password` (`true`) — generate a new random password; returned once as `portal_password`.
+- `portal_password` — set an explicit password (min 8 chars; returned once as `portal_password`), or `""` to clear it.

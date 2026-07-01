@@ -23,6 +23,9 @@ type Project = {
   s3_endpoint: string;
   s3_bucket: string;
   s3_configured: boolean;
+  portal_slug: string;
+  portal_enabled: boolean;
+  portal_password_set: boolean;
   created_at: string;
 };
 
@@ -37,23 +40,201 @@ function MaskedKeyValue({ label }: { label: string }) {
   );
 }
 
+function PortalPanel({
+  project: p,
+  revealedPassword,
+  onSaveSlug,
+  onToggleEnabled,
+  onGeneratePassword,
+  onSetPassword,
+  onDismissPassword
+}: {
+  project: Project;
+  revealedPassword?: string;
+  onSaveSlug: (slug: string) => Promise<void>;
+  onToggleEnabled: (enabled: boolean) => Promise<void>;
+  onGeneratePassword: () => Promise<void>;
+  onSetPassword: (pw: string) => Promise<void>;
+  onDismissPassword: () => void;
+}) {
+  const [slugDraft, setSlugDraft] = useState(() => p.portal_slug ?? '');
+  const [pwDraft, setPwDraft] = useState('');
+  const [copied, setCopied] = useState<'url' | 'password' | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setSlugDraft(p.portal_slug ?? '');
+    setPwDraft('');
+  }, [p.id, p.portal_slug]);
+
+  const portalUrl =
+    p.portal_slug && typeof window !== 'undefined' ? `${window.location.origin}/${p.portal_slug}` : '';
+
+  async function copy(which: 'url' | 'password', value: string) {
+    if (!value) return;
+    await navigator.clipboard.writeText(value);
+    setCopied(which);
+    window.setTimeout(() => setCopied(null), 1200);
+  }
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await action();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const active = p.portal_enabled && p.portal_password_set;
+
+  return (
+    <div className="rounded-xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/60 to-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-indigo-800">Client portal (view &amp; export only)</p>
+        <span
+          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+            active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+          }`}
+        >
+          {active ? 'Live' : p.portal_enabled ? 'Needs password' : 'Disabled'}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        Share this link and password with your client. They can only view and export this project&apos;s submissions — nothing else.
+      </p>
+
+      {portalUrl ? (
+        <div className="mt-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Portal URL</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 break-all rounded-lg border border-indigo-100 bg-white px-3 py-2 font-mono text-xs text-slate-900">
+              {portalUrl}
+            </code>
+            <Button size="sm" variant="outline" onClick={() => void copy('url', portalUrl)}>
+              {copied === 'url' ? 'Copied' : 'Copy'}
+            </Button>
+            <a
+              href={portalUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 shadow-sm hover:border-indigo-200 hover:bg-indigo-50/50"
+            >
+              Open
+            </a>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Custom URL slug</p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <Input
+            className="min-w-0 flex-1 font-mono text-xs"
+            value={slugDraft}
+            onChange={(e) => setSlugDraft(e.target.value)}
+            placeholder="e.g. acme-contact"
+            aria-label="Portal slug"
+            spellCheck={false}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || slugDraft.trim() === (p.portal_slug ?? '')}
+            onClick={() => void run(() => onSaveSlug(slugDraft.trim()))}
+          >
+            Save slug
+          </Button>
+        </div>
+      </div>
+
+      {revealedPassword ? (
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/90 p-3">
+          <p className="text-xs font-semibold text-amber-900">New portal password (shown once — copy it now):</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 break-all rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-sm text-slate-900">
+              {revealedPassword}
+            </code>
+            <Button size="sm" variant="outline" onClick={() => void copy('password', revealedPassword)}>
+              {copied === 'password' ? 'Copied' : 'Copy'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onDismissPassword}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Set a custom password (optional)</p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <Input
+            className="min-w-0 flex-1 text-xs"
+            type="password"
+            value={pwDraft}
+            onChange={(e) => setPwDraft(e.target.value)}
+            placeholder="At least 8 characters"
+            aria-label="Custom portal password"
+            autoComplete="new-password"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || pwDraft.trim().length < 8}
+            onClick={() => void run(async () => { await onSetPassword(pwDraft.trim()); setPwDraft(''); })}
+          >
+            Save password
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(onGeneratePassword)}>
+          {p.portal_password_set ? 'Generate new password' : 'Generate password'}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          className={p.portal_enabled ? 'text-rose-900 hover:bg-rose-50' : 'text-emerald-900 hover:bg-emerald-50'}
+          onClick={() => void run(() => onToggleEnabled(!p.portal_enabled))}
+        >
+          {p.portal_enabled ? 'Disable portal' : 'Enable portal'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ProjectCard({
   project: p,
+  revealedPassword,
   onRegenerate,
   onSaveOrigins,
   onSaveTelegram,
   onClearTelegram,
   onSaveS3,
   onClearS3,
+  onSavePortalSlug,
+  onTogglePortal,
+  onGeneratePortalPassword,
+  onSetPortalPassword,
+  onDismissPortalPassword,
   onDelete
 }: {
   project: Project;
+  revealedPassword?: string;
   onRegenerate: () => void;
   onSaveOrigins: (raw: string) => Promise<void>;
   onSaveTelegram: (chatID: string, token: string) => Promise<void>;
   onClearTelegram: () => Promise<void>;
   onSaveS3: (endpoint: string, bucket: string, accessKey: string, secretKey: string) => Promise<void>;
   onClearS3: () => Promise<void>;
+  onSavePortalSlug: (slug: string) => Promise<void>;
+  onTogglePortal: (enabled: boolean) => Promise<void>;
+  onGeneratePortalPassword: () => Promise<void>;
+  onSetPortalPassword: (pw: string) => Promise<void>;
+  onDismissPortalPassword: () => void;
   onDelete: () => void;
 }) {
   const [originsDraft, setOriginsDraft] = useState(() => JSON.stringify(p.allowed_origins ?? [], null, 2));
@@ -211,6 +392,15 @@ function ProjectCard({
                 </Button>
               </div>
             </div>
+            <PortalPanel
+              project={p}
+              revealedPassword={revealedPassword}
+              onSaveSlug={onSavePortalSlug}
+              onToggleEnabled={onTogglePortal}
+              onGeneratePassword={onGeneratePortalPassword}
+              onSetPassword={onSetPortalPassword}
+              onDismissPassword={onDismissPortalPassword}
+            />
           </div>
           <div className="flex flex-col gap-2 sm:shrink-0">
             <Button variant="outline" size="sm" onClick={() => void copyKey('public')}>
@@ -257,10 +447,65 @@ export default function ProjectsPage() {
   const [createError, setCreateError] = useState('');
   const [regenerateTarget, setRegenerateTarget] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  // One-time plaintext portal passwords, keyed by project id (only its hash is stored server-side).
+  const [portalPasswords, setPortalPasswords] = useState<Record<string, string>>({});
 
   async function load() {
     const data = await api<{ projects: Project[] }>('/projects');
     setProjects(data.projects);
+  }
+
+  async function savePortalSlug(id: string, slug: string) {
+    try {
+      await api(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ portal_slug: slug }) });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save portal slug');
+    }
+  }
+
+  async function togglePortal(id: string, enabled: boolean) {
+    try {
+      await api(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ portal_enabled: enabled }) });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not update portal');
+    }
+  }
+
+  async function generatePortalPassword(id: string) {
+    try {
+      const res = await api<{ portal_password?: string }>(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ regenerate_portal_password: true })
+      });
+      if (res.portal_password) setPortalPasswords((prev) => ({ ...prev, [id]: res.portal_password as string }));
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not generate password');
+    }
+  }
+
+  async function setPortalPassword(id: string, pw: string) {
+    try {
+      const res = await api<{ portal_password?: string }>(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ portal_password: pw })
+      });
+      // Confirm the value we set so the owner can copy/share it from the same place.
+      setPortalPasswords((prev) => ({ ...prev, [id]: res.portal_password ?? pw }));
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not set password');
+    }
+  }
+
+  function dismissPortalPassword(id: string) {
+    setPortalPasswords((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -278,8 +523,14 @@ export default function ProjectsPage() {
     setCreateError('');
     setCreating(true);
     try {
-      await api<Project>('/projects', { method: 'POST', body: JSON.stringify({ name: trimmed }) });
+      const created = await api<Project & { portal_password?: string }>('/projects', {
+        method: 'POST',
+        body: JSON.stringify({ name: trimmed })
+      });
       setName('');
+      if (created.portal_password) {
+        setPortalPasswords((prev) => ({ ...prev, [created.id]: created.portal_password as string }));
+      }
       await load();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Could not create project');
@@ -509,12 +760,18 @@ export default function ProjectsPage() {
                 <ProjectCard
                   key={p.id}
                   project={p}
+                  revealedPassword={portalPasswords[p.id]}
                   onRegenerate={() => setRegenerateTarget(p.id)}
                   onSaveOrigins={(raw) => saveOrigins(p.id, raw)}
                   onSaveTelegram={(chatID, token) => saveProjectTelegram(p.id, chatID, token)}
                   onClearTelegram={() => clearProjectTelegram(p.id)}
                   onSaveS3={(endpoint, bucket, access, secret) => saveProjectS3(p.id, endpoint, bucket, access, secret)}
                   onClearS3={() => clearProjectS3(p.id)}
+                  onSavePortalSlug={(slug) => savePortalSlug(p.id, slug)}
+                  onTogglePortal={(enabled) => togglePortal(p.id, enabled)}
+                  onGeneratePortalPassword={() => generatePortalPassword(p.id)}
+                  onSetPortalPassword={(pw) => setPortalPassword(p.id, pw)}
+                  onDismissPortalPassword={() => dismissPortalPassword(p.id)}
                   onDelete={() => {
                     if (p.is_default) {
                       alert('You cannot delete the default project.');

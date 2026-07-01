@@ -22,3 +22,23 @@ func NewAPISecret() (string, error) {
 	}
 	return "sk_live_" + hex.EncodeToString(b), nil
 }
+
+// portalPasswordAlphabet excludes visually ambiguous characters (0/o, 1/l/i) so the
+// generated portal password is easy to read aloud and share. Its length (32) divides
+// 256 evenly, so the modulo mapping below is unbiased.
+const portalPasswordAlphabet = "abcdefghijkmnpqrstuvwxyz23456789"
+
+// NewPortalPassword returns a human-shareable random password for a project's client
+// portal. It is shown to the owner exactly once (only its hash is stored).
+func NewPortalPassword() (string, error) {
+	const length = 16
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	out := make([]byte, length)
+	for i, v := range b {
+		out[i] = portalPasswordAlphabet[int(v)%len(portalPasswordAlphabet)]
+	}
+	return string(out), nil
+}

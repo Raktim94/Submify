@@ -30,6 +30,8 @@ type Config struct {
 	PresignExpiryMinutes         int
 	RefreshTokenTTLHours         int
 	AccessTokenTTLMinutes        int
+	// PortalTokenTTLHours is how long a client-portal (read-only) session stays valid.
+	PortalTokenTTLHours          int
 	RateLimitSensitivePublicRPM  int
 	RateLimitSubmitIPRPM         int
 	RateLimitSubmitKeyRPM        int
@@ -62,6 +64,7 @@ func Load() Config {
 		PresignExpiryMinutes:        getEnvInt("PRESIGN_EXPIRY_MINUTES", 10),
 		RefreshTokenTTLHours:        getEnvInt("REFRESH_TOKEN_TTL_HOURS", 24),
 		AccessTokenTTLMinutes:       getEnvInt("ACCESS_TOKEN_TTL_MINUTES", 30),
+		PortalTokenTTLHours:         getEnvInt("PORTAL_TOKEN_TTL_HOURS", 12),
 		RateLimitSensitivePublicRPM: getEnvInt("RATE_LIMIT_SENSITIVE_PUBLIC_RPM", 25),
 		RateLimitSubmitIPRPM:        getEnvInt("RATE_LIMIT_SUBMIT_IP_RPM", 90),
 		RateLimitSubmitKeyRPM:       getEnvInt("RATE_LIMIT_SUBMIT_KEY_RPM", 180),
