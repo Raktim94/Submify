@@ -631,10 +631,10 @@ Never commit the generated `.env` — it's already excluded via `.gitignore`. Fo
 **Update (pull latest, rebuild, prune):**
 
 ```bash
-cd Submify && git checkout -- scripts/prune-docker.sh && git pull && docker compose up --build -d && sh ./scripts/prune-docker.sh
+cd Submify && git fetch origin && git reset --hard origin/main && docker compose up --build -d && sh ./scripts/prune-docker.sh
 ```
 
-If you installed with `./scripts/compose-up.sh`, substitute it for the bare `docker compose up --build -d` call so env files stay aligned. `git pull` updates code only — it never touches `./data/`, `.env`, or `.env.auto`.
+If you installed with `./scripts/compose-up.sh`, substitute it for the bare `docker compose up --build -d` call so env files stay aligned. This updates code only — it never touches `./data/`, `.env`, or `.env.auto` (all gitignored). `git reset --hard` is used instead of `git pull` because history on `main` is occasionally rewritten upstream; a plain `git pull` fails with `fatal: Need to specify how to reconcile divergent branches` whenever that happens. Since a deployed instance has no local commits of its own to preserve, resetting to match `origin/main` exactly is the safe, always-works update path.
 
 **Backups:** `./data/postgres` is the only thing you need to back up; it lives next to `docker-compose.yml`, not inside the API image.
 
@@ -650,6 +650,7 @@ If you installed with `./scripts/compose-up.sh`, substitute it for the bare `doc
 | `trying to overwrite /usr/libexec/docker/cli-plugins/docker-buildx` | Package conflict between Debian's `docker-buildx` and Docker's official `docker-buildx-plugin`. Run `sudo apt remove docker-buildx` then `sudo apt install docker-buildx-plugin docker-compose-plugin` |
 | API exits: `JWT_SECRET must be set…` | With `GIN_MODE=release`, the secret must be ≥32 characters. Set it in `.env`, or run via `./scripts/compose-up.sh` so `.env.auto` supplies one |
 | Postgres auth errors after an upgrade | `POSTGRES_PASSWORD` no longer matches the existing `./data/postgres` cluster — restore the original password, or start from a fresh data dir if you accept losing the DB |
+| `git pull` fails: `fatal: Need to specify how to reconcile divergent branches` (or `origin/main` shows `forced update`) | History on `main` was rewritten upstream. Use the update command above (`git fetch origin && git reset --hard origin/main`) instead of `git pull` — safe here since `.env`, `.env.auto`, and `./data/` are all gitignored and untouched by it |
 | `Permission denied` on `./scripts/prune-docker.sh` | Run `sh ./scripts/prune-docker.sh`, or `chmod +x scripts/prune-docker.sh` |
 | `docker compose logs -f` looks "stuck" | `-f` follows the stream until Ctrl+C — that's expected, not frozen. Omit `-f` for a one-shot dump |
 | `docker compose build` fails | Re-run with `--progress=plain` and read the error block. On a small VPS, try `--parallel 1` or add swap if the build OOMs |

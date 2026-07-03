@@ -37,6 +37,12 @@ export function SiteHeader({
 
         <nav className="ml-auto flex w-full min-w-0 flex-wrap items-center justify-end gap-1 sm:w-auto sm:gap-2" aria-label="Primary">
           <Link
+            href="/blog"
+            className="rounded-lg px-2.5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 sm:px-3"
+          >
+            Blog
+          </Link>
+          <Link
             href="/docs"
             className="rounded-lg px-2.5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 sm:px-3"
           >

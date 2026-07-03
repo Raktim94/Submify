@@ -50,6 +50,17 @@ function IconFile({ className }: { className?: string }) {
   );
 }
 
+function IconPortal({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18" strokeLinecap="round" />
+      <circle cx="8.5" cy="6.5" r="0.75" fill="currentColor" stroke="none" />
+      <path d="M8 15l2.5 2.5L16 12" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const reveal =
   'opacity-0 motion-reduce:opacity-100 motion-reduce:translate-y-0 animate-fade-in-up motion-reduce:animate-none';
 
@@ -77,11 +88,14 @@ const faqItems = [
   {
     q: 'Does Submify support alerts and file uploads?',
     a: 'Yes. You can configure Telegram alerts and optional S3-compatible storage for upload workflows.'
+  },
+  {
+    q: 'Can I share submissions with a client without giving them a dashboard login?',
+    a: 'Yes. Each project can enable a client portal at your-host/project-slug, protected by its own password. Clients can view and export that project’s submissions only — no API keys, no delete rights, and no access to your other projects.'
   }
 ];
 
 export default function HomePage() {
-  const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
   const [activeFlow, setActiveFlow] = useState(0);
@@ -100,7 +114,6 @@ export default function HomePage() {
           if (!cancelled) setSetupRequired(false);
         }
       }
-      if (!cancelled) setReady(true);
     })();
     return () => {
       cancelled = true;
@@ -108,19 +121,9 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (!ready) return;
     const id = window.setInterval(() => setActiveFlow((n) => (n + 1) % 3), 4200);
     return () => clearInterval(id);
-  }, [ready]);
-
-  if (!ready) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/40 to-cyan-50/50">
-        <div className="h-10 w-10 animate-pulse rounded-full bg-indigo-200/80" aria-hidden />
-        <span className="sr-only">Loading</span>
-      </div>
-    );
-  }
+  }, []);
 
   return (
     <div className="min-h-screen text-slate-800">
@@ -223,7 +226,7 @@ export default function HomePage() {
             From first signup to exports — optional integrations when you are ready.
           </p>
 
-          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {[
               {
                 icon: IconUser,
@@ -238,6 +241,13 @@ export default function HomePage() {
                 desc: 'Embed forms with your key. Each project holds up to 5,000 submissions.',
                 accent: 'from-indigo-500 to-blue-600',
                 delay: '80ms'
+              },
+              {
+                icon: IconPortal,
+                title: 'Client portal',
+                desc: 'Give clients a password-protected /project-slug page to view and export their own submissions — no dashboard account needed.',
+                accent: 'from-fuchsia-500 to-pink-600',
+                delay: '120ms'
               },
               {
                 icon: IconSend,
@@ -427,6 +437,10 @@ export default function HomePage() {
           <p>
             <Link href="/docs" className="font-medium text-brand-700 underline decoration-indigo-300 underline-offset-2 hover:text-brand-900">
               Full documentation
+            </Link>{' '}
+            ·{' '}
+            <Link href="/blog" className="font-medium text-brand-700 underline decoration-indigo-300 underline-offset-2 hover:text-brand-900">
+              Blog
             </Link>
           </p>
         </footer>

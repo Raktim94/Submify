@@ -4,6 +4,10 @@ const routes = [
   '/',
   '/docs',
   '/docs/contact-proxy',
+  '/blog',
+  '/blog/introducing-submify',
+  '/blog/self-hosted-forms-vs-formspree',
+  '/blog/client-portal-launch',
   '/login',
   '/register'
 ];
