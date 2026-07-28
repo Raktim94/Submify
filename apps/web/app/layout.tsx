@@ -41,10 +41,35 @@ export const metadata: Metadata = {
   }
 };
 
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Submify',
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'Any (self-hosted via Docker) or Web',
+  description:
+    'Submify is a self-hosted, open-source HTML form backend for static websites. Collect form submissions, manage projects, export data, and add optional Telegram and S3 integrations.',
+  url: 'https://submify.vercel.app',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD'
+  },
+  publisher: {
+    '@type': 'Organization',
+    name: 'Nodedr Infotech Private Limited',
+    url: 'https://www.nodedr.com'
+  }
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${jakarta.variable} ${outfit.variable}`}>
       <body className={`${jakarta.className} antialiased`}>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
         <div className="min-h-screen">{children}</div>
       </body>
     </html>
