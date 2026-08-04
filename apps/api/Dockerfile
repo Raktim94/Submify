@@ -1,9 +1,8 @@
 # syntax=docker/dockerfile:1
-# TARGETPLATFORM / TARGETARCH are set by BuildKit (buildx); defaults suit native linux/amd64 builds.
-ARG TARGETPLATFORM=linux/amd64
+# TARGETARCH is set by BuildKit (buildx); default suits native linux/amd64 builds.
 ARG TARGETARCH=amd64
 
-FROM --platform=${TARGETPLATFORM} golang:1.26-alpine AS builder
+FROM golang:1.26-alpine AS builder
 # Default when classic docker build omits BuildKit platform args (empty GOARCH breaks compile).
 ARG TARGETARCH=amd64
 WORKDIR /src
@@ -16,10 +15,9 @@ RUN mkdir -p /out \
   && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -mod=mod -o /out/submify-api ./cmd/server
 
 # Docker CLI (optional in-container "update & restart" against mounted docker.sock).
-# --platform matches the final image so cross-builds do not embed the builder's arch.
-FROM --platform=${TARGETPLATFORM} docker:cli AS dockercli
+FROM docker:cli AS dockercli
 
-FROM --platform=${TARGETPLATFORM} alpine:3.20
+FROM alpine:3.20
 ARG TARGETARCH
 RUN apk add --no-cache ca-certificates curl git \
   && mkdir -p /usr/local/lib/docker/cli-plugins \
