@@ -7,7 +7,7 @@
 **Self-hosted Form Backend as a Service (FBaaS).**
 One Docker stack, one API key, every form on every site you own.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](apps/api/go.mod)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white)](apps/web/package.json)
 [![Docker](https://img.shields.io/badge/deploy-docker%20compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
@@ -21,7 +21,7 @@ One Docker stack, one API key, every form on every site you own.
 
 Submify gives you a private Formspree/Form-to-email replacement you run yourself: a Go (Gin) API, a Next.js dashboard, PostgreSQL for storage, optional external S3-compatible storage for file uploads, and Nginx as a single entrypoint. Point any website's contact form at it, log in to read submissions, export to XLSX/PDF, and optionally get a Telegram ping when something new comes in.
 
-Submify is built and maintained by **[Nodedr Infotech Private Limited](https://www.nodedr.com)**, and released under the MIT license — free to self-host, modify, and use commercially.
+Submify is built and maintained by **[Nodedr Infotech Private Limited](https://www.nodedr.com)**, and released under the AGPL-3.0 license — free to self-host, modify, and use commercially. If you run a modified version as a network service for others, you must share that modified source under the same license.
 
 **Repository:** [github.com/Raktim94/Submify](https://github.com/Raktim94/Submify)
 
@@ -666,7 +666,7 @@ If you installed with `./scripts/compose-up.sh`, substitute it for the bare `doc
 
 ## License
 
-Submify is open source under the **MIT License** — see [LICENSE](LICENSE). Use it, modify it, self-host it, and build commercial products on it freely. Third-party dependency licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
+Submify is open source under the **GNU Affero General Public License v3.0 (AGPL-3.0)** — see [LICENSE](LICENSE). Use it, modify it, self-host it, and build commercial products on it freely — if you run a modified version as a network service for others, you must make that modified source available to those users under the same license. Third-party dependency licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ---
 
