@@ -613,3 +613,49 @@ should read first.
   address, delivering form submissions via email) — Submify has zero
   email-sending capability today (Discovery: "Email notifications aren't
   built in"). Next up.
+
+- **2026-08-19 (continued yet further, email notifications — final item
+  requested this session)**: Landed per-project email notifications (ADR
+  0007): `email_notifications_enabled`/`smtp_host`/`smtp_port`/
+  `smtp_username`/`smtp_password`/`smtp_from_email`/
+  `notification_recipients` on `projects` (migration
+  `0013_project_email_notifications.sql`), new `internal/mailer` package
+  (stdlib `net/smtp` + `crypto/tls`, no new dependency, handles both
+  STARTTLS-on-587-style and implicit-TLS-on-465-style automatically by
+  port), wired into the submit flow alongside Telegram/Zulivio, and a
+  matching settings panel on the Projects page. **Verified against a
+  real SMTP server** — spun up a throwaway MailHog container (a
+  standard, widely-used fake-SMTP dev tool, not a live external
+  provider), configured a fresh Submify project to point at it,
+  submitted a real form, and confirmed via MailHog's own API that a
+  correctly-formed email actually arrived: right `From`, both
+  `notification_recipients` in `To`, subject naming the project, and a
+  formatted plain-text body with every submission field. This proves the
+  SMTP client code is genuinely correct (protocol handshake, auth,
+  envelope, body) — not just that a request was attempted. The
+  implicit-TLS (port 465) code path was written to the same standard
+  pattern but not separately live-tested (no local test server for that
+  variant was readily available) — noted honestly in ADR 0007 rather
+  than silently assumed equivalent.
+
+  This closes out every feature explicitly requested in this extended
+  session: calendar/booking (finished end-to-end), the simplified
+  Zulivio integration (verified live, cross-product), and email
+  notifications (verified live, real SMTP delivery). `go build`/`vet`/
+  `test ./...` and `tsc`/`next build` all green throughout; all test
+  containers and temp files cleaned up after each verification.
+
+  **What's genuinely still open** for the overall 93-section program
+  (unchanged by this session's work, restated for anyone picking this up
+  fresh): the full original Phase 6 scope (event bus, dedupe, service
+  accounts) if ever wanted beyond the simplified Zulivio push; Phase 3's
+  remaining items (scoped API keys, S3 exercised against a real bucket);
+  automatic/scheduled backups and S3 as a backup destination; audit
+  logs; MFA; the full security audit (Phase 9); the full test suite
+  beyond what individual features got (Phase 10); all documentation
+  deliverables (README rewrite, user manual with screenshots,
+  ARCHITECTURE.md, SECURITY_AUDIT.md); the marketing site refresh; MCP
+  server on Submify; CasaOS packaging; and release prep. This program is
+  far from 100% of the original brief — it is, however, now several
+  real, independently-verified, end-to-end-working features deep, with
+  nothing faked or left as scaffolding.

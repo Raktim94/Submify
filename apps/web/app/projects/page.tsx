@@ -26,6 +26,13 @@ type Project = {
   zulivio_enabled: boolean;
   zulivio_api_url: string;
   zulivio_configured: boolean;
+  email_notifications_enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string;
+  smtp_from_email: string;
+  notification_recipients?: string[];
+  email_configured: boolean;
   portal_slug: string;
   portal_enabled: boolean;
   portal_password_set: boolean;
@@ -220,6 +227,8 @@ function ProjectCard({
   onClearS3,
   onSaveZulivio,
   onClearZulivio,
+  onSaveEmail,
+  onClearEmail,
   onSavePortalSlug,
   onTogglePortal,
   onGeneratePortalPassword,
@@ -237,6 +246,16 @@ function ProjectCard({
   onClearS3: () => Promise<void>;
   onSaveZulivio: (enabled: boolean, apiUrl: string, apiKey: string) => Promise<void>;
   onClearZulivio: () => Promise<void>;
+  onSaveEmail: (
+    enabled: boolean,
+    host: string,
+    port: number,
+    username: string,
+    password: string,
+    fromEmail: string,
+    recipients: string[]
+  ) => Promise<void>;
+  onClearEmail: () => Promise<void>;
   onSavePortalSlug: (slug: string) => Promise<void>;
   onTogglePortal: (enabled: boolean) => Promise<void>;
   onGeneratePortalPassword: () => Promise<void>;
@@ -254,6 +273,13 @@ function ProjectCard({
   const [zulivioEnabledDraft, setZulivioEnabledDraft] = useState(() => p.zulivio_enabled);
   const [zulivioUrlDraft, setZulivioUrlDraft] = useState(() => p.zulivio_api_url ?? '');
   const [zulivioKeyDraft, setZulivioKeyDraft] = useState('');
+  const [emailEnabledDraft, setEmailEnabledDraft] = useState(() => p.email_notifications_enabled);
+  const [smtpHostDraft, setSmtpHostDraft] = useState(() => p.smtp_host ?? '');
+  const [smtpPortDraft, setSmtpPortDraft] = useState(() => p.smtp_port || 587);
+  const [smtpUsernameDraft, setSmtpUsernameDraft] = useState(() => p.smtp_username ?? '');
+  const [smtpPasswordDraft, setSmtpPasswordDraft] = useState('');
+  const [smtpFromDraft, setSmtpFromDraft] = useState(() => p.smtp_from_email ?? '');
+  const [recipientsDraft, setRecipientsDraft] = useState(() => (p.notification_recipients ?? []).join(', '));
   const [copied, setCopied] = useState<CopyField>(null);
   const originsKey = JSON.stringify(p.allowed_origins ?? []);
 
@@ -275,7 +301,28 @@ function ProjectCard({
     setZulivioEnabledDraft(p.zulivio_enabled);
     setZulivioUrlDraft(p.zulivio_api_url ?? '');
     setZulivioKeyDraft('');
-  }, [p.id, p.api_key, originsKey, p.telegram_chat_id, p.s3_endpoint, p.s3_bucket, p.zulivio_enabled, p.zulivio_api_url]);
+    setEmailEnabledDraft(p.email_notifications_enabled);
+    setSmtpHostDraft(p.smtp_host ?? '');
+    setSmtpPortDraft(p.smtp_port || 587);
+    setSmtpUsernameDraft(p.smtp_username ?? '');
+    setSmtpPasswordDraft('');
+    setSmtpFromDraft(p.smtp_from_email ?? '');
+    setRecipientsDraft((p.notification_recipients ?? []).join(', '));
+  }, [
+    p.id,
+    p.api_key,
+    originsKey,
+    p.telegram_chat_id,
+    p.s3_endpoint,
+    p.s3_bucket,
+    p.zulivio_enabled,
+    p.zulivio_api_url,
+    p.email_notifications_enabled,
+    p.smtp_host,
+    p.smtp_port,
+    p.smtp_username,
+    p.smtp_from_email
+  ]);
 
   return (
     <li>
@@ -308,6 +355,15 @@ function ProjectCard({
                   }`}
                 >
                   Zulivio: {p.zulivio_enabled && p.zulivio_configured ? 'Connected' : 'Not connected'}
+                </span>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                    p.email_notifications_enabled && p.email_configured
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  Email: {p.email_notifications_enabled && p.email_configured ? 'Configured' : 'Not set'}
                 </span>
               </div>
             </div>
@@ -455,6 +511,89 @@ function ProjectCard({
                 </Button>
                 <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearZulivio()}>
                   Disconnect Zulivio
+                </Button>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Email notifications (per project)</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Send each new submission by email through your own SMTP account — pick a sending address, and a list
+                of destination addresses to deliver to.
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-700">
+                <input type="checkbox" checked={emailEnabledDraft} onChange={(e) => setEmailEnabledDraft(e.target.checked)} />
+                Email new submissions
+              </label>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <Input
+                  className="text-xs"
+                  value={smtpHostDraft}
+                  onChange={(e) => setSmtpHostDraft(e.target.value)}
+                  placeholder="SMTP host (e.g. smtp.gmail.com)"
+                  aria-label="SMTP host"
+                />
+                <Input
+                  className="text-xs"
+                  type="number"
+                  value={smtpPortDraft}
+                  onChange={(e) => setSmtpPortDraft(Number(e.target.value))}
+                  placeholder="Port (587 or 465)"
+                  aria-label="SMTP port"
+                />
+                <Input
+                  className="text-xs"
+                  value={smtpUsernameDraft}
+                  onChange={(e) => setSmtpUsernameDraft(e.target.value)}
+                  placeholder="SMTP username"
+                  aria-label="SMTP username"
+                />
+                <Input
+                  className="text-xs"
+                  type="password"
+                  value={smtpPasswordDraft}
+                  onChange={(e) => setSmtpPasswordDraft(e.target.value)}
+                  placeholder={p.email_configured ? 'New password (blank = keep)' : 'SMTP password'}
+                  aria-label="SMTP password"
+                />
+                <Input
+                  className="text-xs sm:col-span-2"
+                  type="email"
+                  value={smtpFromDraft}
+                  onChange={(e) => setSmtpFromDraft(e.target.value)}
+                  placeholder="Sending address (e.g. forms@yourcompany.com)"
+                  aria-label="From email address"
+                />
+                <Input
+                  className="text-xs sm:col-span-2"
+                  value={recipientsDraft}
+                  onChange={(e) => setRecipientsDraft(e.target.value)}
+                  placeholder="Deliver to (comma-separated: sales@company.com, jane@company.com)"
+                  aria-label="Notification recipient email addresses"
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void onSaveEmail(
+                      emailEnabledDraft,
+                      smtpHostDraft,
+                      smtpPortDraft,
+                      smtpUsernameDraft,
+                      smtpPasswordDraft,
+                      smtpFromDraft,
+                      recipientsDraft
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                    )
+                  }
+                >
+                  Save email settings
+                </Button>
+                <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearEmail()}>
+                  Disconnect email
                 </Button>
               </div>
             </div>
@@ -732,6 +871,64 @@ export default function ProjectsPage() {
     }
   }
 
+  async function saveProjectEmail(
+    id: string,
+    enabled: boolean,
+    host: string,
+    port: number,
+    username: string,
+    password: string,
+    fromEmail: string,
+    recipients: string[]
+  ) {
+    const payload: {
+      email_notifications_enabled: boolean;
+      smtp_host: string;
+      smtp_port: number;
+      smtp_username: string;
+      smtp_password?: string;
+      smtp_from_email: string;
+      notification_recipients: string[];
+    } = {
+      email_notifications_enabled: enabled,
+      smtp_host: host.trim(),
+      smtp_port: port,
+      smtp_username: username.trim(),
+      smtp_from_email: fromEmail.trim(),
+      notification_recipients: recipients
+    };
+    const trimmedPassword = password.trim();
+    if (trimmedPassword) payload.smtp_password = trimmedPassword;
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save email settings');
+    }
+  }
+
+  async function clearProjectEmail(id: string) {
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          email_notifications_enabled: false,
+          smtp_host: '',
+          smtp_username: '',
+          smtp_password: '',
+          smtp_from_email: '',
+          notification_recipients: []
+        })
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not disconnect email');
+    }
+  }
+
   async function deleteProject(id: string) {
     setDeleteTarget(null);
     try {
@@ -865,6 +1062,10 @@ export default function ProjectsPage() {
                   onClearS3={() => clearProjectS3(p.id)}
                   onSaveZulivio={(enabled, apiUrl, apiKey) => saveProjectZulivio(p.id, enabled, apiUrl, apiKey)}
                   onClearZulivio={() => clearProjectZulivio(p.id)}
+                  onSaveEmail={(enabled, host, port, username, password, fromEmail, recipients) =>
+                    saveProjectEmail(p.id, enabled, host, port, username, password, fromEmail, recipients)
+                  }
+                  onClearEmail={() => clearProjectEmail(p.id)}
                   onSavePortalSlug={(slug) => savePortalSlug(p.id, slug)}
                   onTogglePortal={(enabled) => togglePortal(p.id, enabled)}
                   onGeneratePortalPassword={() => generatePortalPassword(p.id)}

@@ -50,6 +50,13 @@ type updateProjectRequest struct {
 	ZulivioEnabled *bool   `json:"zulivio_enabled"`
 	ZulivioAPIURL  *string `json:"zulivio_api_url"`
 	ZulivioAPIKey  *string `json:"zulivio_api_key"`
+	EmailNotificationsEnabled *bool     `json:"email_notifications_enabled"`
+	SMTPHost                  *string   `json:"smtp_host"`
+	SMTPPort                  *int      `json:"smtp_port"`
+	SMTPUsername              *string   `json:"smtp_username"`
+	SMTPPassword              *string   `json:"smtp_password"`
+	SMTPFromEmail             *string   `json:"smtp_from_email"`
+	NotificationRecipients    *[]string `json:"notification_recipients"`
 }
 
 type presignRequest struct {
@@ -609,6 +616,42 @@ func (s *Server) UpdateProject(c *gin.Context) {
 			return
 		}
 	}
+	if req.EmailNotificationsEnabled != nil || req.SMTPHost != nil || req.SMTPPort != nil || req.SMTPUsername != nil ||
+		req.SMTPPassword != nil || req.SMTPFromEmail != nil || req.NotificationRecipients != nil {
+		currentProject, err := s.store.ProjectOwnedBy(orgID, id)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		enabled := currentProject.EmailNotificationsEnabled
+		if req.EmailNotificationsEnabled != nil {
+			enabled = *req.EmailNotificationsEnabled
+		}
+		port := currentProject.SMTPPort
+		if req.SMTPPort != nil {
+			port = *req.SMTPPort
+		}
+		recipients := currentProject.NotificationRecipients
+		if req.NotificationRecipients != nil {
+			recipients = *req.NotificationRecipients
+		}
+		mergedHost := mergeIntegrationField(currentProject.SMTPHost, req.SMTPHost)
+		mergedUsername := mergeIntegrationField(currentProject.SMTPUsername, req.SMTPUsername)
+		mergedPassword := mergeIntegrationField(currentProject.SMTPPassword, req.SMTPPassword)
+		mergedFromEmail := mergeIntegrationField(currentProject.SMTPFromEmail, req.SMTPFromEmail)
+		if err := s.store.UpdateProjectEmailNotifications(orgID, id, enabled, mergedHost, port, mergedUsername, mergedPassword, mergedFromEmail, recipients); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	var newPortalPassword string
 	if req.PortalSlug != nil {
 		slug, verr := normalizePortalSlug(*req.PortalSlug)
@@ -817,6 +860,7 @@ func (s *Server) Submit(c *gin.Context) {
 
 	notifyTelegram(project, dataBytes, filesBytes)
 	pushToZulivio(project, dataPart)
+	notifyEmail(project, dataBytes, filesBytes)
 
 	c.JSON(http.StatusCreated, sub)
 }

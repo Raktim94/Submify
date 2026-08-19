@@ -169,6 +169,7 @@ created them — every member of the organization sees the same project list. Se
 | `telegram_bot_token`, `telegram_chat_id` | set per-project Telegram notification target |
 | `s3_endpoint`, `s3_access_key`, `s3_secret_key`, `s3_bucket` | set per-project storage credentials (takes priority over account-level settings) |
 | `zulivio_enabled`, `zulivio_api_url`, `zulivio_api_key` | push new submissions to a Zulivio instance as leads — see [Zulivio integration](#zulivio-integration) |
+| `email_notifications_enabled`, `smtp_host`, `smtp_port`, `smtp_username`, `smtp_password`, `smtp_from_email`, `notification_recipients` | email each new submission through your own SMTP account — see [Email notifications](#email-notifications) |
 
 **Response:** `200` `{ "status": "updated", "project": Project }`
 
@@ -519,3 +520,30 @@ the lead enters Zulivio's existing assignment-rule pipeline immediately).
 new lead each time (Zulivio itself has no dedupe-by-email/phone yet). No
 delivery-status tracking in Submify's UI — a submission whose push fails
 all 3 retry attempts is only visible in the server log.
+
+## Email notifications
+
+Optional, per-project. When configured (`PATCH /projects/{id}` with
+`email_notifications_enabled: true` and the fields below), every new
+submission to that project is emailed to `notification_recipients`
+through **your own SMTP account** — Submify never operates a shared
+sending identity. See
+`docs/decisions/0007-email-notifications-smtp-relay.md`.
+
+**Fields:**
+
+| Field | Notes |
+|---|---|
+| `smtp_host` | e.g. `smtp.gmail.com` |
+| `smtp_port` | `587` (STARTTLS, default) or `465` (implicit TLS) — both are handled automatically based on the port |
+| `smtp_username` / `smtp_password` | SMTP auth credentials |
+| `smtp_from_email` | the sending address |
+| `notification_recipients` | array of destination addresses, e.g. `["sales@company.com", "jane@company.com"]` |
+
+`email_configured` (read-only, on the `Project` object) is `true` once
+host/username/password/from-email are all set and at least one recipient
+is configured.
+
+Delivery is async and best-effort with 3 retries (same pattern as Telegram
+and Zulivio) — an SMTP failure never affects the submission response, and
+is only visible in the server log.

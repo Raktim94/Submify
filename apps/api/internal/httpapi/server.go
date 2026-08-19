@@ -16,6 +16,7 @@ import (
 	"github.com/nodedr/submify/apps/api/internal/auth"
 	"github.com/nodedr/submify/apps/api/internal/config"
 	"github.com/nodedr/submify/apps/api/internal/db"
+	"github.com/nodedr/submify/apps/api/internal/mailer"
 	"github.com/nodedr/submify/apps/api/internal/storage"
 	"github.com/nodedr/submify/apps/api/internal/telegram"
 	"github.com/nodedr/submify/apps/api/internal/zulivio"
@@ -525,6 +526,21 @@ func notifyTelegram(project db.Project, data []byte, files []byte) {
 		return
 	}
 	telegram.NotifyAsync(project.TelegramBotToken, project.TelegramChatID, buildTelegramMessage(project, data, files))
+}
+
+func notifyEmail(project db.Project, data []byte, files []byte) {
+	if !project.EmailNotificationsEnabled || !project.EmailConfigured {
+		return
+	}
+	subject := fmt.Sprintf("New submission: %s", project.Name)
+	body := buildTelegramMessage(project, data, files) // same plain-text summary format
+	mailer.SendAsync(mailer.Config{
+		Host:      project.SMTPHost,
+		Port:      project.SMTPPort,
+		Username:  project.SMTPUsername,
+		Password:  project.SMTPPassword,
+		FromEmail: project.SMTPFromEmail,
+	}, project.NotificationRecipients, subject, body)
 }
 
 func pushToZulivio(project db.Project, data map[string]interface{}) {

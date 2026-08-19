@@ -66,6 +66,14 @@ type Project struct {
 	ZulivioAPIURL     string `json:"zulivio_api_url"`
 	ZulivioAPIKey     string `json:"-"`
 	ZulivioConfigured bool   `json:"zulivio_configured"`
+	EmailNotificationsEnabled bool     `json:"email_notifications_enabled"`
+	SMTPHost                  string   `json:"smtp_host"`
+	SMTPPort                  int      `json:"smtp_port"`
+	SMTPUsername              string   `json:"smtp_username"`
+	SMTPPassword              string   `json:"-"`
+	SMTPFromEmail             string   `json:"smtp_from_email"`
+	NotificationRecipients    []string `json:"notification_recipients,omitempty"`
+	EmailConfigured           bool     `json:"email_configured"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -370,7 +378,7 @@ func (s *Store) UpdateUserAPIKey(userID, newAPIKey string) error {
 	return nil
 }
 
-const projectSelect = `id, user_id, organization_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), COALESCE(portal_slug, ''), portal_enabled, COALESCE(portal_password_hash, ''), zulivio_enabled, COALESCE(zulivio_api_url, ''), COALESCE(zulivio_api_key, ''), created_at`
+const projectSelect = `id, user_id, organization_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), COALESCE(portal_slug, ''), portal_enabled, COALESCE(portal_password_hash, ''), zulivio_enabled, COALESCE(zulivio_api_url, ''), COALESCE(zulivio_api_key, ''), email_notifications_enabled, COALESCE(smtp_host, ''), smtp_port, COALESCE(smtp_username, ''), COALESCE(smtp_password, ''), COALESCE(smtp_from_email, ''), COALESCE(notification_recipients, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {
 	s = strings.TrimSpace(s)
@@ -398,14 +406,28 @@ func hydrateProject(p *Project, originsRaw string) error {
 	return nil
 }
 
+func hydrateProjectEmail(p *Project, recipientsRaw string) error {
+	recipients, err := parseOriginsJSON(recipientsRaw) // same "JSON array as TEXT" shape as allowed_origins
+	if err != nil {
+		return err
+	}
+	p.NotificationRecipients = recipients
+	p.EmailConfigured = strings.TrimSpace(p.SMTPHost) != "" && strings.TrimSpace(p.SMTPUsername) != "" &&
+		strings.TrimSpace(p.SMTPPassword) != "" && strings.TrimSpace(p.SMTPFromEmail) != "" && len(recipients) > 0
+	return nil
+}
+
 func projectFromRow(row *sql.Row) (Project, error) {
 	var p Project
-	var originsRaw string
-	err := row.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.CreatedAt)
+	var originsRaw, recipientsRaw string
+	err := row.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.EmailNotificationsEnabled, &p.SMTPHost, &p.SMTPPort, &p.SMTPUsername, &p.SMTPPassword, &p.SMTPFromEmail, &recipientsRaw, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
 	if err := hydrateProject(&p, originsRaw); err != nil {
+		return Project{}, err
+	}
+	if err := hydrateProjectEmail(&p, recipientsRaw); err != nil {
 		return Project{}, err
 	}
 	return p, nil
@@ -413,12 +435,15 @@ func projectFromRow(row *sql.Row) (Project, error) {
 
 func projectFromRows(rows *sql.Rows) (Project, error) {
 	var p Project
-	var originsRaw string
-	err := rows.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.CreatedAt)
+	var originsRaw, recipientsRaw string
+	err := rows.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.EmailNotificationsEnabled, &p.SMTPHost, &p.SMTPPort, &p.SMTPUsername, &p.SMTPPassword, &p.SMTPFromEmail, &recipientsRaw, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
 	if err := hydrateProject(&p, originsRaw); err != nil {
+		return Project{}, err
+	}
+	if err := hydrateProjectEmail(&p, recipientsRaw); err != nil {
 		return Project{}, err
 	}
 	return p, nil
@@ -577,6 +602,41 @@ func (s *Store) UpdateProjectZulivio(orgID, projectID string, enabled bool, apiU
 		    zulivio_api_key = NULLIF($3, '')
 		WHERE id=$4 AND organization_id=$5
 	`, enabled, strings.TrimSpace(apiURL), strings.TrimSpace(apiKey), projectID, orgID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) UpdateProjectEmailNotifications(orgID, projectID string, enabled bool, host string, port int, username, password, fromEmail string, recipients []string) error {
+	var recipientsPayload interface{}
+	if len(recipients) == 0 {
+		recipientsPayload = nil
+	} else {
+		b, err := json.Marshal(recipients)
+		if err != nil {
+			return err
+		}
+		recipientsPayload = string(b)
+	}
+	if port <= 0 {
+		port = 587
+	}
+	res, err := s.DB.Exec(`
+		UPDATE projects
+		SET email_notifications_enabled = $1,
+		    smtp_host = NULLIF($2, ''),
+		    smtp_port = $3,
+		    smtp_username = NULLIF($4, ''),
+		    smtp_password = NULLIF($5, ''),
+		    smtp_from_email = NULLIF($6, ''),
+		    notification_recipients = $7
+		WHERE id=$8 AND organization_id=$9
+	`, enabled, strings.TrimSpace(host), port, strings.TrimSpace(username), strings.TrimSpace(password), strings.TrimSpace(fromEmail), recipientsPayload, projectID, orgID)
 	if err != nil {
 		return err
 	}
