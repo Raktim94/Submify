@@ -9,6 +9,7 @@ const appLinks = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/projects', label: 'Projects' },
   { href: '/submissions', label: 'Submissions' },
+  { href: '/calendar', label: 'Calendar' },
   { href: '/export', label: 'Export' },
   { href: '/settings', label: 'Settings' }
 ];
