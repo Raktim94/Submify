@@ -62,6 +62,10 @@ type Project struct {
 	PortalEnabled      bool   `json:"portal_enabled"`
 	PortalPasswordSet  bool   `json:"portal_password_set"`
 	PortalPasswordHash string `json:"-"`
+	ZulivioEnabled    bool   `json:"zulivio_enabled"`
+	ZulivioAPIURL     string `json:"zulivio_api_url"`
+	ZulivioAPIKey     string `json:"-"`
+	ZulivioConfigured bool   `json:"zulivio_configured"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -366,7 +370,7 @@ func (s *Store) UpdateUserAPIKey(userID, newAPIKey string) error {
 	return nil
 }
 
-const projectSelect = `id, user_id, organization_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), COALESCE(portal_slug, ''), portal_enabled, COALESCE(portal_password_hash, ''), created_at`
+const projectSelect = `id, user_id, organization_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), COALESCE(portal_slug, ''), portal_enabled, COALESCE(portal_password_hash, ''), zulivio_enabled, COALESCE(zulivio_api_url, ''), COALESCE(zulivio_api_key, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {
 	s = strings.TrimSpace(s)
@@ -390,13 +394,14 @@ func hydrateProject(p *Project, originsRaw string) error {
 	p.S3Configured = strings.TrimSpace(p.S3Endpoint) != "" && strings.TrimSpace(p.S3Bucket) != "" &&
 		strings.TrimSpace(p.S3AccessKey) != "" && strings.TrimSpace(p.S3SecretKey) != ""
 	p.PortalPasswordSet = strings.TrimSpace(p.PortalPasswordHash) != ""
+	p.ZulivioConfigured = strings.TrimSpace(p.ZulivioAPIURL) != "" && strings.TrimSpace(p.ZulivioAPIKey) != ""
 	return nil
 }
 
 func projectFromRow(row *sql.Row) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := row.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -409,7 +414,7 @@ func projectFromRow(row *sql.Row) (Project, error) {
 func projectFromRows(rows *sql.Rows) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := rows.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.CreatedAt)
+	err := rows.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -554,6 +559,24 @@ func (s *Store) UpdateProjectStorage(orgID, projectID, endpoint, accessKey, secr
 		    s3_bucket = NULLIF($4, '')
 		WHERE id=$5 AND organization_id=$6
 	`, strings.TrimSpace(endpoint), strings.TrimSpace(accessKey), strings.TrimSpace(secretKey), strings.TrimSpace(bucket), projectID, orgID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) UpdateProjectZulivio(orgID, projectID string, enabled bool, apiURL, apiKey string) error {
+	res, err := s.DB.Exec(`
+		UPDATE projects
+		SET zulivio_enabled = $1,
+		    zulivio_api_url = NULLIF($2, ''),
+		    zulivio_api_key = NULLIF($3, '')
+		WHERE id=$4 AND organization_id=$5
+	`, enabled, strings.TrimSpace(apiURL), strings.TrimSpace(apiKey), projectID, orgID)
 	if err != nil {
 		return err
 	}

@@ -23,6 +23,9 @@ type Project = {
   s3_endpoint: string;
   s3_bucket: string;
   s3_configured: boolean;
+  zulivio_enabled: boolean;
+  zulivio_api_url: string;
+  zulivio_configured: boolean;
   portal_slug: string;
   portal_enabled: boolean;
   portal_password_set: boolean;
@@ -215,6 +218,8 @@ function ProjectCard({
   onClearTelegram,
   onSaveS3,
   onClearS3,
+  onSaveZulivio,
+  onClearZulivio,
   onSavePortalSlug,
   onTogglePortal,
   onGeneratePortalPassword,
@@ -230,6 +235,8 @@ function ProjectCard({
   onClearTelegram: () => Promise<void>;
   onSaveS3: (endpoint: string, bucket: string, accessKey: string, secretKey: string) => Promise<void>;
   onClearS3: () => Promise<void>;
+  onSaveZulivio: (enabled: boolean, apiUrl: string, apiKey: string) => Promise<void>;
+  onClearZulivio: () => Promise<void>;
   onSavePortalSlug: (slug: string) => Promise<void>;
   onTogglePortal: (enabled: boolean) => Promise<void>;
   onGeneratePortalPassword: () => Promise<void>;
@@ -244,6 +251,9 @@ function ProjectCard({
   const [s3BucketDraft, setS3BucketDraft] = useState(() => p.s3_bucket ?? '');
   const [s3AccessDraft, setS3AccessDraft] = useState('');
   const [s3SecretDraft, setS3SecretDraft] = useState('');
+  const [zulivioEnabledDraft, setZulivioEnabledDraft] = useState(() => p.zulivio_enabled);
+  const [zulivioUrlDraft, setZulivioUrlDraft] = useState(() => p.zulivio_api_url ?? '');
+  const [zulivioKeyDraft, setZulivioKeyDraft] = useState('');
   const [copied, setCopied] = useState<CopyField>(null);
   const originsKey = JSON.stringify(p.allowed_origins ?? []);
 
@@ -262,7 +272,10 @@ function ProjectCard({
     setS3BucketDraft(p.s3_bucket ?? '');
     setS3AccessDraft('');
     setS3SecretDraft('');
-  }, [p.id, p.api_key, originsKey, p.telegram_chat_id, p.s3_endpoint, p.s3_bucket]);
+    setZulivioEnabledDraft(p.zulivio_enabled);
+    setZulivioUrlDraft(p.zulivio_api_url ?? '');
+    setZulivioKeyDraft('');
+  }, [p.id, p.api_key, originsKey, p.telegram_chat_id, p.s3_endpoint, p.s3_bucket, p.zulivio_enabled, p.zulivio_api_url]);
 
   return (
     <li>
@@ -286,6 +299,15 @@ function ProjectCard({
                   }`}
                 >
                   S3: {p.s3_configured ? 'Configured' : 'Not set'}
+                </span>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                    p.zulivio_enabled && p.zulivio_configured
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  Zulivio: {p.zulivio_enabled && p.zulivio_configured ? 'Connected' : 'Not connected'}
                 </span>
               </div>
             </div>
@@ -389,6 +411,50 @@ function ProjectCard({
                 </Button>
                 <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearS3()}>
                   Clear S3
+                </Button>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Zulivio CRM (per project)</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Every submission is pushed to Zulivio as a lead using your Zulivio personal API key. Generate one in
+                Zulivio under Settings → API Keys.
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={zulivioEnabledDraft}
+                  onChange={(e) => setZulivioEnabledDraft(e.target.checked)}
+                />
+                Push new submissions to Zulivio
+              </label>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <Input
+                  className="text-xs sm:col-span-2"
+                  value={zulivioUrlDraft}
+                  onChange={(e) => setZulivioUrlDraft(e.target.value)}
+                  placeholder="Zulivio URL (e.g. https://zulivio.yourcompany.com)"
+                  aria-label="Zulivio API URL"
+                />
+                <Input
+                  className="text-xs sm:col-span-2"
+                  value={zulivioKeyDraft}
+                  onChange={(e) => setZulivioKeyDraft(e.target.value)}
+                  placeholder={p.zulivio_configured ? 'New API key (blank = keep)' : 'Zulivio personal API key'}
+                  type="password"
+                  aria-label="Zulivio API key"
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void onSaveZulivio(zulivioEnabledDraft, zulivioUrlDraft, zulivioKeyDraft)}
+                >
+                  Save Zulivio
+                </Button>
+                <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearZulivio()}>
+                  Disconnect Zulivio
                 </Button>
               </div>
             </div>
@@ -636,6 +702,36 @@ export default function ProjectsPage() {
     }
   }
 
+  async function saveProjectZulivio(id: string, enabled: boolean, apiUrl: string, apiKey: string) {
+    const payload: { zulivio_enabled: boolean; zulivio_api_url: string; zulivio_api_key?: string } = {
+      zulivio_enabled: enabled,
+      zulivio_api_url: apiUrl.trim()
+    };
+    const trimmedKey = apiKey.trim();
+    if (trimmedKey) payload.zulivio_api_key = trimmedKey;
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save Zulivio settings');
+    }
+  }
+
+  async function clearProjectZulivio(id: string) {
+    try {
+      await api(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ zulivio_enabled: false, zulivio_api_url: '', zulivio_api_key: '' })
+      });
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not disconnect Zulivio');
+    }
+  }
+
   async function deleteProject(id: string) {
     setDeleteTarget(null);
     try {
@@ -767,6 +863,8 @@ export default function ProjectsPage() {
                   onClearTelegram={() => clearProjectTelegram(p.id)}
                   onSaveS3={(endpoint, bucket, access, secret) => saveProjectS3(p.id, endpoint, bucket, access, secret)}
                   onClearS3={() => clearProjectS3(p.id)}
+                  onSaveZulivio={(enabled, apiUrl, apiKey) => saveProjectZulivio(p.id, enabled, apiUrl, apiKey)}
+                  onClearZulivio={() => clearProjectZulivio(p.id)}
                   onSavePortalSlug={(slug) => savePortalSlug(p.id, slug)}
                   onTogglePortal={(enabled) => togglePortal(p.id, enabled)}
                   onGeneratePortalPassword={() => generatePortalPassword(p.id)}

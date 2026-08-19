@@ -168,6 +168,7 @@ created them — every member of the organization sees the same project list. Se
 | `allowed_origins` | replace the array of allowed browser origins for `/api/submit` (empty array = no restriction) |
 | `telegram_bot_token`, `telegram_chat_id` | set per-project Telegram notification target |
 | `s3_endpoint`, `s3_access_key`, `s3_secret_key`, `s3_bucket` | set per-project storage credentials (takes priority over account-level settings) |
+| `zulivio_enabled`, `zulivio_api_url`, `zulivio_api_key` | push new submissions to a Zulivio instance as leads — see [Zulivio integration](#zulivio-integration) |
 
 **Response:** `200` `{ "status": "updated", "project": Project }`
 
@@ -485,3 +486,36 @@ Downloads a standards-compliant `.ics` calendar file for the booking.
 Not yet implemented for Submify itself (`internal/update` exists in the
 codebase but isn't wired up to an endpoint — see
 `docs/roadmap/00-MASTER-PLAN.md`).
+
+## Zulivio integration
+
+Optional, per-project. When configured (`PATCH /projects/{id}` with
+`zulivio_enabled: true`, `zulivio_api_url`, `zulivio_api_key`), every new
+submission to that project is pushed to the Zulivio instance at
+`zulivio_api_url` as a lead (`POST {zulivio_api_url}/api/v1/leads`,
+`Authorization: Bearer <zulivio_api_key>`), best-effort and asynchronous —
+a Zulivio outage never affects the submission response.
+
+`zulivio_api_key` is a normal Zulivio **personal API key** (generate one in
+Zulivio under Settings → API Keys) — no special Submify-specific credential
+or Zulivio-side configuration is needed. See
+`docs/decisions/0006-zulivio-integration-via-existing-api-key.md` for why.
+
+**Field mapping** (best-effort, case-insensitive key matching against the
+submission's `data` object — not a configurable mapping):
+
+| Submify field (any of) | Zulivio field |
+|---|---|
+| `name`, `full_name`, `fullname`, `your_name` | `fullName` (required — submissions with none of these are skipped, not sent) |
+| `email`, `email_address`, `your_email` | `email` |
+| `phone`, `phone_number`, `mobile`, `telephone` | `phone` |
+| `company`, `organization`, `organisation`, `business` | `company` |
+| *(everything else)* | folded into `notes` as JSON, so no data is silently dropped |
+
+Always sets `source: "Submify: <project name>"` and `autoAssign: true` (so
+the lead enters Zulivio's existing assignment-rule pipeline immediately).
+
+**Known limitations**: no dedupe — resubmitting the same form creates a
+new lead each time (Zulivio itself has no dedupe-by-email/phone yet). No
+delivery-status tracking in Submify's UI — a submission whose push fails
+all 3 retry attempts is only visible in the server log.

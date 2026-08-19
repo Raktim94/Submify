@@ -18,6 +18,7 @@ import (
 	"github.com/nodedr/submify/apps/api/internal/db"
 	"github.com/nodedr/submify/apps/api/internal/storage"
 	"github.com/nodedr/submify/apps/api/internal/telegram"
+	"github.com/nodedr/submify/apps/api/internal/zulivio"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -524,5 +525,17 @@ func notifyTelegram(project db.Project, data []byte, files []byte) {
 		return
 	}
 	telegram.NotifyAsync(project.TelegramBotToken, project.TelegramChatID, buildTelegramMessage(project, data, files))
+}
+
+func pushToZulivio(project db.Project, data map[string]interface{}) {
+	if !project.ZulivioEnabled || strings.TrimSpace(project.ZulivioAPIURL) == "" || strings.TrimSpace(project.ZulivioAPIKey) == "" {
+		return
+	}
+	lead, ok := zulivio.BuildLeadFromSubmission(project.Name, data)
+	if !ok {
+		log.Printf("zulivio push skipped for project %s: submission has no recognizable name field", project.ID)
+		return
+	}
+	zulivio.PushAsync(project.ZulivioAPIURL, project.ZulivioAPIKey, lead)
 }
 

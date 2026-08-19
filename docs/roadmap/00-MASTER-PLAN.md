@@ -287,15 +287,37 @@ not silently missing)
 
 ### Phase 6 — Integrations (§16, 28–36)
 - [ ] Forms↔Calendar integration via internal events, not hard imports
-- [ ] Zulivio native integration: event bus (form.created, form.submitted,
-      submission.updated, booking.created/rescheduled/cancelled), field
-      mapping UI, dedupe (email/phone/external id), retry queue on Zulivio
-      unavailability (submission must never be lost) — auth via scoped
-      API key/service token, never shared admin credentials
+- [x] **Zulivio integration — landed as a deliberately simplified version**
+      (user redirect, 2026-08-19; see ADR
+      [0006](../decisions/0006-zulivio-integration-via-existing-api-key.md)
+      for the full reasoning): per-project push of new submissions into
+      Zulivio's *existing* `POST /api/v1/leads` via its *existing*
+      personal API-key auth — **zero Zulivio-side code changes**. New
+      `internal/zulivio` package (best-effort field-mapping + async push
+      with retries, same shape as `internal/telegram`), `PATCH /projects/
+      {id}` gains `zulivio_enabled`/`zulivio_api_url`/`zulivio_api_key`,
+      and a Projects-page settings panel to configure it.
+      **Verified with a real cross-product test** — not mocked: generated
+      an actual Zulivio personal API key via its live API, configured it
+      on a real Submify project, submitted a real form, and confirmed the
+      lead appeared in Zulivio's own `/api/v1/leads` list with correct
+      field mapping, the right `source` tag, unmapped fields preserved in
+      `notes`, and — proving `autoAssign` actually worked — a real owner
+      already assigned by Zulivio's own assignment-rule engine.
+      **Explicitly not built** (the full original Phase 6 scope, still
+      open if ever needed): an event bus, a configurable field-mapping
+      UI, dedupe-by-email/phone (inherits Zulivio's existing lack of
+      this), delivery-status visibility in Submify's UI, and a
+      Zulivio-side service-account credential type (still just personal
+      keys, attributed to whichever employee generated one).
 - [ ] Generic CRM integration path (REST/webhook/API keys) so customers
       aren't locked into Zulivio specifically
 - [ ] Telegram notifications (bot token + chat ID, Test Notification, safe
-      storage — never re-displayed after save, never logged)
+      storage — never re-displayed after save, never logged) — **note**:
+      Telegram itself already existed pre-session for form submissions
+      and was extended to bookings this session; this line tracks the
+      brief's specific "Test Notification" UI affordance, which doesn't
+      exist yet.
 - [ ] Webhook system: signing secret, delivery records, retries w/
       exponential backoff, timeout, manual retry, SSRF prevention
 
@@ -557,3 +579,37 @@ should read first.
   requested feature: per-project email notifications (configurable sender
   + a recipient address) for form submissions, which doesn't exist in
   Submify at all yet. Both are queued up next.
+
+- **2026-08-19 (continued yet further, Zulivio integration)**: Landed the
+  simplified Zulivio integration the user asked for (ADR 0006) — new
+  `internal/zulivio` package, `projects` table gains
+  `zulivio_enabled`/`zulivio_api_url`/`zulivio_api_key` (migration
+  `0012_project_zulivio.sql`), a settings panel added to the Projects
+  page. **Verified with a genuine live cross-product test**, the
+  strongest verification done in this program so far: logged into a real
+  running Zulivio instance (still up from the earlier sidebar-redesign
+  session), generated a real personal API key via its actual API,
+  configured it on a fresh Submify instance's project, submitted a real
+  form through `/api/submit`, and confirmed via Zulivio's own
+  `GET /api/v1/leads` that the lead landed correctly — right name/email/
+  phone/company mapping, `source: "Submify: Default"`, the unmapped
+  `message` field preserved in `notes`, and a real owner already assigned
+  by Zulivio's own assignment-rule engine (proving `autoAssign: true`
+  actually triggered Zulivio's existing logic, not just that the field
+  was accepted). `go build`/`vet`/`test ./...` and `tsc`/`next build`
+  both green. `docs/api.md` updated with the new PATCH field and a full
+  "Zulivio integration" section. All test containers/temp files cleaned
+  up (the Zulivio docker stack was left running from the earlier sidebar
+  session — reused rather than rebuilt).
+
+  **What's left, honestly**: this is the simplified version the user
+  explicitly asked for instead of the original Phase 6 scope — no event
+  bus, no configurable field mapping, no dedupe, no delivery-status UI,
+  no Zulivio-side service-account credential type. All still open if the
+  full integration is ever wanted later; ADR 0006 documents the tradeoff.
+
+  **Also still queued, requested separately by the user mid-session**:
+  per-project email notifications (configurable sender + a recipient
+  address, delivering form submissions via email) — Submify has zero
+  email-sending capability today (Discovery: "Email notifications aren't
+  built in"). Next up.

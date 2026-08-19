@@ -47,6 +47,9 @@ type updateProjectRequest struct {
 	PortalEnabled            *bool   `json:"portal_enabled"`
 	PortalPassword           *string `json:"portal_password"`
 	RegeneratePortalPassword bool    `json:"regenerate_portal_password"`
+	ZulivioEnabled *bool   `json:"zulivio_enabled"`
+	ZulivioAPIURL  *string `json:"zulivio_api_url"`
+	ZulivioAPIKey  *string `json:"zulivio_api_key"`
 }
 
 type presignRequest struct {
@@ -581,6 +584,31 @@ func (s *Server) UpdateProject(c *gin.Context) {
 			return
 		}
 	}
+	if req.ZulivioEnabled != nil || req.ZulivioAPIURL != nil || req.ZulivioAPIKey != nil {
+		currentProject, err := s.store.ProjectOwnedBy(orgID, id)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+		enabled := currentProject.ZulivioEnabled
+		if req.ZulivioEnabled != nil {
+			enabled = *req.ZulivioEnabled
+		}
+		mergedURL := mergeIntegrationField(currentProject.ZulivioAPIURL, req.ZulivioAPIURL)
+		mergedKey := mergeIntegrationField(currentProject.ZulivioAPIKey, req.ZulivioAPIKey)
+		if err := s.store.UpdateProjectZulivio(orgID, id, enabled, mergedURL, mergedKey); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	var newPortalPassword string
 	if req.PortalSlug != nil {
 		slug, verr := normalizePortalSlug(*req.PortalSlug)
@@ -788,6 +816,7 @@ func (s *Server) Submit(c *gin.Context) {
 	log.Printf("submit: project_id=%s submission_id=%s ip=%s ua_len=%d", project.ID, sub.ID, ip, len(ua))
 
 	notifyTelegram(project, dataBytes, filesBytes)
+	pushToZulivio(project, dataPart)
 
 	c.JSON(http.StatusCreated, sub)
 }
