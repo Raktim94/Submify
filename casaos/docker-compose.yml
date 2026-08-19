@@ -6,14 +6,38 @@ services:
     container_name: submify-db
     hostname: submify-db
     restart: unless-stopped
+    # Generates a random Postgres password into the persisted secrets volume
+    # on first boot instead of shipping a fixed default — this compose file
+    # is public (CasaOS/ZimaOS store listing), so a hardcoded password would
+    # be a known-public credential on every install that doesn't change it.
+    # POSTGRES_PASSWORD_FILE is the official postgres image's own supported
+    # mechanism for this (see docker-entrypoint.sh's file_env()); db stays a
+    # single long-running container (no separate one-shot init service —
+    # those don't surface cleanly in the CasaOS app-status UI).
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /run/secrets
+        if [ ! -s /run/secrets/postgres_password ]; then
+          tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 > /run/secrets/postgres_password
+          chmod 644 /run/secrets/postgres_password
+        fi
+        exec docker-entrypoint.sh postgres
     environment:
       POSTGRES_USER: submify
-      POSTGRES_PASSWORD: "7f3a9c2e8b1d4f6a0e5c8b2d9f4a6e1c3b7d0f5a8e2c6b9d4f1a7e0c5b8d3f6"
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_DB: submify
     volumes:
       - type: bind
         source: /DATA/AppData/$AppID/postgres
         target: /var/lib/postgresql/data
+      - type: bind
+        source: /DATA/AppData/$AppID/secrets
+        target: /run/secrets
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U submify -d submify"]
       interval: 10s
@@ -27,11 +51,36 @@ services:
     container_name: submify-api
     hostname: submify-api
     restart: unless-stopped
+    # Reads the same generated Postgres password (waits briefly in case this
+    # container wins a cold-start race against db) and generates its own
+    # random JWT_SECRET into the same persisted secrets volume on first
+    # boot — same reasoning as db's POSTGRES_PASSWORD_FILE above: this
+    # compose file is public, so a fixed default JWT secret would let
+    # anyone forge auth tokens against any install that hasn't changed it.
+    # `command:` alone would NOT work here — the image already has a fixed
+    # ENTRYPOINT (["/app/submify-api"]), so a plain `command:` override just
+    # becomes extra argv to that binary instead of replacing what actually
+    # runs. `entrypoint:` is required to make this shell wrapper the real
+    # process that execs into submify-api at the end.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /run/secrets
+        for i in $(seq 1 30); do
+          [ -s /run/secrets/postgres_password ] && break
+          sleep 1
+        done
+        if [ ! -s /run/secrets/jwt_secret ]; then
+          tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48 > /run/secrets/jwt_secret
+          chmod 644 /run/secrets/jwt_secret
+        fi
+        export DATABASE_URL="postgres://submify:$(cat /run/secrets/postgres_password)@submify-db:5432/submify?sslmode=disable"
+        export JWT_SECRET="$(cat /run/secrets/jwt_secret)"
+        exec /app/submify-api
     environment:
       PORT: "8080"
-      # Must match the db service's POSTGRES_PASSWORD above if you change it.
-      DATABASE_URL: "postgres://submify:7f3a9c2e8b1d4f6a0e5c8b2d9f4a6e1c3b7d0f5a8e2c6b9d4f1a7e0c5b8d3f6@submify-db:5432/submify?sslmode=disable"
-      JWT_SECRET: "a8e9d7f6c5b4a39281706f5e4d3c2b1a098f7e6d5c4b3a2918075645342312019"
       AUTH_COOKIE_SECURE: "false"
       ALLOWED_ORIGINS: "http://localhost:2512,http://127.0.0.1:2512"
       CORS_RELAX_PRIVATE_NETWORKS: "true"
@@ -61,6 +110,11 @@ services:
       - type: bind
         source: /DATA/AppData/$AppID/uploads
         target: /data/uploads
+      - type: bind
+        source: /DATA/AppData/$AppID/secrets
+        target: /run/secrets
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       db:
         condition: service_healthy
@@ -68,12 +122,6 @@ services:
       - submify
     x-casaos:
       envs:
-        - container: DATABASE_URL
-          description:
-            en_US: Must match the db service's POSTGRES_PASSWORD above if you change it. Leave as default unless you know why you're changing it.
-        - container: JWT_SECRET
-          description:
-            en_US: Change this from the default before exposing the instance beyond your LAN. Must be at least 32 characters — the app refuses to boot with a short/weak secret.
         - container: ALLOWED_ORIGINS
           description:
             en_US: >-
@@ -104,6 +152,8 @@ services:
       NEXT_PUBLIC_API_BASE: "/api/v1"
       NODEDR_SUBMIT_PUBLIC_KEY: ""
       NODEDR_SUBMIT_SECRET_KEY: ""
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - api
     networks:
@@ -118,6 +168,8 @@ services:
       - target: 2512
         published: "2512"
         protocol: tcp
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - api
       - web
@@ -169,13 +221,15 @@ x-casaos:
   tips:
     before_install:
       en_US: |
-        **Before first launch**, change the placeholder `JWT_SECRET` and
-        Postgres password in the `api` and `db` services — they must stay
-        in sync (`db`'s `POSTGRES_PASSWORD` and `api`'s `DATABASE_URL`).
+        The Postgres password and JWT signing secret are generated
+        randomly on first launch and stored in
+        `/DATA/AppData/submify/secrets/` — nothing to configure.
 
-        Your data (Postgres database + locally-stored file uploads)
-        persists at `/DATA/AppData/submify/`, following CasaOS/ZimaOS's
-        standard backup/restore convention.
+        Your data (Postgres database, locally-stored file uploads, and the
+        generated secrets above) persists at `/DATA/AppData/submify/`,
+        following CasaOS/ZimaOS's standard backup/restore convention. Back
+        up the whole folder together — losing `secrets/` without the
+        matching `postgres/` data (or vice versa) locks you out.
 
         After install, open the app to create your first project and
         submit key — no manual configuration or demo data needed. To
