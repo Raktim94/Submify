@@ -63,5 +63,6 @@ is enough; the full reasoning lives here, not duplicated at every call site.
 | [0002](./0002-organization-scoped-default-project.md) | Projects (and their "default/inbox" flag) are scoped to the organization, not the creating user |
 | [0003](./0003-local-storage-fallback.md) | Local disk is the automatic upload fallback when no S3 is configured — not a separate opt-in mode |
 | [0004](./0004-backup-format-pure-go-json-dump.md) | Backups are a pure-Go JSON table dump, not a shelled-out `pg_dump` |
+| [0005](./0005-calendar-booking-architecture.md) | Calendar/booking core — buffer-inclusive ranges for conflict detection, DB-level exclusion constraint, pure-Go availability engine |
 
 See `../roadmap/00-MASTER-PLAN.md` for the full program plan and status.

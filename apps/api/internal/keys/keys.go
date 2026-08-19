@@ -23,6 +23,18 @@ func NewAPISecret() (string, error) {
 	return "sk_live_" + hex.EncodeToString(b), nil
 }
 
+// NewManageToken returns an unguessable token for a booking's secure
+// reschedule/cancel link — this must never be a predictable ID (see
+// docs/decisions/0005-calendar-booking-architecture.md's neighbor
+// requirement in the master brief: no exposing predictable booking IDs).
+func NewManageToken() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "bkg_" + hex.EncodeToString(b), nil
+}
+
 // portalPasswordAlphabet excludes visually ambiguous characters (0/o, 1/l/i) so the
 // generated portal password is easy to read aloud and share. Its length (32) divides
 // 256 evenly, so the modulo mapping below is unbiased.

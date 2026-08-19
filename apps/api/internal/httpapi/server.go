@@ -134,6 +134,27 @@ func (s *Server) Router() *gin.Engine {
 		secured.PUT("/users/me/password", s.ChangePassword)
 		secured.POST("/users/me/api-key/rotate", s.RotateAccountAPIKey)
 		secured.POST("/users/me/projects/rotate-keys", s.RotateAllProjectKeys)
+
+		secured.POST("/event-types", s.CreateEventType)
+		secured.GET("/event-types", s.ListEventTypes)
+		secured.GET("/event-types/:id", s.GetEventType)
+		secured.DELETE("/event-types/:id", s.DeleteEventType)
+		secured.PUT("/event-types/:id/overrides", s.UpsertEventTypeOverride)
+		secured.GET("/bookings", s.ListOrgBookings)
+		secured.POST("/bookings/:id/cancel", s.CancelOrgBooking)
+	}
+
+	// Public booking flow — reachable by anyone with an event type's link,
+	// the same trust model as the client portal and presigned uploads.
+	publicBooking := api.Group("/public")
+	publicBooking.Use(KeyedRateLimitMiddleware(s.authedUserLimiter, clientIPKey, "rate limit exceeded; try again shortly"))
+	{
+		publicBooking.GET("/event-types/:id", s.PublicEventType)
+		publicBooking.GET("/event-types/:id/slots", s.PublicEventTypeSlots)
+		publicBooking.POST("/event-types/:id/bookings", s.PublicCreateBooking)
+		publicBooking.GET("/bookings/:token", s.PublicGetBooking)
+		publicBooking.POST("/bookings/:token/reschedule", s.PublicRescheduleBooking)
+		publicBooking.POST("/bookings/:token/cancel", s.PublicCancelBooking)
 	}
 
 	admin := secured.Group("")

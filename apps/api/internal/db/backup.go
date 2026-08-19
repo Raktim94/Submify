@@ -19,6 +19,10 @@ var backupTables = []string{
 	"projects",
 	"submissions",
 	"system_configs",
+	"event_types",
+	"availability_rules",
+	"availability_overrides",
+	"bookings",
 }
 
 // BackupTables returns the ordered list of tables a backup covers. Restore

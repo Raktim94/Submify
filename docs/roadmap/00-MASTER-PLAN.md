@@ -222,19 +222,36 @@ Check items off as they're **actually verified working**, not merely coded.
       purpose, see ADR 0004); backup encryption (§26 — not evaluated yet
       either way, still open).
 
-### Phase 5 — Calendar & Booking (§6–15)
-- [ ] Event types (duration, location, availability, buffers, limits,
-      custom questions, confirmation/cancellation/reschedule rules)
-- [ ] Public booking pages (Event → Date → Time → Details → Confirmation),
-      mobile-friendly, timezone-aware, SEO-safe where desired
-- [ ] Availability engine: weekly recurring + overrides + blocked dates +
-      buffers + min/max notice + slot intervals, UTC storage w/ DST handled,
-      double-booking conflict detection — timezone/DST logic needs real
-      automated tests, not spot checks
+### Phase 5 — Calendar & Booking (§6–15) — core backend landed 2026-08-19
+- [x] Event types (duration, location, buffers, min notice, max advance,
+      slot interval) — API + storage done. **Not done**: custom
+      per-booking questions (§7's "custom questions, required fields")
+      and confirmation-message customization — schema/API don't have
+      these fields yet, only the scheduling mechanics.
+- [ ] Public booking pages (Event → Date → Time → Details → Confirmation)
+      — the *API* this needs is done (`GET /public/event-types/:id`,
+      `.../slots`, `POST .../bookings`) but **no frontend UI exists** —
+      this is a backend-only slice, see Phase 7 for the actual page.
+- [x] **Availability engine — done and rigorously tested**: weekly
+      recurring rules + date overrides (full-day block or custom hours)
+      + buffers + min/max notice + slot intervals, UTC storage with DST
+      verified by dedicated automated tests (not spot checks — see
+      `internal/availability/availability_test.go`, 7 tests including
+      two that assert exact UTC instants across real 2026 DST
+      transitions). Double-booking conflict detection is a DB-level
+      `EXCLUDE` constraint (ADR 0005) — live-verified against exact and
+      buffer-overlapping double-book attempts, both correctly rejected.
 - [ ] Team scheduling (single/multi host, round-robin, pooled availability)
-- [ ] Secure reschedule/cancel via signed links, not guessable booking IDs
+      — not started; today an event type has exactly one host.
+- [x] Secure reschedule/cancel via signed links — `manage_token` is a
+      24-byte random token (`bkg_...`), never a sequential/guessable ID.
+      Live-verified: view/reschedule/cancel all work via the token, and
+      cancelling twice fails cleanly instead of erroring or double-firing.
 - [ ] Reminder architecture (email/webhook/Telegram now; SMS/WhatsApp/Slack/
       Teams as future adapters — no provider-specific logic in booking core)
+      — not started; bookings don't yet trigger any notification on
+      create/reschedule/cancel (Telegram integration exists for form
+      submissions only, not wired to bookings yet).
 - [ ] Calendar UI: month/week/day/upcoming views. Design target (user spec,
       2026-08-19): Google-Calendar-grade density/polish and interaction
       feel — but an original visual identity, not a lookalike clone (the
@@ -452,3 +469,51 @@ should read first.
   Phase 5 (calendar/booking, entirely greenfield) or Phase 3's remaining
   items (API keys with scopes, file-extension validation) — whichever is
   tackled next, keep verifying against a real Postgres + live server.
+
+- **2026-08-19 (continued yet further)**: Landed the calendar/booking
+  core (Phase 5 kickoff, ADR 0005) — the largest greenfield piece of the
+  program so far. New `internal/availability` package: a pure-Go,
+  timezone-aware slot-computation engine with 7 unit tests, including two
+  that specifically straddle real 2026 DST transitions (America/New_York
+  spring-forward 2026-03-08, fall-back 2026-11-01) and assert the exact
+  expected UTC instant on each side — not just "it runs without error."
+  New tables (migration `0011_calendar_booking.sql`): `event_types`,
+  `availability_rules`, `availability_overrides`, `bookings`. Conflict
+  detection is a Postgres `EXCLUDE USING gist` constraint (needs
+  `btree_gist`), not application logic — makes double-booking impossible
+  even under concurrent requests, verified live by attempting an exact
+  double-book (409) and a buffer-adjacent booking that overlaps once
+  buffers are applied (also 409, and this wasn't even slot-aligned —
+  proves the constraint catches arbitrary overlaps, not just exact slot
+  matches). Full public booking flow wired and live-tested: create event
+  type with weekly hours → query public slots → book → reschedule (old
+  slot frees, new slot blocks) → cancel via manage token (idempotency
+  checked — cancelling twice fails cleanly, not a 500) → admin-side
+  cancel from the authenticated dashboard → date-based override blocking
+  a whole day → all verified against a real running server, not mocked.
+  Also fixed a real production bug before it could ship: Alpine's
+  `alpine:3.20` (this repo's API base image) has no `tzdata` package, so
+  `time.LoadLocation` for any non-UTC zone would have silently failed in
+  prod despite working in local dev — fixed via a `time/tzdata` blank
+  import in `cmd/server/main.go`. Added the four new tables to the
+  backup allowlist and **re-verified the full backup→restore round trip
+  with calendar data included**: booking data, availability rules, and
+  the date override all survived a restore onto a completely fresh
+  instance, and — the part that actually mattered to test — the EXCLUDE
+  constraint was confirmed still enforced on the restored instance (a
+  fresh double-booking attempt post-restore correctly got a 409).
+  `go build`/`vet`/`test ./...` green throughout. All test containers and
+  temp files cleaned up.
+
+  **Not done in this slice** (Phase 5 continues in future sessions):
+  team/round-robin scheduling (§10), external calendar sync — Google/
+  Outlook/ICS import for busy-time detection (§14, genuinely needs
+  credentials this environment doesn't have — will implement the adapter
+  framework + config UI when picked up, not fabricate credentials),
+  `.ics` file generation for confirmations (§15 — straightforward,
+  just not built yet), reminder delivery (booking confirmations/
+  cancellations aren't yet wired to the existing Telegram notifier),
+  the calendar UI/dashboard views (month/week/day — this slice is
+  API-only, no frontend), and forms↔calendar integration events (§16).
+  Conflict detection is also still scoped per-event-type, not per-host-
+  across-all-their-event-types — see the ADR's stated limitation.
