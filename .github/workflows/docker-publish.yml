@@ -1,0 +1,101 @@
+# Publishes multi-arch images for the CasaOS/ZimaOS store submission (and
+# any other pre-built-image deploy path). The plain `docker-compose.yml` at
+# repo root still builds from source for local/dev use — this workflow is
+# only what feeds `casaos/docker-compose.yml`'s pinned image tags.
+name: Publish Docker images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "infra/nginx/**"
+      - ".github/workflows/docker-publish.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to publish (e.g. 1.0.0). Also pushed as :latest."
+        required: false
+        default: ""
+
+concurrency:
+  group: docker-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        include:
+          - image: submify-api
+            context: ./apps/api
+          - image: submify-web
+            context: ./apps/web
+          - image: submify-nginx
+            context: ./infra/nginx
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # actions/checkout defaults to a shallow, tag-less clone; `git
+          # describe --tags` silently returns nothing on one, which (if the
+          # fallback below were a naive pipe) would resolve VERSION to an
+          # empty string and produce an invalid image tag. fetch-depth: 0
+          # avoids that class of bug outright.
+          fetch-depth: 0
+
+      - name: Resolve version and image owner
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            GIT_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+            if [ -n "$GIT_TAG" ]; then
+              VERSION="${GIT_TAG#v}"
+            else
+              VERSION="0.0.0-dev"
+            fi
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::Resolved VERSION is empty - refusing to publish an untagged image" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # GHCR image paths must be lowercase; the GitHub org/user name is
+          # not guaranteed to be.
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (for arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.owner }}/${{ matrix.image }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.owner }}/${{ matrix.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
