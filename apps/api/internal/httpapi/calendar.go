@@ -6,10 +6,30 @@ import (
 	"net/http"
 	"time"
 
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 	"github.com/nodedr/submify/apps/api/internal/availability"
 	"github.com/nodedr/submify/apps/api/internal/db"
+	"github.com/nodedr/submify/apps/api/internal/telegram"
 )
+
+// notifyHostOfBooking fires a best-effort Telegram notification to the
+// event type's host (account-level bot token/chat ID — bookings don't
+// belong to a project the way submissions do, so there's no per-project
+// Telegram target to prefer). Silently does nothing if the host hasn't
+// configured Telegram, matching how submission notifications behave.
+func (s *Server) notifyHostOfBooking(et db.EventType, action string, b db.Booking) {
+	host, err := s.store.FindUserByID(et.HostUserID)
+	if err != nil {
+		return
+	}
+	msg := fmt.Sprintf(
+		"Booking %s\nEvent: %s\nWhen: %s\nAttendee: %s (%s)",
+		action, et.Title, b.StartsAt.Local().Format("Mon, Jan 2 2006 3:04 PM"), b.AttendeeName, b.AttendeeEmail,
+	)
+	telegram.NotifyAsync(host.TelegramBotToken, host.TelegramChatID, msg)
+}
 
 type ruleRequest struct {
 	Weekday     int `json:"weekday" binding:"min=0,max=6"`
@@ -316,6 +336,7 @@ func (s *Server) PublicCreateBooking(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.notifyHostOfBooking(et, "created", b)
 	c.JSON(http.StatusCreated, gin.H{"booking": b, "manage_url": s.absoluteAPIURL(c, "/api/v1/public/bookings/"+b.ManageToken)})
 }
 
@@ -367,6 +388,7 @@ func (s *Server) PublicRescheduleBooking(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.notifyHostOfBooking(et, "rescheduled", updated)
 	c.JSON(http.StatusOK, gin.H{"booking": updated})
 }
 
@@ -384,6 +406,9 @@ func (s *Server) PublicCancelBooking(c *gin.Context) {
 		}
 		c.JSON(status, gin.H{"error": "could not cancel: " + err.Error()})
 		return
+	}
+	if et, etErr := s.store.EventTypeByID(b.EventTypeID); etErr == nil {
+		s.notifyHostOfBooking(et, "cancelled", updated)
 	}
 	c.JSON(http.StatusOK, gin.H{"booking": updated})
 }

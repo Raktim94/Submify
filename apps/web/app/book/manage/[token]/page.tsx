@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { apiBase } from '@/lib/api';
 import { Card, CardBody } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
@@ -131,13 +132,16 @@ export default function ManageBookingPage() {
                 </p>
 
                 {booking.status === 'confirmed' && !rescheduling ? (
-                  <div className="mt-6 flex flex-wrap gap-3">
+                  <div className="mt-6 flex flex-wrap items-center gap-3">
                     <Button variant="outline" onClick={startReschedule}>
                       Reschedule
                     </Button>
                     <Button variant="danger" onClick={() => setConfirmCancel(true)}>
                       Cancel booking
                     </Button>
+                    <a href={`${apiBase()}/public/bookings/${token}/ics`} className="text-sm font-medium text-indigo-600 hover:underline">
+                      Add to calendar
+                    </a>
                   </div>
                 ) : null}
 

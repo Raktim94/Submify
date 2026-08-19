@@ -7,6 +7,7 @@ import { Field, Input, Textarea } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { type PublicEventType, type PublicSlot, createPublicBooking, getPublicEventType, getPublicSlots } from '@/lib/calendar';
+import { apiBase } from '@/lib/api';
 
 type Step = 'loading' | 'error' | 'pick-time' | 'details' | 'confirmed';
 
@@ -222,9 +223,14 @@ export default function PublicBookingPage() {
                   </p>
                   <p className="mt-4 text-sm text-slate-500">Save this page&apos;s link if you&apos;d like to reschedule or cancel later.</p>
                   {manageToken ? (
-                    <a href={`/book/manage/${manageToken}`} className="mt-4 inline-block text-sm font-medium text-indigo-600 hover:underline">
-                      Need to reschedule or cancel?
-                    </a>
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-4">
+                      <a href={`${apiBase()}/public/bookings/${manageToken}/ics`} className="text-sm font-medium text-indigo-600 hover:underline">
+                        Add to calendar
+                      </a>
+                      <a href={`/book/manage/${manageToken}`} className="text-sm font-medium text-indigo-600 hover:underline">
+                        Need to reschedule or cancel?
+                      </a>
+                    </div>
                   ) : null}
                 </CardBody>
               </Card>

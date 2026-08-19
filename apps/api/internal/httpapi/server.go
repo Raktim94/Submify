@@ -153,6 +153,7 @@ func (s *Server) Router() *gin.Engine {
 		publicBooking.GET("/event-types/:id/slots", s.PublicEventTypeSlots)
 		publicBooking.POST("/event-types/:id/bookings", s.PublicCreateBooking)
 		publicBooking.GET("/bookings/:token", s.PublicGetBooking)
+		publicBooking.GET("/bookings/:token/ics", s.PublicBookingICS)
 		publicBooking.POST("/bookings/:token/reschedule", s.PublicRescheduleBooking)
 		publicBooking.POST("/bookings/:token/cancel", s.PublicCancelBooking)
 	}

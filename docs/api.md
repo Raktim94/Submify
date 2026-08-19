@@ -5,7 +5,7 @@
 
 All JSON bodies use `Content-Type: application/json` unless noted. Error responses are `{ "error": "..." }`.
 
-**One account per instance:** Submify is single-tenant. `POST /auth/register` only succeeds while no account exists yet (`GET /system/bootstrap-status` returns `"setup_required": true`). Once the first account is created, registration closes — `POST /auth/register` returns `403` and you sign in at `/auth/login` from then on.
+**One organization per instance:** `POST /auth/register` only succeeds while no account exists yet (`GET /system/bootstrap-status` returns `"setup_required": true`) — that first registration creates both the account and its organization. Once any account exists, registration closes — `POST /auth/register` returns `403` and further members join the same organization via `POST /users` (admin-only) instead of registering themselves. See [Organization & members](#organization--members).
 
 **Rate limiting** (all return `429` with a JSON `error` string):
 
@@ -372,3 +372,116 @@ Portal session required. File download of the project's submissions (first 5,000
 - `portal_enabled` — enable/disable the portal.
 - `regenerate_portal_password` (`true`) — generate a new random password; returned once as `portal_password`.
 - `portal_password` — set an explicit password (min 8 chars; returned once as `portal_password`), or `""` to clear it.
+
+## Backup & restore
+
+### `POST /system/backup`
+
+Admin-only. Streams a full-instance backup as a `.zip` — see
+`docs/decisions/0004-backup-format-pure-go-json-dump.md` for exactly what's
+included (all organizations/users/projects/submissions/calendar data,
+local-storage uploads) and excluded (S3-stored files, session tokens,
+migration history).
+
+**Response:** `200` — file download (`Content-Disposition: attachment`).
+
+### `POST /system/restore`
+
+Unauthenticated — self-guards on the instance having zero existing accounts
+(same reachability as `POST /auth/register`, for the same reason: there's no
+admin session to authenticate as on a fresh install). Restoring over an
+already-active installation is not supported by this endpoint.
+
+**Body:** `multipart/form-data`, field `backup` = a `.zip` produced by
+`POST /system/backup`.
+
+**Response:** `200` `{ "status": "restored", "tables": { "<table>": <row count>, ... }, "files_restored": <number>, "file_warnings"?: [...] }`
+
+**Errors:** `403` an account already exists on this instance, `400` invalid/
+corrupted backup (missing manifest, unsupported `backupVersion`, or a
+checksum mismatch — the backup is rejected before anything is written).
+
+## Calendar & booking
+
+An **event type** defines a bookable service (duration, weekly hours,
+buffers, notice window) owned by one host in the caller's organization. Each
+has a public, unauthenticated booking flow at its `id`.
+
+### `POST /event-types`
+
+**Body:** `slug`, `title`, `description`, `duration_minutes`, `location`,
+`timezone` (IANA name), `buffer_before_minutes`, `buffer_after_minutes`,
+`min_notice_minutes`, `max_advance_days` (default 60), `slot_interval_minutes`
+(default 15), `rules: [{ weekday: 0-6, start_minute, end_minute }]` (weekly
+recurring availability, `weekday` 0=Sunday).
+
+**Response:** `201` `{ "event_type": EventType, "rules": [...] }`
+
+### `GET /event-types` / `GET /event-types/{id}` / `DELETE /event-types/{id}`
+
+List, fetch (with `rules` and date `overrides`), or delete an event type —
+all organization-scoped.
+
+### `PUT /event-types/{id}/overrides`
+
+Sets or clears a date-specific override (blocks a date entirely, or gives it
+custom hours instead of the weekly rule).
+
+**Body:** `{ "date": "YYYY-MM-DD", "blocked": true }` or
+`{ "date": "YYYY-MM-DD", "blocked": false, "start_minute": ..., "end_minute": ... }`
+
+### `GET /bookings`
+
+Organization's bookings. **Query:** `from`, `to` (RFC3339, default: now to
++30 days).
+
+### `POST /bookings/{id}/cancel`
+
+Cancels a booking on behalf of the organization (as opposed to the attendee
+cancelling via their manage link, below).
+
+### `GET /public/event-types/{id}`
+
+Public booking-page info: `id`, `title`, `description`, `duration_minutes`,
+`location`, `timezone`. No authentication.
+
+### `GET /public/event-types/{id}/slots`
+
+Available slots from now through `max_advance_days`, respecting weekly
+rules, date overrides, buffers, minimum notice, and existing bookings.
+
+**Response:** `200` `{ "slots": [{ "start": "RFC3339", "end": "RFC3339" }, ...], "timezone": "..." }`
+
+### `POST /public/event-types/{id}/bookings`
+
+Creates a booking. **Body:** `starts_at` (RFC3339, must be one of the
+offered slots), `attendee_name`, `attendee_email`, `attendee_timezone`
+(optional), `notes` (optional).
+
+**Response:** `201` `{ "booking": Booking, "manage_url": "..." }` — `booking.manage_token`
+is an unguessable token for the reschedule/cancel endpoints below; never a
+predictable ID.
+
+**Errors:** `409` the slot was just taken (double-booking is prevented at
+the database level, so this can happen under real concurrent requests, not
+just as a validation nicety).
+
+### `GET /public/bookings/{token}` / `POST /public/bookings/{token}/reschedule` / `POST /public/bookings/{token}/cancel`
+
+View, reschedule (`{ "starts_at": "RFC3339" }`), or cancel a booking via its
+manage token. No authentication — the token itself is the access control,
+the same trust model as the client portal and presigned uploads.
+
+### `GET /public/bookings/{token}/ics`
+
+Downloads a standards-compliant `.ics` calendar file for the booking.
+
+**Response:** `200` — `text/calendar`, `Content-Disposition: attachment`.
+
+## Software version
+
+### `GET /system/version`
+
+Not yet implemented for Submify itself (`internal/update` exists in the
+codebase but isn't wired up to an endpoint — see
+`docs/roadmap/00-MASTER-PLAN.md`).

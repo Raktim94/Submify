@@ -222,16 +222,26 @@ Check items off as they're **actually verified working**, not merely coded.
       purpose, see ADR 0004); backup encryption (§26 — not evaluated yet
       either way, still open).
 
-### Phase 5 — Calendar & Booking (§6–15) — core backend landed 2026-08-19
+### Phase 5 — Calendar & Booking (§6–15) — functionally complete end-to-end 2026-08-19
+(remaining gaps: team scheduling, external calendar sync, custom booking
+questions, non-Telegram reminder channels — all explicitly scoped out below,
+not silently missing)
 - [x] Event types (duration, location, buffers, min notice, max advance,
       slot interval) — API + storage done. **Not done**: custom
       per-booking questions (§7's "custom questions, required fields")
       and confirmation-message customization — schema/API don't have
       these fields yet, only the scheduling mechanics.
-- [ ] Public booking pages (Event → Date → Time → Details → Confirmation)
-      — the *API* this needs is done (`GET /public/event-types/:id`,
-      `.../slots`, `POST .../bookings`) but **no frontend UI exists** —
-      this is a backend-only slice, see Phase 7 for the actual page.
+- [x] **Public booking pages — landed and visually verified**: `/calendar`
+      (authenticated dashboard — create event types via a weekly-hours
+      form, copy booking links, view/cancel upcoming bookings) and the
+      public flow at `/book/[eventTypeId]` (Event → Date → Time → Details
+      → Confirmation) plus `/book/manage/[token]` for reschedule/cancel.
+      Verified live in a real browser: created an event type through the
+      UI, booked a real slot on the public page, reschedule/cancel both
+      exercised including the destructive-action confirm dialog. Found
+      and fixed one real bug this way (a raw `<button>` inheriting the
+      site's global purple button-reset, making its text invisible — not
+      catchable by `tsc`/`next build`, only by actually looking at it).
 - [x] **Availability engine — done and rigorously tested**: weekly
       recurring rules + date overrides (full-day block or custom hours)
       + buffers + min/max notice + slot intervals, UTC storage with DST
@@ -247,11 +257,15 @@ Check items off as they're **actually verified working**, not merely coded.
       24-byte random token (`bkg_...`), never a sequential/guessable ID.
       Live-verified: view/reschedule/cancel all work via the token, and
       cancelling twice fails cleanly instead of erroring or double-firing.
-- [ ] Reminder architecture (email/webhook/Telegram now; SMS/WhatsApp/Slack/
-      Teams as future adapters — no provider-specific logic in booking core)
-      — not started; bookings don't yet trigger any notification on
-      create/reschedule/cancel (Telegram integration exists for form
-      submissions only, not wired to bookings yet).
+- [x] **Telegram booking reminders landed**: create/reschedule/cancel all
+      fire a best-effort Telegram notification to the event type's host
+      (`notifyHostOfBooking` in `internal/httpapi/calendar.go`), reusing
+      the existing `internal/telegram` package — verified live (fake bot
+      token correctly produced a real Telegram API 404, proving the
+      request actually fires with the right shape, not just that the
+      function was called). **Not done**: email/webhook/SMS/WhatsApp/Slack/
+      Teams reminder channels, and no per-event-type notification
+      preferences yet (always fires if the host has Telegram configured).
 - [ ] Calendar UI: month/week/day/upcoming views. Design target (user spec,
       2026-08-19): Google-Calendar-grade density/polish and interaction
       feel — but an original visual identity, not a lookalike clone (the
@@ -264,7 +278,12 @@ Check items off as they're **actually verified working**, not merely coded.
 - [ ] External calendar provider *architecture* (Google/Outlook/ICS) — only
       implement what's completable with credentials we actually have;
       otherwise ship the adapter framework + config UI/docs and say so
-- [ ] `.ics` generation for confirmations
+- [x] **`.ics` generation landed**: `GET /public/bookings/{token}/ics`
+      (`internal/httpapi/ics.go`, dependency-free RFC 5545 single-VEVENT
+      writer), linked from both the booking confirmation screen and the
+      manage page as "Add to calendar." Downloaded and manually verified
+      the generated file's structure live (correct UTC `DTSTART`/`DTEND`,
+      escaped `DESCRIPTION`, `STATUS`).
 
 ### Phase 6 — Integrations (§16, 28–36)
 - [ ] Forms↔Calendar integration via internal events, not hard imports
@@ -517,3 +536,24 @@ should read first.
   API-only, no frontend), and forms↔calendar integration events (§16).
   Conflict detection is also still scoped per-event-type, not per-host-
   across-all-their-event-types — see the ADR's stated limitation.
+
+- **2026-08-19 (continued yet further, calendar fast-finish)**: Per user
+  request to prioritize finishing Calendar over starting the Zulivio
+  integration. Landed the full frontend (`/calendar` dashboard,
+  `/book/[eventTypeId]` public flow, `/book/manage/[token]`), `.ics`
+  generation, and Telegram booking reminders — see the Phase 5 items
+  above for what was verified and how. Also closed two pre-existing doc
+  gaps found along the way: `docs/api.md` never documented
+  backup/restore or calendar endpoints (both added now), and its opening
+  line still said "one account per instance, single-tenant" — stale since
+  the organizations work landed earlier this session (fixed to describe
+  the real one-organization-per-instance model). Phase 5 is now genuinely
+  usable end-to-end by a real customer, not just API-complete. Next: the
+  user asked to move to a **simplified** Zulivio integration next — not
+  the full bidirectional event-bus design from Phase 6's original scope,
+  but pushing new Submify submissions into Zulivio's *existing*
+  `POST /api/v1/leads` endpoint using Zulivio's *existing* personal API
+  key mechanism (no new Zulivio-side code needed) — plus a separately
+  requested feature: per-project email notifications (configurable sender
+  + a recipient address) for form submissions, which doesn't exist in
+  Submify at all yet. Both are queued up next.
