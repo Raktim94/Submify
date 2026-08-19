@@ -143,19 +143,40 @@ Check items off as they're **actually verified working**, not merely coded.
       and `apps/api/migrations/0001_init.sql`) — confirmed by Discovery to
       never be read at runtime; only `apps/api/internal/db/migrations/`
       is live. Leaving them risks a future edit landing in the dead copy.
-- [ ] Storage abstraction (local + S3-compatible: AWS S3, R2, MinIO, B2) —
-      Discovery found S3 creds are currently **hard-mandatory** for any
-      upload to work (no local-disk backend exists today at all), which
-      directly contradicts §17's "local storage for simple self-hosted
-      deployments" requirement — this is a real gap to close, not a
-      nice-to-have
-- [ ] Candidate S3 target for testing the adapter: existing Cloudflare R2
-      credentials already on this machine (see reference memory
-      `reference_cloudflare_r2_credentials.md`) — rotate the token first,
-      it's flagged over-scoped; don't reuse as-is
-- [ ] File upload security hardening (type/size/MIME/extension validation,
-      randomized names, path-traversal prevention, private-by-default,
-      signed URLs, upload rate limiting)
+- [x] **Local storage fallback landed** (2026-08-19, ADR
+      [0003](../decisions/0003-local-storage-fallback.md)): `POST
+      /uploads/presign` now falls back to local disk automatically when no
+      S3 credentials are configured (project or account level) — no
+      separate storage-mode setting, it just works either way. New
+      `internal/storage/local.go` (LocalBackend, path-traversal-safe
+      `resolvePath`, temp-file-then-rename writes) + `upload_tokens.go`
+      (in-memory one-time upload tokens, mirroring the existing rate
+      limiter's in-process pattern rather than adding Redis). New routes
+      `PUT/GET /api/v1/uploads/local/...`. `docker-compose.yml` gained a
+      persistent `./data/uploads` volume + `LOCAL_STORAGE_DIR`. Verified
+      live end to end: presign with zero S3 config → correctly returns a
+      local upload URL → PUT real bytes → GET them back byte-for-byte →
+      token is single-use (second PUT attempt correctly 404s) → an
+      undersized cap correctly rejects an oversized PUT with no partial
+      file left on disk → both a raw `..` path-traversal attempt and a
+      percent-encoded one are blocked before reaching application code
+      (router-level path cleaning), with the handler's own
+      `resolvePath`/`strings.Contains("..")` checks as defense-in-depth
+      behind that. `docs/api.md` updated with the new response shape and
+      the two new endpoints.
+- [ ] S3 backend itself (existing presign flow) still untested against a
+      real S3-compatible endpoint in this program — only the pre-existing
+      unit-level code was inspected, not exercised. Candidate target:
+      existing Cloudflare R2 credentials already on this machine (see
+      reference memory `reference_cloudflare_r2_credentials.md`) — rotate
+      the token first, it's flagged over-scoped; don't reuse as-is.
+- [ ] File upload security hardening still open: extension validation
+      beyond MIME allowlist, and — as ADR 0003 states plainly — **neither
+      backend has actual private-storage-with-signed-download-URLs yet**
+      (§18); both currently rely on "the URL is unguessable" as the access
+      control, which is what the pre-existing S3 code already assumed and
+      this slice deliberately did not silently upgrade only for local
+      storage. Revisit in the Phase 9 security audit.
 - [ ] Versioned API (`/api/v1/...`), API keys with scopes/expiry/revocation/
       last-used, rate limiting, structured errors, pagination
 
@@ -362,3 +383,20 @@ should read first.
   currently S3-only) or the calendar/booking module (§6-15, entirely
   greenfield) — whichever is tackled next, keep verifying against a real
   Postgres + live server, not just `go build`.
+
+- **2026-08-19 (continued further)**: Closed the local-storage gap flagged
+  in Discovery (ADR 0003) — uploads no longer hard-require S3. New
+  `internal/storage/local.go` + `upload_tokens.go`, new
+  `PUT/GET /api/v1/uploads/local/...` routes, `docker-compose.yml` volume.
+  Verified live: presign-without-S3 → local fallback → real PUT/GET
+  round-trip → single-use token enforcement → oversized-upload rejection
+  → both raw and percent-encoded path-traversal attempts blocked.
+  `docs/api.md` updated. `go build`/`vet`/`test ./...` green. Still open:
+  the S3 backend itself hasn't been exercised against a real bucket in
+  this program (only read, not tested); neither backend has true
+  signed-download-URL privacy yet (§18, explicitly deferred, not
+  forgotten). Next candidates: exercise S3 against real R2 (after
+  rotating the flagged-over-scoped token), backup/restore (Phase 4, needs
+  this storage abstraction as a foundation), or start the calendar/
+  booking module (Phase 5, entirely greenfield, most brief real
+  estate) — proceeding to whichever has the most leverage next.

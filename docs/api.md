@@ -191,7 +191,10 @@ Deletes a project and **all of its submissions**. Irreversible. The organization
 
 ### `POST /uploads/presign`
 
-Requires S3-compatible storage configured (project-level, falling back to account-level).
+Uses S3-compatible storage if configured (project-level, falling back to
+account-level); otherwise **automatically falls back to local disk** — there is
+no separate storage-mode setting, uploads just work either way. See
+`docs/decisions/0003-local-storage-fallback.md`.
 
 **Body:**
 
@@ -202,9 +205,38 @@ Requires S3-compatible storage configured (project-level, falling back to accoun
 | `content_type` | string (must be in `ALLOWED_MIME_TYPES`) |
 | `size` | int64 bytes (≤ `UPLOAD_MAX_SIZE_BYTES`) |
 
-**Response:** `200` `{ "upload_url": "https://...", "object_key": "...", "expires_at": "RFC3339" }`
+**Response (S3 backend):** `200` `{ "upload_url": "https://...", "object_key": "...", "expires_at": "RFC3339" }` —
+PUT the file bytes directly to `upload_url`.
 
-**Errors:** `400` file too large / MIME not allowed / storage not configured, `404` project not found.
+**Response (local backend, when no S3 credentials are configured):** `200`
+`{ "backend": "local", "upload_url": "https://this-instance/api/v1/uploads/local/<token>", "download_url": "https://this-instance/api/v1/uploads/local/<object_key>", "object_key": "...", "expires_at": "RFC3339" }` —
+PUT the file bytes to `upload_url` (a one-time token, consumed on first use); the
+resulting file is then servable from `download_url` (public — same trust model as
+an S3 object's URL being the access control).
+
+**Errors:** `400` file too large / MIME not allowed, `404` project not found.
+
+### `PUT /uploads/local/{token}`
+
+Local-storage upload target returned by `POST /uploads/presign` above. The
+request body is the raw file bytes. Single-use — the token is invalidated after
+one successful (or failed) attempt. Public, unauthenticated by design (the token
+is the authorization, same as a presigned S3 URL's signature).
+
+**Response:** `200` `{ "status": "stored", "object_key": "..." }`
+
+**Errors:** `404` token not found/expired/already used, `400` upload exceeds the
+size committed to at presign time.
+
+### `GET /uploads/local/{key}`
+
+Serves a previously uploaded local file back. Public, unauthenticated by design —
+see `docs/decisions/0003-local-storage-fallback.md` for why this matches the
+existing S3 trust model rather than introducing a stricter one only for local
+storage.
+
+**Response:** `200` — file bytes, with a best-effort `Content-Type` guessed from
+the file extension.
 
 ### `GET /projects/{id}/export`
 

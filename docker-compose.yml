@@ -62,7 +62,12 @@ services:
       UPLOAD_MAX_SIZE_BYTES: ${UPLOAD_MAX_SIZE_BYTES:-26214400}
       UPLOAD_ALLOWED_MIME: ${UPLOAD_ALLOWED_MIME:-image/png,image/jpeg,application/pdf,text/plain}
       PRESIGN_EXPIRY_MINUTES: ${PRESIGN_EXPIRY_MINUTES:-10}
+      # Zero-config fallback used whenever a project/account has no S3-compatible
+      # credentials configured — see docs/decisions/0003-local-storage-fallback.md.
+      LOCAL_STORAGE_DIR: /data/uploads
       GIN_MODE: release
+    volumes:
+      - ./data/uploads:/data/uploads
     logging: *api-logging
     depends_on:
       db:

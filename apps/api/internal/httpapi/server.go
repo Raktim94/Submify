@@ -16,6 +16,7 @@ import (
 	"github.com/nodedr/submify/apps/api/internal/auth"
 	"github.com/nodedr/submify/apps/api/internal/config"
 	"github.com/nodedr/submify/apps/api/internal/db"
+	"github.com/nodedr/submify/apps/api/internal/storage"
 	"github.com/nodedr/submify/apps/api/internal/telegram"
 	"github.com/xuri/excelize/v2"
 )
@@ -29,6 +30,8 @@ type Server struct {
 	submitLimitKey         *KeyedRateLimiter
 	authedUserLimiter      *KeyedRateLimiter
 	portalLoginLimiter     *KeyedRateLimiter
+	localStorage           *storage.LocalBackend
+	uploadTokens           *storage.UploadTokenStore
 }
 
 func NewServer(cfg config.Config, store *db.Store) *Server {
@@ -46,6 +49,8 @@ func NewServer(cfg config.Config, store *db.Store) *Server {
 		submitLimitKey:         NewKeyedRateLimiter(cfg.RateLimitSubmitKeyRPM, subKeyBurst),
 		authedUserLimiter:      NewKeyedRateLimiter(cfg.RateLimitAuthedUserRPM, authBurst),
 		portalLoginLimiter:     NewKeyedRateLimiter(portalLoginRPM, max(5, portalLoginRPM/2)),
+		localStorage:           &storage.LocalBackend{RootDir: cfg.LocalStorageDir},
+		uploadTokens:           storage.NewUploadTokenStore(),
 	}
 }
 
@@ -69,6 +74,17 @@ func (s *Server) Router() *gin.Engine {
 	{
 		api.GET("/system/bootstrap-status", s.BootstrapStatus)
 		api.GET("/system/health", s.Health)
+	}
+
+	// Local-storage direct upload/download — the local-disk equivalent of a
+	// presigned S3 URL. Public by design (the token/key IS the access
+	// control), rate-limited like other unauthenticated public traffic. See
+	// docs/decisions/0003-local-storage-fallback.md.
+	uploadsLocal := api.Group("/uploads/local")
+	uploadsLocal.Use(KeyedRateLimitMiddleware(s.submitLimitIP, clientIPKey, "rate limit exceeded; try again shortly"))
+	{
+		uploadsLocal.PUT("/:token", s.LocalUploadPut)
+		uploadsLocal.GET("/*key", s.LocalUploadGet)
 	}
 
 	sens := api.Group("")

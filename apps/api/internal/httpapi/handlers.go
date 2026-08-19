@@ -827,8 +827,24 @@ func (s *Server) PresignUpload(c *gin.Context) {
 		s3Access = strings.TrimSpace(u.S3AccessKey)
 		s3Secret = strings.TrimSpace(u.S3SecretKey)
 	}
+	// No S3-compatible credentials configured anywhere → fall back to local
+	// disk storage, so uploads work out of the box on a fresh self-hosted
+	// install. See docs/decisions/0003-local-storage-fallback.md.
 	if s3Endpoint == "" || s3Bucket == "" || s3Access == "" || s3Secret == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "configure S3 storage for this project in Projects (or set legacy user-level S3 settings)"})
+		objectKey := storage.ProjectKey(req.ProjectID, req.Filename)
+		ttl := time.Duration(s.cfg.PresignExpiryMinutes) * time.Minute
+		token, err := s.uploadTokens.Issue(objectKey, req.Size, ttl)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"upload_url":   s.absoluteAPIURL(c, "/api/v1/uploads/local/"+token),
+			"download_url": s.absoluteAPIURL(c, "/api/v1/uploads/local/"+objectKey),
+			"object_key":   objectKey,
+			"expires_at":   time.Now().UTC().Add(ttl).Format(time.RFC3339),
+			"backend":      "local",
+		})
 		return
 	}
 	result, err := storage.PresignUpload(c.Request.Context(), storage.PresignInput{

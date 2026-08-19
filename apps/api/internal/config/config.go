@@ -41,6 +41,10 @@ type Config struct {
 	AuthCookieSecure   bool
 	AuthCookieDomain   string
 	AuthCookieSameSite string
+	// LocalStorageDir is where uploads land when a project/account has no
+	// S3-compatible credentials configured — the zero-config default for
+	// self-hosted deployments. See docs/decisions/0003-local-storage-fallback.md.
+	LocalStorageDir string
 }
 
 func Load() Config {
@@ -74,6 +78,7 @@ func Load() Config {
 		AuthCookieSecure:            getEnvBool("AUTH_COOKIE_SECURE", false),
 		AuthCookieDomain:            strings.TrimSpace(getEnv("AUTH_COOKIE_DOMAIN", "")),
 		AuthCookieSameSite:          strings.ToLower(strings.TrimSpace(getEnv("AUTH_COOKIE_SAMESITE", "lax"))),
+		LocalStorageDir:             getEnv("LOCAL_STORAGE_DIR", "/data/uploads"),
 	}
 	switch cfg.AuthCookieSameSite {
 	case "strict", "lax", "none":
