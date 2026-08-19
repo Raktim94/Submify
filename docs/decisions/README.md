@@ -62,5 +62,6 @@ is enough; the full reasoning lives here, not duplicated at every call site.
 | [0001](./0001-workspaces-layer-approach.md) | Add an Organizations/Workspaces layer as a bootstrap-compatible wrapper, not a per-user split |
 | [0002](./0002-organization-scoped-default-project.md) | Projects (and their "default/inbox" flag) are scoped to the organization, not the creating user |
 | [0003](./0003-local-storage-fallback.md) | Local disk is the automatic upload fallback when no S3 is configured — not a separate opt-in mode |
+| [0004](./0004-backup-format-pure-go-json-dump.md) | Backups are a pure-Go JSON table dump, not a shelled-out `pg_dump` |
 
 See `../roadmap/00-MASTER-PLAN.md` for the full program plan and status.

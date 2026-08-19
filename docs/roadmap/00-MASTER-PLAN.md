@@ -181,18 +181,46 @@ Check items off as they're **actually verified working**, not merely coded.
       last-used, rate limiting, structured errors, pagination
 
 ### Phase 4 — Backup & Restore (§19–27)
-- [ ] Manual local backup (create + download)
-- [ ] Automatic scheduled backups (daily/weekly/monthly, retention policy)
-- [ ] S3 backup (endpoint/region/bucket/keys/prefix/retention + Test
-      Connection before enabling)
-- [ ] Restore from local backup, restore from S3 backup, fresh-install
-      restore path
-- [ ] Versioned backup manifest (product/backupVersion/appVersion/createdAt/
-      dbVersion), integrity validation (checksums), safety backup before
-      restoring over an active install, clear destructive-action warnings
-- [ ] Encryption: implement only with vetted crypto, or explicitly document
-      as a recommendation if not safely implementable now — never ship weak
-      custom crypto
+- [x] **Manual local backup (create + download) landed** (2026-08-19, ADR
+      [0004](../decisions/0004-backup-format-pure-go-json-dump.md)):
+      `POST /system/backup` (admin-only) streams a `.zip` — manifest,
+      one JSON-lines file per backed-up table (`organizations`, `users`,
+      `organization_members`, `projects`, `submissions`, `system_configs`),
+      a copy of local-storage uploads, and a SHA-256 checksum per entry.
+- [x] **Fresh-install restore landed**: `POST /system/restore`
+      (unauthenticated, self-guards on `HasAnyUser()==false`, same
+      invariant `/auth/register` already enforces) validates the manifest
+      + every checksum before writing anything, then restores all tables
+      transactionally via `json_populate_record`, then best-effort
+      restores local files.
+- [x] **Verified with a real end-to-end round trip**, not just unit
+      tests: populated a live instance (owner, 2nd project, an invited
+      `viewer` teammate, a real form submission, a locally-stored
+      uploaded file) → created a backup → restored it onto a *completely
+      separate*, freshly-provisioned Postgres+instance → confirmed: login
+      with the original password works, both projects are listed, both
+      members and their exact roles (`owner`/`viewer`) are intact, the
+      submission's JSONB data round-tripped correctly, and the uploaded
+      file's bytes matched the original **exactly** (`diff` clean).
+      Safety checks also verified live: restoring onto an
+      already-populated instance is correctly refused (`403`); a
+      corrupted zip is rejected by Go's own zip CRC before reaching app
+      code; a *validly-zipped but tampered* entry (content changed,
+      zip's own CRC recomputed correctly) is caught by the SHA-256
+      checksum layer specifically — confirming that layer isn't dead
+      code shadowed by the zip format's own integrity check. Confirmed
+      zero partial writes after both rejected-restore attempts.
+- [ ] **Not done in this slice**: automatic scheduled backups (daily/
+      weekly/monthly + retention policy — this slice is the "create one
+      now" building block that would sit under a scheduler, not the
+      scheduler itself); S3 as a backup *destination* (today's backup
+      only ever produces a local download — no "upload the backup to a
+      bucket" path yet, separate from S3 being usable as an *upload*
+      storage backend since Phase 3); restore-over-an-active-installation
+      (§27 — needs a pre-restore safety backup, explicit UI confirmation,
+      and is deliberately harder/riskier, scoped out of this slice on
+      purpose, see ADR 0004); backup encryption (§26 — not evaluated yet
+      either way, still open).
 
 ### Phase 5 — Calendar & Booking (§6–15)
 - [ ] Event types (duration, location, availability, buffers, limits,
@@ -400,3 +428,27 @@ should read first.
   this storage abstraction as a foundation), or start the calendar/
   booking module (Phase 5, entirely greenfield, most brief real
   estate) — proceeding to whichever has the most leverage next.
+
+- **2026-08-19 (continued further still)**: Landed manual local backup +
+  fresh-install restore (ADR 0004). New `internal/db/backup.go`
+  (JSON-lines table dump/restore via Postgres `row_to_json`/
+  `json_populate_record`) and `internal/httpapi/backup.go` (zip assembly,
+  SHA-256 checksums, manifest versioning). Found and fixed a real bug
+  during live verification: the dump query originally did `ORDER BY id`
+  unconditionally, which broke on `organization_members` (composite
+  primary key, no `id` column) — caught by actually running it against
+  Postgres, not by reading the code. Full live round-trip verified across
+  three separate throwaway Postgres instances: populate → backup →
+  restore onto a fresh instance → login, projects, roles, submission
+  JSONB, and uploaded file bytes all confirmed correct; restore-onto-
+  active-instance correctly refused; both a corrupted zip and a
+  validly-zipped-but-tampered entry correctly rejected (confirming the
+  app-level SHA-256 check isn't redundant with the zip format's own CRC).
+  `go build`/`vet`/`test ./...` green. All test containers and temp files
+  cleaned up. Not done: scheduled/automatic backups, S3 as a backup
+  destination, restore-over-an-active-install, encryption — see the
+  Phase 4 checklist above for the precise scope line. Next: either keep
+  building out Phase 4 (S3 backup destination, scheduling) or move to
+  Phase 5 (calendar/booking, entirely greenfield) or Phase 3's remaining
+  items (API keys with scopes, file-extension validation) — whichever is
+  tackled next, keep verifying against a real Postgres + live server.

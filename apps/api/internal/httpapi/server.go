@@ -95,6 +95,10 @@ func (s *Server) Router() *gin.Engine {
 		sens.POST("/auth/refresh", s.Refresh)
 		sens.POST("/system/setup", s.SetupSystem)
 		sens.POST("/auth/logout", s.Logout)
+		// Fresh-install restore — self-guards on HasAnyUser()==false, same
+		// reason /auth/register is reachable pre-auth. See
+		// docs/decisions/0004-backup-format-pure-go-json-dump.md.
+		sens.POST("/system/restore", s.RestoreSystem)
 		// Public client-portal auth (rate-limited like other login endpoints).
 		sens.GET("/portal/lookup", s.PortalLookup)
 		sens.POST("/portal/login", s.PortalLogin)
@@ -138,6 +142,7 @@ func (s *Server) Router() *gin.Engine {
 		admin.GET("/users", s.ListUsers)
 		admin.POST("/users", s.CreateUser)
 		admin.DELETE("/users/:id", s.DeleteUser)
+		admin.POST("/system/backup", s.CreateBackup)
 	}
 
 	return r
