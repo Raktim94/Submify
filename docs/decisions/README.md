@@ -60,5 +60,6 @@ is enough; the full reasoning lives here, not duplicated at every call site.
 | # | Title |
 |---|---|
 | [0001](./0001-workspaces-layer-approach.md) | Add an Organizations/Workspaces layer as a bootstrap-compatible wrapper, not a per-user split |
+| [0002](./0002-organization-scoped-default-project.md) | Projects (and their "default/inbox" flag) are scoped to the organization, not the creating user |
 
 See `../roadmap/00-MASTER-PLAN.md` for the full program plan and status.

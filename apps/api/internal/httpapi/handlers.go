@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nodedr/submify/apps/api/internal/auth"
+	"github.com/nodedr/submify/apps/api/internal/db"
 	"github.com/nodedr/submify/apps/api/internal/keys"
 	"github.com/nodedr/submify/apps/api/internal/storage"
 )
@@ -85,6 +86,8 @@ type createUserRequest struct {
 	Phone    string `json:"phone" binding:"required"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8"`
+	// Role defaults to "member" when empty. One of: admin, manager, member, viewer.
+	Role string `json:"role"`
 }
 
 func (s *Server) cookieSameSite() http.SameSite {
@@ -241,8 +244,8 @@ func (s *Server) Health(c *gin.Context) {
 
 // DashboardSummary returns the user's most recent submission (for dashboard notifications).
 func (s *Server) DashboardSummary(c *gin.Context) {
-	uid := userIDFromContext(c)
-	snap, err := s.store.LatestSubmissionSnapshotForUser(uid)
+	orgID := organizationIDFromContext(c)
+	snap, err := s.store.LatestSubmissionSnapshotForOrganization(orgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -311,12 +314,20 @@ func (s *Server) GetMe(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	orgID := organizationIDFromContext(c)
+	role, err := s.store.OrganizationRole(orgID, u.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"email":               u.Email,
 		"api_key":             u.APIKey,
 		"full_name":           u.FullName,
 		"phone":               u.Phone,
 		"is_admin":            u.IsAdmin,
+		"organization_id":     orgID,
+		"organization_role":   role,
 		"telegram_chat_id":    strings.TrimSpace(u.TelegramChatID),
 		"s3_endpoint":         strings.TrimSpace(u.S3Endpoint),
 		"s3_bucket":           strings.TrimSpace(u.S3Bucket),
@@ -449,14 +460,15 @@ func (s *Server) CreateProject(c *gin.Context) {
 		return
 	}
 	userID := userIDFromContext(c)
-	project, err := s.store.CreateProject(userID, req.Name, false)
+	orgID := organizationIDFromContext(c)
+	project, err := s.store.CreateProject(orgID, userID, req.Name, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	// Auto-provision a client portal (URL slug + one-time password) for the new project.
 	// Non-fatal: if it fails, the project still exists and the owner can set up the portal later.
-	slug, password, perr := s.assignDefaultPortal(userID, project)
+	slug, password, perr := s.assignDefaultPortal(orgID, project)
 	if perr != nil {
 		log.Printf("portal provisioning failed for project %s: %v", project.ID, perr)
 		c.JSON(http.StatusCreated, projectWithSecret{Project: project})
@@ -468,7 +480,7 @@ func (s *Server) CreateProject(c *gin.Context) {
 }
 
 func (s *Server) ListProjects(c *gin.Context) {
-	items, err := s.store.ListProjects(userIDFromContext(c))
+	items, err := s.store.ListProjects(organizationIDFromContext(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -483,10 +495,10 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	userID := userIDFromContext(c)
+	orgID := organizationIDFromContext(c)
 
 	if strings.TrimSpace(req.Name) != "" {
-		if err := s.store.UpdateProjectName(userID, id, req.Name); err != nil {
+		if err := s.store.UpdateProjectName(orgID, id, req.Name); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -506,7 +518,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		if err := s.store.RegenerateProjectKeys(userID, id, pk, sk); err != nil {
+		if err := s.store.RegenerateProjectKeys(orgID, id, pk, sk); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -516,7 +528,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		}
 	}
 	if req.AllowedOrigins != nil {
-		if err := s.store.UpdateProjectAllowedOrigins(userID, id, *req.AllowedOrigins); err != nil {
+		if err := s.store.UpdateProjectAllowedOrigins(orgID, id, *req.AllowedOrigins); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -526,7 +538,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		}
 	}
 	if req.TelegramBotToken != nil || req.TelegramChatID != nil {
-		currentProject, err := s.store.ProjectOwnedBy(userID, id)
+		currentProject, err := s.store.ProjectOwnedBy(orgID, id)
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
@@ -537,7 +549,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		}
 		mergedToken := mergeIntegrationField(currentProject.TelegramBotToken, req.TelegramBotToken)
 		mergedChatID := mergeIntegrationField(currentProject.TelegramChatID, req.TelegramChatID)
-		if err := s.store.UpdateProjectTelegram(userID, id, mergedToken, mergedChatID); err != nil {
+		if err := s.store.UpdateProjectTelegram(orgID, id, mergedToken, mergedChatID); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -547,7 +559,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		}
 	}
 	if req.S3Endpoint != nil || req.S3AccessKey != nil || req.S3SecretKey != nil || req.S3Bucket != nil {
-		currentProject, err := s.store.ProjectOwnedBy(userID, id)
+		currentProject, err := s.store.ProjectOwnedBy(orgID, id)
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
@@ -560,7 +572,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		mergedAccess := mergeIntegrationField(currentProject.S3AccessKey, req.S3AccessKey)
 		mergedSecret := mergeIntegrationField(currentProject.S3SecretKey, req.S3SecretKey)
 		mergedBucket := mergeIntegrationField(currentProject.S3Bucket, req.S3Bucket)
-		if err := s.store.UpdateProjectStorage(userID, id, mergedEndpoint, mergedAccess, mergedSecret, mergedBucket); err != nil {
+		if err := s.store.UpdateProjectStorage(orgID, id, mergedEndpoint, mergedAccess, mergedSecret, mergedBucket); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -585,7 +597,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "that portal slug is already in use"})
 			return
 		}
-		if err := s.store.UpdateProjectPortalSlug(userID, id, slug); err != nil {
+		if err := s.store.UpdateProjectPortalSlug(orgID, id, slug); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -595,7 +607,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		}
 	}
 	if req.PortalEnabled != nil {
-		if err := s.store.SetProjectPortalEnabled(userID, id, *req.PortalEnabled); err != nil {
+		if err := s.store.SetProjectPortalEnabled(orgID, id, *req.PortalEnabled); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -622,7 +634,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": herr.Error()})
 			return
 		}
-		if err := s.store.UpdateProjectPortalPassword(userID, id, hash); err != nil {
+		if err := s.store.UpdateProjectPortalPassword(orgID, id, hash); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -632,7 +644,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		}
 		newPortalPassword = pw
 	} else if req.PortalPassword != nil && strings.TrimSpace(*req.PortalPassword) == "" {
-		if err := s.store.UpdateProjectPortalPassword(userID, id, ""); err != nil {
+		if err := s.store.UpdateProjectPortalPassword(orgID, id, ""); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
@@ -642,7 +654,7 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		}
 	}
 
-	p, err := s.store.ProjectOwnedBy(userID, id)
+	p, err := s.store.ProjectOwnedBy(orgID, id)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, sql.ErrNoRows) {
@@ -660,9 +672,9 @@ func (s *Server) UpdateProject(c *gin.Context) {
 
 func (s *Server) DeleteProject(c *gin.Context) {
 	id := c.Param("id")
-	userID := userIDFromContext(c)
+	orgID := organizationIDFromContext(c)
 
-	if err := s.store.DeleteProject(userID, id); err != nil {
+	if err := s.store.DeleteProject(orgID, id); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, sql.ErrNoRows) {
 			status = http.StatusNotFound
@@ -794,7 +806,7 @@ func (s *Server) PresignUpload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "mime type not allowed"})
 		return
 	}
-	project, err := s.store.ProjectOwnedBy(userIDFromContext(c), req.ProjectID)
+	project, err := s.store.ProjectOwnedBy(organizationIDFromContext(c), req.ProjectID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 		return
@@ -837,7 +849,7 @@ func (s *Server) PresignUpload(c *gin.Context) {
 
 func (s *Server) ListSubmissions(c *gin.Context) {
 	projectID := c.Param("id")
-	if _, err := s.store.ProjectOwnedBy(userIDFromContext(c), projectID); err != nil {
+	if _, err := s.store.ProjectOwnedBy(organizationIDFromContext(c), projectID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 		return
 	}
@@ -863,7 +875,7 @@ func (s *Server) ListSubmissions(c *gin.Context) {
 
 func (s *Server) BulkDeleteSubmissions(c *gin.Context) {
 	projectID := c.Param("id")
-	if _, err := s.store.ProjectOwnedBy(userIDFromContext(c), projectID); err != nil {
+	if _, err := s.store.ProjectOwnedBy(organizationIDFromContext(c), projectID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 		return
 	}
@@ -882,7 +894,7 @@ func (s *Server) BulkDeleteSubmissions(c *gin.Context) {
 
 func (s *Server) Export(c *gin.Context) {
 	projectID := c.Param("id")
-	if _, err := s.store.ProjectOwnedBy(userIDFromContext(c), projectID); err != nil {
+	if _, err := s.store.ProjectOwnedBy(organizationIDFromContext(c), projectID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 		return
 	}
@@ -979,33 +991,43 @@ func (s *Server) ChangePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "password updated"})
 }
 
-// ListUsers returns every account on this instance. Admin-only: lets the instance owner see who has access.
+// ListUsers returns every member of the caller's organization (not the whole instance —
+// see docs/decisions/0001-workspaces-layer-approach.md). Admin-only: lets the instance
+// owner see who has access.
 func (s *Server) ListUsers(c *gin.Context) {
-	users, err := s.store.ListUsers()
+	members, err := s.store.ListOrganizationMembers(organizationIDFromContext(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	out := make([]gin.H, 0, len(users))
-	for _, u := range users {
+	out := make([]gin.H, 0, len(members))
+	for _, m := range members {
 		out = append(out, gin.H{
-			"id":         u.ID,
-			"email":      u.Email,
-			"full_name":  u.FullName,
-			"phone":      u.Phone,
-			"is_admin":   u.IsAdmin,
-			"created_at": u.CreatedAt.UTC().Format(time.RFC3339),
+			"id":         m.UserID,
+			"email":      m.Email,
+			"full_name":  m.FullName,
+			"role":       m.Role,
+			"created_at": m.CreatedAt.UTC().Format(time.RFC3339),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"users": out})
 }
 
-// CreateUser lets the admin create an additional, non-admin account on this instance.
-// Public self-registration stays closed (see Register) — this is the only way to add more accounts.
+// CreateUser lets the admin invite an additional account into their organization,
+// with an explicit role. Public self-registration stays closed (see Register) — this
+// is the only way to add more accounts to an existing organization.
 func (s *Server) CreateUser(c *gin.Context) {
 	var req createUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(req.Role))
+	if role == "" {
+		role = db.RoleMember
+	}
+	if !db.IsValidInviteRole(role) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role must be one of: admin, manager, member, viewer"})
 		return
 	}
 	hash, err := auth.HashPassword(req.Password)
@@ -1013,7 +1035,8 @@ func (s *Server) CreateUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	u, err := s.store.CreateUserByAdmin(strings.TrimSpace(req.FullName), strings.TrimSpace(req.Phone), strings.TrimSpace(req.Email), hash)
+	orgID := organizationIDFromContext(c)
+	u, err := s.store.CreateUserByAdmin(orgID, strings.TrimSpace(req.FullName), strings.TrimSpace(req.Phone), strings.TrimSpace(req.Email), hash, role)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -1028,20 +1051,26 @@ func (s *Server) CreateUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
-		"id": u.ID, "email": u.Email, "full_name": u.FullName, "phone": u.Phone, "is_admin": u.IsAdmin,
+		"id": u.ID, "email": u.Email, "full_name": u.FullName, "phone": u.Phone, "role": role,
 	})
 }
 
-// DeleteUser lets the admin remove a non-admin account (and its projects/submissions via cascade).
+// DeleteUser lets the admin remove a member of their own organization (and that
+// account's own data) — it can never reach a user in a different organization, and
+// can never remove the organization's owner.
 func (s *Server) DeleteUser(c *gin.Context) {
 	targetID := c.Param("id")
 	if targetID == userIDFromContext(c) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete your own account"})
 		return
 	}
-	if err := s.store.DeleteUser(targetID); err != nil {
+	if err := s.store.DeleteUserInOrganization(organizationIDFromContext(c), targetID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found or is an admin account"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found in your organization"})
+			return
+		}
+		if errors.Is(err, db.ErrCannotDeleteOwner) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1069,8 +1098,8 @@ func (s *Server) RotateAccountAPIKey(c *gin.Context) {
 }
 
 func (s *Server) RotateAllProjectKeys(c *gin.Context) {
-	userID := userIDFromContext(c)
-	projects, err := s.store.ListProjects(userID)
+	orgID := organizationIDFromContext(c)
+	projects, err := s.store.ListProjects(orgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1087,7 +1116,7 @@ func (s *Server) RotateAllProjectKeys(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		if err := s.store.RegenerateProjectKeys(userID, p.ID, pk, sk); err != nil {
+		if err := s.store.RegenerateProjectKeys(orgID, p.ID, pk, sk); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

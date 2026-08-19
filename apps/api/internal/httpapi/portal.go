@@ -73,7 +73,7 @@ func (s *Server) ensureUniquePortalSlug(base, projectID string) (string, error) 
 }
 
 // assignDefaultPortal provisions a slug + one-time password for a freshly created project.
-func (s *Server) assignDefaultPortal(userID string, project db.Project) (slug, password string, err error) {
+func (s *Server) assignDefaultPortal(orgID string, project db.Project) (slug, password string, err error) {
 	slug, err = s.ensureUniquePortalSlug(slugify(project.Name), project.ID)
 	if err != nil {
 		return "", "", err
@@ -86,10 +86,10 @@ func (s *Server) assignDefaultPortal(userID string, project db.Project) (slug, p
 	if err != nil {
 		return "", "", err
 	}
-	if err := s.store.UpdateProjectPortalSlug(userID, project.ID, slug); err != nil {
+	if err := s.store.UpdateProjectPortalSlug(orgID, project.ID, slug); err != nil {
 		return "", "", err
 	}
-	if err := s.store.UpdateProjectPortalPassword(userID, project.ID, hash); err != nil {
+	if err := s.store.UpdateProjectPortalPassword(orgID, project.ID, hash); err != nil {
 		return "", "", err
 	}
 	return slug, password, nil

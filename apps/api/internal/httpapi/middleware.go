@@ -63,14 +63,34 @@ func (s *Server) AuthGuard() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
+		// Every authenticated request resolves its organization here, once,
+		// so every downstream handler scopes by organization_id rather than
+		// user_id — see docs/decisions/0001-workspaces-layer-approach.md.
+		// A user with no organization is an invariant violation (every
+		// account is created together with its organization membership),
+		// so this fails closed with 500 rather than silently proceeding
+		// unscoped.
+		org, err := s.store.OrganizationForUser(claims.UserID)
+		if err != nil {
+			log.Printf("auth: no organization for user=%s reason=%v", claims.UserID, err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "account is not attached to an organization"})
+			return
+		}
 		c.Set("user_id", claims.UserID)
 		c.Set("email", claims.Email)
+		c.Set("organization_id", org.ID)
 		c.Next()
 	}
 }
 
 func userIDFromContext(c *gin.Context) string {
 	v, _ := c.Get("user_id")
+	id, _ := v.(string)
+	return id
+}
+
+func organizationIDFromContext(c *gin.Context) string {
+	v, _ := c.Get("organization_id")
 	id, _ := v.(string)
 	return id
 }

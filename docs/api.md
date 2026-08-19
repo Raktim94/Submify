@@ -128,10 +128,14 @@ Requires a completed setup. Without any account, these routes return `503` `{ "e
 ```json
 {
   "email": "...", "api_key": "...", "full_name": "...", "phone": "...",
+  "is_admin": true, "organization_id": "uuid", "organization_role": "owner",
   "telegram_chat_id": "...", "s3_endpoint": "...", "s3_bucket": "...",
   "telegram_configured": true, "s3_configured": false
 }
 ```
+
+`organization_role` is one of `owner`, `admin`, `manager`, `member`, `viewer` — see
+[Organization & members](#organization--members) below.
 
 ### `GET /dashboard/summary`
 
@@ -141,7 +145,11 @@ Requires a completed setup. Without any account, these routes return `503` `{ "e
 
 **Response:** `200` `{ "projects": [ Project, ... ] }`
 
-`Project`: `id`, `user_id`, `name`, `is_default`, `api_key`, `api_secret`, `allowed_origins`, `telegram_chat_id`, `telegram_configured`, `s3_endpoint`, `s3_bucket`, `s3_configured`, `created_at`
+`Project`: `id`, `user_id` (creator, informational only), `organization_id`, `name`, `is_default`, `api_key`, `api_secret`, `allowed_origins`, `telegram_chat_id`, `telegram_configured`, `s3_endpoint`, `s3_bucket`, `s3_configured`, `created_at`
+
+Projects belong to the caller's **organization**, not to the individual user who
+created them — every member of the organization sees the same project list. See
+[Organization & members](#organization--members).
 
 ### `POST /projects`
 
@@ -165,7 +173,7 @@ Requires a completed setup. Without any account, these routes return `503` `{ "e
 
 ### `DELETE /projects/{id}`
 
-Deletes a project and **all of its submissions**. Irreversible. The account's **default** project cannot be deleted (`400`).
+Deletes a project and **all of its submissions**. Irreversible. The organization's **default** project cannot be deleted (`400`).
 
 **Response:** `200` `{ "status": "deleted" }`
 
@@ -228,9 +236,52 @@ Rotates the account's primary `api_key`. Old key stops working immediately.
 
 ### `POST /users/me/projects/rotate-keys`
 
-Rotates the public/secret key pair for **every** project owned by the account.
+Rotates the public/secret key pair for **every** project in the caller's organization
+(not just ones the caller personally created).
 
 **Response:** `200` `{ "status": "rotated", "projects_rotated": <number> }`
+
+## Organization & members
+
+An organization is the unit of shared access: every member sees the same projects
+and submissions. Registration is closed once any account exists on the instance
+(`POST /auth/register` → `403` after the first account) — additional accounts join
+the **same** organization via the invite endpoints below; there is currently no way
+to create a second, independent organization on one instance. Roles: `owner` (exactly
+one per organization, set at registration, cannot be removed or reassigned via these
+endpoints), `admin`, `manager`, `member`, `viewer` (assignable on invite).
+
+These three endpoints require the caller to have `is_admin = true` (currently the
+instance-wide flag set on the account that ran `/auth/register`, independent of
+organization role — see `docs/roadmap/00-MASTER-PLAN.md` for the follow-up to make
+this role-aware instead).
+
+### `GET /users`
+
+Lists every member of the caller's organization.
+
+**Response:** `200` `{ "users": [ { "id", "email", "full_name", "role", "created_at" }, ... ] }`
+
+### `POST /users`
+
+Invites a new member into the caller's organization. Does **not** create a project —
+the new member gets access to the organization's existing projects immediately.
+
+**Body:** `full_name`, `phone`, `email`, `password` (min 8 chars), `role` (optional,
+default `member`; one of `admin`, `manager`, `member`, `viewer` — `owner` is not
+assignable here)
+
+**Response:** `201` `{ "id", "email", "full_name", "phone", "role" }`
+
+**Errors:** `400` invalid role, `409` email already registered.
+
+### `DELETE /users/{id}`
+
+Removes a member's account from the caller's organization. Cannot target the caller's
+own account (`400`), cannot target the organization's `owner` (`400`), and cannot
+target a user outside the caller's organization (`404`).
+
+**Response:** `200` `{ "status": "deleted" }`
 
 ## Client portal (per-project, read-only)
 

@@ -94,15 +94,46 @@ Check items off as they're **actually verified working**, not merely coded.
       project's `organization_id` correctly backfilled. `go build`,
       `go vet`, and `go test ./...` all green afterward (still just the 2
       original tests — no application code touches the new tables yet).
-- [ ] **Not yet done**: `apps/api/internal/db/store.go` and the handlers
-      still authorize purely by `user_id` — `organization_id` exists and
-      is populated but is not yet enforced anywhere. This is the very next
-      slice of work, and tenant-isolation (§41) cannot be considered done
-      until it lands with real cross-tenant-access tests.
-- [ ] Remaining module boundaries still to design: Roles (owner/admin/
-      manager/member/viewer beyond today's binary `is_admin`), Calendar,
-      Booking, Storage abstraction, Webhooks, Integrations, CRM, Backup,
-      Restore, Audit Logs, scoped API Keys, System Settings, Monitoring
+- [x] **Tenant-isolation enforcement landed** (2026-08-19, ADR
+      [0002](../decisions/0002-organization-scoped-default-project.md) +
+      migration `0010_organization_scoped_projects.sql`): every
+      project-scoping store method and handler now authorizes by
+      `organization_id`, not `user_id`. Verified against a real running
+      server (not just unit tests) end to end: register → org+owner+
+      default-project created → create a second project → admin invites a
+      teammate with an explicit role (`POST /users`, new `role` field) →
+      teammate logs in and correctly sees **both** shared projects →
+      `GET /users` shows both members with roles → deleting the org owner
+      is correctly refused (`ErrCannotDeleteOwner`, tested by temporarily
+      granting a second admin to confirm the check fires, not just the
+      self-delete guard) → deleting a non-owner member succeeds → a real
+      public form submission via the project's `x-api-key` flows through
+      to `GET /dashboard/summary`. `docs/api.md` updated to match
+      (`GET/POST /users`, `DELETE /users/{id}` were previously undocumented
+      — now written up; `GET /auth/me` documents the new
+      `organization_id`/`organization_role` fields). `go build`/`vet`/
+      `test ./...` green throughout.
+- [ ] **Known, deliberate limitation carried forward**: `AdminGuard` (who
+      may call `/users*`) still checks the instance-wide `is_admin` boolean,
+      not organization role — noted in code comments and `docs/api.md`.
+      Replacing it with real role-based checks (so e.g. a `manager` could
+      have a defined permission set distinct from `admin`) is follow-up
+      work, not done in this slice.
+- [ ] **Also not yet done**: true cross-*organization* isolation is
+      untestable via the live API today, because registration stays closed
+      after the first account ever exists — only one organization can ever
+      come to exist per instance right now (see `docs/api.md`'s
+      "Organization & members" section). §41's cross-tenant-access testing
+      needs either a multi-org-per-instance registration path or an
+      admin-provisioned "create a second organization" flow before it can
+      be exercised for real — flagging so nobody claims §41 is verified
+      based on this slice alone. What *is* verified: members within one
+      organization correctly share access, and a member cannot be
+      confused for having access outside their own organization's rows
+      (every query now has an explicit `organization_id` predicate).
+- [ ] Remaining module boundaries still to design: Calendar, Booking,
+      Storage abstraction, Webhooks, Integrations, CRM, Backup, Restore,
+      Audit Logs, scoped API Keys, System Settings, Monitoring
 - [ ] `ARCHITECTURE.md` — not started; write once enough of Phase 2/3 has
       landed to diagram real flows instead of speculative ones
 
@@ -306,3 +337,28 @@ should read first.
   integration, security audit, docs, marketing site, etc.) has been
   started. This is genuinely a multi-week+ program; expect this log to
   grow one real, verified slice at a time across many sessions.
+
+- **2026-08-19 (continued)**: Landed tenant-isolation enforcement, the
+  follow-up flagged above. New `internal/db/organizations.go` (role
+  constants, membership/role queries, `DeleteUserInOrganization` with an
+  owner-cannot-be-removed guard). Rewrote `RegisterUser`/
+  `CreateUserByAdmin` so registration creates an organization+owner and
+  invites join the *same* org instead of getting isolated private
+  projects (ADR 0002, migration 0010 — also fixed the `is_default`
+  uniqueness constraint to be per-organization instead of per-user, since
+  multiple pre-existing per-user defaults could now collide). Every
+  project-scoping store method and handler switched from `user_id` to
+  `organization_id`; `AuthGuard` now resolves the caller's organization
+  once per request. Verified live end-to-end against a real running
+  server, not just unit tests — see the Phase 2 checklist above for the
+  exact scenario (register, invite a teammate with a role, teammate sees
+  shared projects, owner-deletion correctly refused, real form submission
+  flows through). `docs/api.md` updated. Honest gaps carried forward:
+  `AdminGuard` is still `is_admin`-boolean-based, not role-based, and true
+  cross-*organization* isolation (§41) can't be exercised yet since only
+  one organization can ever exist per instance until the registration-gate
+  is redesigned — flagging so nobody claims §41 is fully verified from
+  this slice alone. Next up: storage abstraction (local + S3, §17 —
+  currently S3-only) or the calendar/booking module (§6-15, entirely
+  greenfield) — whichever is tackled next, keep verifying against a real
+  Postgres + live server, not just `go build`.

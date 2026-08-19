@@ -44,6 +44,7 @@ type User struct {
 type Project struct {
 	ID             string    `json:"id"`
 	UserID         string    `json:"user_id"`
+	OrganizationID string    `json:"organization_id"`
 	Name           string    `json:"name"`
 	IsDefault      bool      `json:"is_default"`
 	APIKey         string    `json:"api_key"`
@@ -229,56 +230,13 @@ func (s *Store) FindUserByAPIKey(key string) (User, error) {
 	return scanUser(s.DB.QueryRow(`SELECT `+userSelect+` FROM users WHERE api_key=$1`, key))
 }
 
-// ListUsers returns all accounts on this instance, oldest first, for the admin user-management view.
-func (s *Store) ListUsers() ([]User, error) {
-	rows, err := s.DB.Query(`SELECT ` + userSelect + ` FROM users ORDER BY created_at ASC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []User
-	for rows.Next() {
-		var u User
-		if err := rows.Scan(
-			&u.ID, &u.Email, &u.PasswordHash, &u.APIKey,
-			&u.FullName, &u.Phone, &u.IsAdmin,
-			&u.TelegramBotToken, &u.TelegramChatID,
-			&u.S3Endpoint, &u.S3AccessKey, &u.S3SecretKey, &u.S3Bucket,
-			&u.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		out = append(out, u)
-	}
-	return out, rows.Err()
-}
-
-// DeleteUser removes a non-admin account and cascades to its projects/submissions. Admins cannot be deleted this way.
-func (s *Store) DeleteUser(userID string) error {
-	res, err := s.DB.Exec(`DELETE FROM users WHERE id = $1::uuid AND is_admin = FALSE`, userID)
-	if err != nil {
-		return err
-	}
-	affected, _ := res.RowsAffected()
-	if affected == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
-}
-
-// RegisterUser creates the first account on this instance (always admin) with a default inbox project,
-// and ensures system_configs row 1 exists for update metadata.
+// RegisterUser creates the first account of a brand-new organization
+// (always its owner) with that organization's default inbox project, and
+// ensures system_configs row 1 exists for update metadata. is_admin is
+// still set for backward compatibility with the existing instance-wide
+// AdminGuard — see docs/roadmap/00-MASTER-PLAN.md for the follow-up to
+// replace that with organization-role checks everywhere.
 func (s *Store) RegisterUser(fullName, phone, email, passwordHash string) (User, error) {
-	return s.createUser(fullName, phone, email, passwordHash, true)
-}
-
-// CreateUserByAdmin creates an additional, non-admin account on an already-bootstrapped instance.
-func (s *Store) CreateUserByAdmin(fullName, phone, email, passwordHash string) (User, error) {
-	return s.createUser(fullName, phone, email, passwordHash, false)
-}
-
-func (s *Store) createUser(fullName, phone, email, passwordHash string, isAdmin bool) (User, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return User{}, err
@@ -298,15 +256,20 @@ func (s *Store) createUser(fullName, phone, email, passwordHash string, isAdmin 
 
 	if _, err := tx.Exec(`
 		INSERT INTO users(id, email, password_hash, api_key, full_name, phone, is_admin)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
-	`, userID, email, passwordHash, userAPIKey, fullName, phone, isAdmin); err != nil {
+		VALUES ($1,$2,$3,$4,$5,$6,TRUE)
+	`, userID, email, passwordHash, userAPIKey, fullName, phone); err != nil {
+		return User{}, err
+	}
+
+	orgID, err := createOrganizationWithOwner(tx, "My Organization", userID)
+	if err != nil {
 		return User{}, err
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO projects(id, user_id, name, api_key, api_secret, is_default)
-		VALUES (gen_random_uuid(), $1, 'Default', $2, $3, TRUE)
-	`, userID, pk, sk); err != nil {
+		INSERT INTO projects(id, user_id, organization_id, name, api_key, api_secret, is_default)
+		VALUES (gen_random_uuid(), $1, $2, 'Default', $3, $4, TRUE)
+	`, userID, orgID, pk, sk); err != nil {
 		return User{}, err
 	}
 
@@ -315,6 +278,38 @@ func (s *Store) createUser(fullName, phone, email, passwordHash string, isAdmin 
 		VALUES (1, '', '', '', '', '', '', $1, $2, FALSE, '')
 		ON CONFLICT (id) DO NOTHING
 	`, email, passwordHash); err != nil {
+		return User{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return User{}, err
+	}
+	return s.FindUserByID(userID)
+}
+
+// CreateUserByAdmin adds a new account to an existing organization with the
+// given role — an invite, not a second organization. It deliberately does
+// not create a project: the invited member gets access to the
+// organization's existing projects (see
+// docs/decisions/0002-organization-scoped-default-project.md).
+func (s *Store) CreateUserByAdmin(orgID, fullName, phone, email, passwordHash, role string) (User, error) {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback()
+
+	userID := uuid.NewString()
+	userAPIKey := uuid.NewString()
+
+	if _, err := tx.Exec(`
+		INSERT INTO users(id, email, password_hash, api_key, full_name, phone, is_admin)
+		VALUES ($1,$2,$3,$4,$5,$6,FALSE)
+	`, userID, email, passwordHash, userAPIKey, fullName, phone); err != nil {
+		return User{}, err
+	}
+
+	if err := addOrganizationMember(tx, orgID, userID, role); err != nil {
 		return User{}, err
 	}
 
@@ -371,7 +366,7 @@ func (s *Store) UpdateUserAPIKey(userID, newAPIKey string) error {
 	return nil
 }
 
-const projectSelect = `id, user_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), COALESCE(portal_slug, ''), portal_enabled, COALESCE(portal_password_hash, ''), created_at`
+const projectSelect = `id, user_id, organization_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), COALESCE(portal_slug, ''), portal_enabled, COALESCE(portal_password_hash, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {
 	s = strings.TrimSpace(s)
@@ -401,7 +396,7 @@ func hydrateProject(p *Project, originsRaw string) error {
 func projectFromRow(row *sql.Row) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -414,7 +409,7 @@ func projectFromRow(row *sql.Row) (Project, error) {
 func projectFromRows(rows *sql.Rows) (Project, error) {
 	var p Project
 	var originsRaw string
-	err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.CreatedAt)
+	err := rows.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -424,7 +419,10 @@ func projectFromRows(rows *sql.Rows) (Project, error) {
 	return p, nil
 }
 
-func (s *Store) CreateProject(userID, name string, isDefault bool) (Project, error) {
+// CreateProject creates a project owned by orgID (visible to every member of
+// that organization), recording createdByUserID for provenance only — it is
+// not used for access control. See docs/decisions/0001 and 0002.
+func (s *Store) CreateProject(orgID, createdByUserID, name string, isDefault bool) (Project, error) {
 	pk, err := keys.NewAPIKey()
 	if err != nil {
 		return Project{}, err
@@ -434,37 +432,40 @@ func (s *Store) CreateProject(userID, name string, isDefault bool) (Project, err
 		return Project{}, err
 	}
 	row := s.DB.QueryRow(`
-		INSERT INTO projects(id,user_id,name,api_key,api_secret,is_default)
-		VALUES (gen_random_uuid(),$1,$2,$3,$4,$5)
+		INSERT INTO projects(id,user_id,organization_id,name,api_key,api_secret,is_default)
+		VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6)
 		RETURNING `+projectSelect+`
-	`, userID, name, pk, sk, isDefault)
+	`, createdByUserID, orgID, name, pk, sk, isDefault)
 	return projectFromRow(row)
 }
 
-func (s *Store) DefaultInboxProject(userID string) (Project, error) {
+func (s *Store) DefaultInboxProject(orgID string) (Project, error) {
 	row := s.DB.QueryRow(`
 		SELECT `+projectSelect+`
-		FROM projects WHERE user_id=$1 AND is_default=TRUE LIMIT 1
-	`, userID)
+		FROM projects WHERE organization_id=$1 AND is_default=TRUE LIMIT 1
+	`, orgID)
 	return projectFromRow(row)
 }
 
-func (s *Store) EnsureDefaultInboxProject(userID string) (Project, error) {
-	p, err := s.DefaultInboxProject(userID)
+func (s *Store) EnsureDefaultInboxProject(orgID, createdByUserID string) (Project, error) {
+	p, err := s.DefaultInboxProject(orgID)
 	if err == nil {
 		return p, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Project{}, err
 	}
-	return s.CreateProject(userID, "Default", true)
+	return s.CreateProject(orgID, createdByUserID, "Default", true)
 }
 
-func (s *Store) ListProjects(userID string) ([]Project, error) {
+// ListProjects lists every project visible to organization orgID — i.e.
+// every project any of its members can see, not just ones a specific user
+// created. See docs/decisions/0001-workspaces-layer-approach.md.
+func (s *Store) ListProjects(orgID string) ([]Project, error) {
 	rows, err := s.DB.Query(`
 		SELECT `+projectSelect+`
-		FROM projects WHERE user_id=$1 ORDER BY is_default DESC, created_at DESC
-	`, userID)
+		FROM projects WHERE organization_id=$1 ORDER BY is_default DESC, created_at DESC
+	`, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -481,8 +482,8 @@ func (s *Store) ListProjects(userID string) ([]Project, error) {
 	return projects, rows.Err()
 }
 
-func (s *Store) UpdateProjectName(userID, projectID, name string) error {
-	res, err := s.DB.Exec(`UPDATE projects SET name=$1 WHERE id=$2 AND user_id=$3`, name, projectID, userID)
+func (s *Store) UpdateProjectName(orgID, projectID, name string) error {
+	res, err := s.DB.Exec(`UPDATE projects SET name=$1 WHERE id=$2 AND organization_id=$3`, name, projectID, orgID)
 	if err != nil {
 		return err
 	}
@@ -493,8 +494,8 @@ func (s *Store) UpdateProjectName(userID, projectID, name string) error {
 	return nil
 }
 
-func (s *Store) RegenerateProjectKeys(userID, projectID, newAPIKey, newAPISecret string) error {
-	res, err := s.DB.Exec(`UPDATE projects SET api_key=$1, api_secret=$2 WHERE id=$3 AND user_id=$4`, newAPIKey, newAPISecret, projectID, userID)
+func (s *Store) RegenerateProjectKeys(orgID, projectID, newAPIKey, newAPISecret string) error {
+	res, err := s.DB.Exec(`UPDATE projects SET api_key=$1, api_secret=$2 WHERE id=$3 AND organization_id=$4`, newAPIKey, newAPISecret, projectID, orgID)
 	if err != nil {
 		return err
 	}
@@ -505,7 +506,7 @@ func (s *Store) RegenerateProjectKeys(userID, projectID, newAPIKey, newAPISecret
 	return nil
 }
 
-func (s *Store) UpdateProjectAllowedOrigins(userID, projectID string, origins []string) error {
+func (s *Store) UpdateProjectAllowedOrigins(orgID, projectID string, origins []string) error {
 	var payload interface{}
 	if len(origins) == 0 {
 		payload = nil
@@ -516,7 +517,7 @@ func (s *Store) UpdateProjectAllowedOrigins(userID, projectID string, origins []
 		}
 		payload = string(b)
 	}
-	res, err := s.DB.Exec(`UPDATE projects SET allowed_origins=$1 WHERE id=$2 AND user_id=$3`, payload, projectID, userID)
+	res, err := s.DB.Exec(`UPDATE projects SET allowed_origins=$1 WHERE id=$2 AND organization_id=$3`, payload, projectID, orgID)
 	if err != nil {
 		return err
 	}
@@ -527,13 +528,13 @@ func (s *Store) UpdateProjectAllowedOrigins(userID, projectID string, origins []
 	return nil
 }
 
-func (s *Store) UpdateProjectTelegram(userID, projectID, telegramToken, telegramChatID string) error {
+func (s *Store) UpdateProjectTelegram(orgID, projectID, telegramToken, telegramChatID string) error {
 	res, err := s.DB.Exec(`
 		UPDATE projects
 		SET telegram_bot_token = NULLIF($1, ''),
 		    telegram_chat_id = NULLIF($2, '')
-		WHERE id=$3 AND user_id=$4
-	`, strings.TrimSpace(telegramToken), strings.TrimSpace(telegramChatID), projectID, userID)
+		WHERE id=$3 AND organization_id=$4
+	`, strings.TrimSpace(telegramToken), strings.TrimSpace(telegramChatID), projectID, orgID)
 	if err != nil {
 		return err
 	}
@@ -544,15 +545,15 @@ func (s *Store) UpdateProjectTelegram(userID, projectID, telegramToken, telegram
 	return nil
 }
 
-func (s *Store) UpdateProjectStorage(userID, projectID, endpoint, accessKey, secretKey, bucket string) error {
+func (s *Store) UpdateProjectStorage(orgID, projectID, endpoint, accessKey, secretKey, bucket string) error {
 	res, err := s.DB.Exec(`
 		UPDATE projects
 		SET s3_endpoint = NULLIF($1, ''),
 		    s3_access_key = NULLIF($2, ''),
 		    s3_secret_key = NULLIF($3, ''),
 		    s3_bucket = NULLIF($4, '')
-		WHERE id=$5 AND user_id=$6
-	`, strings.TrimSpace(endpoint), strings.TrimSpace(accessKey), strings.TrimSpace(secretKey), strings.TrimSpace(bucket), projectID, userID)
+		WHERE id=$5 AND organization_id=$6
+	`, strings.TrimSpace(endpoint), strings.TrimSpace(accessKey), strings.TrimSpace(secretKey), strings.TrimSpace(bucket), projectID, orgID)
 	if err != nil {
 		return err
 	}
@@ -563,8 +564,10 @@ func (s *Store) UpdateProjectStorage(userID, projectID, endpoint, accessKey, sec
 	return nil
 }
 
-func (s *Store) ProjectOwnedBy(userID, projectID string) (Project, error) {
-	row := s.DB.QueryRow(`SELECT `+projectSelect+` FROM projects WHERE id=$1 AND user_id=$2`, projectID, userID)
+// ProjectOwnedBy resolves a project only if it belongs to orgID — this is
+// the tenant-isolation boundary for every project-scoped endpoint.
+func (s *Store) ProjectOwnedBy(orgID, projectID string) (Project, error) {
+	row := s.DB.QueryRow(`SELECT `+projectSelect+` FROM projects WHERE id=$1 AND organization_id=$2`, projectID, orgID)
 	return projectFromRow(row)
 }
 
@@ -617,8 +620,8 @@ func (s *Store) PortalSlugTaken(slug, exceptProjectID string) (bool, error) {
 	return exists, err
 }
 
-func (s *Store) UpdateProjectPortalSlug(userID, projectID, slug string) error {
-	res, err := s.DB.Exec(`UPDATE projects SET portal_slug=NULLIF($1,'') WHERE id=$2 AND user_id=$3`, strings.TrimSpace(slug), projectID, userID)
+func (s *Store) UpdateProjectPortalSlug(orgID, projectID, slug string) error {
+	res, err := s.DB.Exec(`UPDATE projects SET portal_slug=NULLIF($1,'') WHERE id=$2 AND organization_id=$3`, strings.TrimSpace(slug), projectID, orgID)
 	if err != nil {
 		return err
 	}
@@ -629,8 +632,8 @@ func (s *Store) UpdateProjectPortalSlug(userID, projectID, slug string) error {
 	return nil
 }
 
-func (s *Store) UpdateProjectPortalPassword(userID, projectID, passwordHash string) error {
-	res, err := s.DB.Exec(`UPDATE projects SET portal_password_hash=NULLIF($1,'') WHERE id=$2 AND user_id=$3`, strings.TrimSpace(passwordHash), projectID, userID)
+func (s *Store) UpdateProjectPortalPassword(orgID, projectID, passwordHash string) error {
+	res, err := s.DB.Exec(`UPDATE projects SET portal_password_hash=NULLIF($1,'') WHERE id=$2 AND organization_id=$3`, strings.TrimSpace(passwordHash), projectID, orgID)
 	if err != nil {
 		return err
 	}
@@ -641,8 +644,8 @@ func (s *Store) UpdateProjectPortalPassword(userID, projectID, passwordHash stri
 	return nil
 }
 
-func (s *Store) SetProjectPortalEnabled(userID, projectID string, enabled bool) error {
-	res, err := s.DB.Exec(`UPDATE projects SET portal_enabled=$1 WHERE id=$2 AND user_id=$3`, enabled, projectID, userID)
+func (s *Store) SetProjectPortalEnabled(orgID, projectID string, enabled bool) error {
+	res, err := s.DB.Exec(`UPDATE projects SET portal_enabled=$1 WHERE id=$2 AND organization_id=$3`, enabled, projectID, orgID)
 	if err != nil {
 		return err
 	}
@@ -666,16 +669,17 @@ type LatestSubmissionSnapshot struct {
 	ProjectName string    `json:"project_name"`
 }
 
-// LatestSubmissionSnapshotForUser returns nil, nil when the user has no submissions yet.
-func (s *Store) LatestSubmissionSnapshotForUser(userID string) (*LatestSubmissionSnapshot, error) {
+// LatestSubmissionSnapshotForOrganization returns nil, nil when the
+// organization has no submissions yet across any of its projects.
+func (s *Store) LatestSubmissionSnapshotForOrganization(orgID string) (*LatestSubmissionSnapshot, error) {
 	var snap LatestSubmissionSnapshot
 	err := s.DB.QueryRow(`
 		SELECT s.created_at, s.project_id, p.name
 		FROM submissions s
-		INNER JOIN projects p ON p.id = s.project_id AND p.user_id = $1::uuid
+		INNER JOIN projects p ON p.id = s.project_id AND p.organization_id = $1::uuid
 		ORDER BY s.created_at DESC
 		LIMIT 1
-	`, userID).Scan(&snap.CreatedAt, &snap.ProjectID, &snap.ProjectName)
+	`, orgID).Scan(&snap.CreatedAt, &snap.ProjectID, &snap.ProjectName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -745,15 +749,15 @@ func (s *Store) DeleteSubmissions(projectID string, ids []string) (int64, error)
 	return res.RowsAffected()
 }
 
-func (s *Store) DeleteProject(userID, projectID string) error {
-	p, err := s.ProjectOwnedBy(userID, projectID)
+func (s *Store) DeleteProject(orgID, projectID string) error {
+	p, err := s.ProjectOwnedBy(orgID, projectID)
 	if err != nil {
 		return err
 	}
 	if p.IsDefault {
 		return errors.New("cannot delete default project")
 	}
-	res, err := s.DB.Exec(`DELETE FROM projects WHERE id=$1 AND user_id=$2`, projectID, userID)
+	res, err := s.DB.Exec(`DELETE FROM projects WHERE id=$1 AND organization_id=$2`, projectID, orgID)
 	if err != nil {
 		return err
 	}
