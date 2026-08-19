@@ -116,19 +116,20 @@ docker compose logs -f api # follow API logs
 7. [Configuration and environment variables](#configuration-and-environment-variables)
 8. [First-time access](#first-time-access)
 9. [Optional: Cloudflare Tunnel](#optional-cloudflare-tunnel)
-10. [API overview](#api-overview)
-11. [Connecting a client website (forms)](#connecting-a-client-website-forms)
-12. [Integrating with an AI coding assistant](#integrating-with-an-ai-coding-assistant)
-13. [External S3 uploads (optional)](#external-s3-uploads-optional)
-14. [Dashboard workflow](#dashboard-workflow)
-15. [Client portal (share view-only access)](#client-portal-share-view-only-access)
-16. [Limits and security defaults](#limits-and-security-defaults)
-17. [Security and vulnerability scanning](#security-and-vulnerability-scanning)
-18. [Using GitHub Actions secrets](#using-github-actions-secrets)
-19. [Operations: logs, backup, updates](#operations-logs-backup-updates)
-20. [Troubleshooting](#troubleshooting)
-21. [License](#license)
-22. [Developer & ownership](#developer--ownership)
+10. [CasaOS / ZimaOS](#casaos--zimaos)
+11. [API overview](#api-overview)
+12. [Connecting a client website (forms)](#connecting-a-client-website-forms)
+13. [Integrating with an AI coding assistant](#integrating-with-an-ai-coding-assistant)
+14. [External S3 uploads (optional)](#external-s3-uploads-optional)
+15. [Dashboard workflow](#dashboard-workflow)
+16. [Client portal (share view-only access)](#client-portal-share-view-only-access)
+17. [Limits and security defaults](#limits-and-security-defaults)
+18. [Security and vulnerability scanning](#security-and-vulnerability-scanning)
+19. [Using GitHub Actions secrets](#using-github-actions-secrets)
+20. [Operations: logs, backup, updates](#operations-logs-backup-updates)
+21. [Troubleshooting](#troubleshooting)
+22. [License](#license)
+23. [Developer & ownership](#developer--ownership)
 
 ---
 
@@ -341,6 +342,47 @@ docker compose --profile tunnel up -d
 ```
 
 The `cloudflared` service depends on Nginx — point your tunnel's DNS/config at this stack.
+
+---
+
+## CasaOS / ZimaOS
+
+`casaos/docker-compose.yml` is the CasaOS App Store manifest (`x-casaos`
+metadata, bind-mounted `/DATA/AppData/$AppID/...` volumes per CasaOS
+convention). Differences from the plain `docker-compose.yml` above:
+
+- Images are referenced by tag (`ghcr.io/raktim94/submify-*:0.1.0`) —
+  built and published multi-arch (amd64/arm64) to GHCR by
+  [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml) —
+  rather than built locally.
+- Nginx's config is baked into its own image
+  ([`infra/nginx/Dockerfile`](infra/nginx/Dockerfile)) instead of a
+  bind-mounted host file — a CasaOS App Store install has no access to this
+  repo's checkout, only the compose file and declared volumes.
+- The Postgres password and JWT signing secret are **not** fixed defaults
+  — this manifest is a public store listing, so a hardcoded secret would be
+  a known-public credential on every install that doesn't change it.
+  Instead, `db` and `api` each generate a random secret into a shared
+  `/DATA/AppData/$AppID/secrets/` volume the first time they boot (via an
+  `entrypoint:` wrapper — not `command:`, since both images already have a
+  fixed `ENTRYPOINT` and a `command:` override would just become extra
+  argv instead of actually replacing what runs). There's no separate
+  one-shot init service for this, since CasaOS doesn't cleanly support init
+  containers in its app-status UI — both wrappers are just the first few
+  lines of an otherwise normal long-running service.
+- Every service sets `security_opt: [no-new-privileges:true]`.
+
+`casaos/icon.png` and `casaos/thumbnail.png` come from Submify's actual
+brand assets, and `casaos/screenshot-{1,2,3}.png` are genuine Playwright
+captures of a real running instance (landing page, dashboard, calendar) —
+not placeholders.
+
+**Not yet done**: official submission to the CasaOS/ZimaOS App Store
+(`IceWhaleTech/CasaOS-AppStore`) — the manifest is published and validated
+locally (fresh install + restart, both tested against the real GHCR
+images), but hasn't been merged into the official store index yet, so
+CasaOS's own "Custom Install"/compose-URL flow is the way to install it
+today.
 
 ---
 
