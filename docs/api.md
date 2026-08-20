@@ -485,6 +485,15 @@ doesn't exist or doesn't belong to the caller.
 
 **Response:** `200` `{ "status": "deleted" }`, or `404`.
 
+**CORS:** every `/public/*` route below allows any browser `Origin` by
+default (`CORS_PUBLIC_BOOKING_ANY_ORIGIN=true`), the same trust model as
+`POST /api/submit` — no cookies are involved, and the unguessable event-type
+ID / booking `manage_token` is the access control. This means an external
+website can call these directly via `fetch()` to build its own embedded
+booking widget, not just link to `/book/{id}` as a plain page. Set
+`CORS_PUBLIC_BOOKING_ANY_ORIGIN=false` to require origins to be explicitly
+allowlisted instead (see `ALLOWED_ORIGINS`).
+
 ### `GET /public/event-types/{id}`
 
 Public booking-page info: `id`, `title`, `description`, `duration_minutes`,

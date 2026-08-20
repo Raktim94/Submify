@@ -774,3 +774,94 @@ should read first.
   `h1`, `navigation` landmark, and `aria-label`s on icon-only buttons are
   present, but that's not a substitute for a real automated pass). Nothing
   else in the overall program changed this session.
+
+- **2026-08-20 (continued, same-day follow-ups)**: Four more requests in
+  the same session.
+
+  **Security**: fixed a critical CodeQL finding (`go/email-injection`,
+  alerts #1/#2) in `internal/mailer` — `subject`/`from`/`to` were
+  interpolated directly into raw RFC 5322 header lines, so a CRLF in
+  `project.Name` or `NotificationRecipients` could smuggle an extra header
+  (hidden Bcc, spoofed Reply-To) into a notification email. Fixed with a
+  header-value sanitizer (strips CR/LF, body left untouched — it can't
+  smuggle a header) and address validation before the low-level
+  `smtp.Client.Mail()`/`Rcpt()` calls in the hand-rolled implicit-TLS path,
+  which — unlike stdlib `smtp.SendMail` on the other path — had no built-in
+  CRLF check at all. New `mailer_test.go` proves it (checking for an
+  actual injected header *line*, not just the naive "does the string
+  contain Bcc:" substring check, which would falsely flag safely-stripped
+  input). Also fixed the one open Dependabot alert across every repo on
+  the account (not just this one) — a high-severity `deepmerge-ts` stack-
+  exhaustion CVE in `construction-erp`, unrelated to Submify itself.
+
+  **UX course-correction, logged so a future session doesn't repeat the
+  confusion**: user initially asked to remove the Blog/Docs sections
+  because "the app looks like a website," which was reasonably read as
+  "delete the marketing site's Blog/Docs" — implemented, then the user
+  clarified submify.nodedr.com (the pasted homepage) **is** the intended
+  public marketing site and should keep Blog/Docs; only the *authenticated
+  app itself* (which never linked to them except one `/docs/contact-proxy`
+  reference from the Projects page) needed to stay clear of that. Fully
+  reverted the deletion (nothing was committed yet) and instead just
+  removed the `/docs/contact-proxy` link from the Projects page header —
+  the docs page itself, and the whole public Blog/Docs section, are
+  untouched. Worth remembering: "make the app not look like a website" and
+  "the public marketing site" are two different surfaces in this repo, and
+  a request naming one can easily be misapplied to the other.
+
+  **Projects page decluttering**: the per-project card in `/projects`
+  unconditionally rendered every settings section at once — Origins,
+  Telegram, S3, Zulivio, Email, Client Portal, each with multiple always-
+  visible input fields — for every project, all the time. Restructured
+  into a collapsed-by-default "Manage settings" panel using the existing
+  `Tabs` primitive (one tab per settings area), plus removed a fully
+  decorative always-visible "••••••••" masked-key placeholder pair that
+  conveyed zero information (the sidebar's real Copy public/secret key
+  buttons already cover that). Status badges (Telegram/S3/Zulivio/Email,
+  now also Portal) stay visible at a glance without opening anything.
+
+  **Marketing site**: added a real one-command installer section
+  (`components/landing/install-command.tsx`, OS-tabbed macOS/Linux/
+  Windows, matching the pattern already used on this machine's other
+  NodeDR product sites like nodedr-pos) to the homepage. Windows had no
+  installer at all before this — added `install.ps1` at the repo root
+  (mirrors `install.sh` exactly: requires Docker Desktop + git already
+  installed, same as the Linux/macOS installer's own choice not to auto-
+  install system dependencies) alongside the pre-existing
+  `scripts/Compose-Up.ps1` wrapper it now calls. New reusable
+  `CopyButton`/`CopyableCode` components, applied to every real runnable
+  code block on the public docs pages (the AI-builder reuse-prompt, the
+  JSON submit example, the LAN-exposure env-var and `docker compose up -d`
+  examples) — 4 blocks on `/docs`, 1 on `/docs/contact-proxy`.
+
+  **CORS gap for the public booking API**: user asked to confirm calendar
+  booking is actually callable "from API when connected through a
+  website." Investigation found a real gap: `/api/submit` already allows
+  any browser `Origin` by design (`CORS_PUBLIC_SUBMIT_ANY_ORIGIN`, for
+  exactly this reason — embedding on external sites), but the public
+  booking routes (`/api/v1/public/event-types/*`, `/api/v1/public/
+  bookings/*`) had no such carve-out — an external site trying to `fetch()`
+  them directly (as opposed to just linking to `/book/{id}` as a plain
+  page, which never needed CORS) would get a 403 unless its origin was
+  explicitly allowlisted. Both surfaces share the same trust model (no
+  cookies; an unguessable ID/token is the real access control), so this
+  was a real inconsistency, not intentional hardening. Added a new,
+  independently-toggleable `CORS_PUBLIC_BOOKING_ANY_ORIGIN` flag (default
+  `true`) rather than piggybacking on the submit-specific flag, and
+  widened the preflight `Access-Control-Allow-Methods` to include `GET`
+  (booking has real GET routes — event info, slots — that submit never
+  needed). New `cors_middleware_test.go` — the first CORS tests in this
+  repo — covers the any-origin behavior, the preflight method list, that
+  authenticated routes still correctly reject unallowlisted origins
+  (regression guard), and that the two any-origin flags are independently
+  toggleable.
+
+  **Verification**: `go build`/`vet`/`test ./...` (30 tests, up from 17)
+  and `tsc`/lint/`next build` all green throughout. Nothing in this slice
+  needed a live Postgres/Docker re-verification — the CORS fix is fully
+  covered by real `httptest`-based HTTP semantics tests, and the frontend
+  changes were spot-checked live via Playwright against a local dev
+  server (clipboard-write itself can't be verified in the sandboxed
+  headless test browser — permission denied — but it's the identical
+  `navigator.clipboard.writeText` pattern already used elsewhere in this
+  same codebase, e.g. `copyKey`/`copyLink` on the Projects/Calendar pages).

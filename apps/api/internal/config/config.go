@@ -24,7 +24,14 @@ type Config struct {
 	CorsAllowSameHostOrigin bool
 	// CorsPublicSubmitAnyOrigin allows any browser Origin for POST /api/submit (uses x-api-key, not cookies).
 	CorsPublicSubmitAnyOrigin bool
-	TrustedProxies            []string
+	// CorsPublicBookingAnyOrigin allows any browser Origin for the public booking API
+	// (/api/v1/public/event-types/*, /api/v1/public/bookings/*) — same trust model as
+	// CorsPublicSubmitAnyOrigin: no cookies, the event type's unguessable ID (and a
+	// booking's manage_token) are the access control, so these routes are meant to be
+	// callable from any external website building its own booking widget, not just
+	// reachable via a plain page link/iframe.
+	CorsPublicBookingAnyOrigin bool
+	TrustedProxies             []string
 	UploadMaxSizeBytes           int64
 	AllowedMIMETypes             map[string]struct{}
 	PresignExpiryMinutes         int
@@ -62,6 +69,7 @@ func Load() Config {
 		CorsOriginHostSuffixes:      splitCSV(getEnv("CORS_ORIGIN_HOST_SUFFIXES", "")),
 		CorsAllowSameHostOrigin:     getEnvBool("CORS_ALLOW_SAME_HOST_ORIGIN", true),
 		CorsPublicSubmitAnyOrigin:   getEnvBool("CORS_PUBLIC_SUBMIT_ANY_ORIGIN", true),
+		CorsPublicBookingAnyOrigin:  getEnvBool("CORS_PUBLIC_BOOKING_ANY_ORIGIN", true),
 		TrustedProxies:              trusted,
 		UploadMaxSizeBytes:          int64(getEnvInt("UPLOAD_MAX_SIZE_BYTES", 25*1024*1024)),
 		AllowedMIMETypes:            toMIMEMap(splitCSV(getEnv("UPLOAD_ALLOWED_MIME", "image/png,image/jpeg,application/pdf,text/plain"))),
