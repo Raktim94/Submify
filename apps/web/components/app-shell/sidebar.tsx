@@ -53,6 +53,30 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
   );
 }
 
+// Same "Contact support" + "made by" pattern as the sibling NodeDR
+// products (OrderRestro, nodedr-pos) so the app reads as one consistent
+// suite, not a one-off.
+function SidebarFooter() {
+  return (
+    <div className="border-t border-slate-100 px-4 py-3 text-center text-[11px] text-slate-400">
+      <a
+        href="https://www.nodedr.com/contactus"
+        target="_blank"
+        rel="noreferrer"
+        className="mb-1 block rounded-lg px-2 py-1 font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+      >
+        Contact support
+      </a>
+      <p>
+        Submify · made by{' '}
+        <a href="https://www.nodedr.com" target="_blank" rel="noreferrer" className="hover:text-slate-600">
+          Nodedr Infotech Private Limited
+        </a>
+      </p>
+    </div>
+  );
+}
+
 export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; onCloseMobile: () => void }) {
   const pathname = usePathname();
 
@@ -66,6 +90,7 @@ export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; on
         <div className="flex-1 overflow-y-auto pb-4">
           <NavLinks pathname={pathname} />
         </div>
+        <SidebarFooter />
       </aside>
 
       {/* Mobile: slide-over drawer */}
@@ -104,6 +129,7 @@ export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; on
               <div className="flex-1 overflow-y-auto pb-4">
                 <NavLinks pathname={pathname} onNavigate={onCloseMobile} />
               </div>
+              <SidebarFooter />
             </motion.aside>
           </>
         ) : null}

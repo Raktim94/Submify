@@ -87,9 +87,6 @@ export default function LoginPage() {
             <SubmifyLogo className="h-7 w-auto sm:h-8" />
           </Link>
           <div className="flex gap-3">
-            <Link href="/docs" className="font-medium text-slate-600 hover:text-indigo-700">
-              Docs
-            </Link>
             <Link href="/" className="font-medium text-slate-600 hover:text-indigo-700">
               Home
             </Link>

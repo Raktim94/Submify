@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 const GITHUB_REPO = 'https://github.com/Raktim94/Submify';
+const GITHUB_DOCS = `${GITHUB_REPO}#readme`;
 
 type Props = {
   signedIn: boolean;
@@ -46,12 +47,14 @@ export function SubmifyHero({ signedIn, setupRequired = false }: Props) {
           >
             GitHub
           </a>
-          <Link
-            href="/docs"
+          <a
+            href={GITHUB_DOCS}
+            target="_blank"
+            rel="noopener noreferrer"
             className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/50"
           >
             Documentation
-          </Link>
+          </a>
           {signedIn ? (
             <Link
               href="/dashboard"
