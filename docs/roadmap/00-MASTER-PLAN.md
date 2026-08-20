@@ -897,3 +897,43 @@ should read first.
   headless test browser — permission denied — but it's the identical
   `navigator.clipboard.writeText` pattern already used elsewhere in this
   same codebase, e.g. `copyKey`/`copyLink` on the Projects/Calendar pages).
+
+- **2026-08-20 — Blog/Docs actually removed from the public site (a
+  reversal, confirmed via AskUserQuestion)**: the earlier entry above
+  ("Blog & Docs stay on the public marketing site") is superseded. The
+  user pasted the live homepage again and asked to remove Blog/Docs; given
+  the prior explicit correction on this exact point, this was confirmed
+  rather than assumed — offered "de-emphasize only" vs. "actually delete,"
+  and the user chose deletion. `app/blog`, `app/docs`, and their
+  now-unused support components (`blog-shell.tsx`, `docs-chrome.tsx`,
+  the already-dead `components/nav.tsx`) are gone; `sitemap.ts` no longer
+  lists them; the two dangling `/docs` links on `/register` and `/login`
+  now just link home. Lesson for a future session: don't re-apply the
+  older "keep Blog/Docs" call without checking first — see
+  `feedback_submify_public_site_now_app_like` in auto-memory.
+
+  Homepage also restructured to read as a product/app landing page
+  instead of a content-marketing site (matching nodedr-pos/OrderRestro/
+  Zulivio's own homepages): dropped the "form paradox" problem/solution
+  narrative, the "Core features" spec table, the "Architecture" cards,
+  the auto-rotating "How data flows" stepper, the full "Contact" section,
+  and the FAQ — kept and tightened the hero, a compact "How it works"
+  grid, the real install flow, one feature-card grid (with a new
+  "Security first" card folded in), and one CTA. Footer keeps the
+  existing branding/"made by"/copyright block, swapping the deleted
+  Blog/Docs links for compact "Documentation" (→ GitHub) / "Support"
+  (→ nodedr.com/contactus) links, same as the sibling products' pattern.
+
+  Also added the sibling products' "Contact support" / "made by Nodedr
+  Infotech Private Limited" sidebar footer to the authenticated app
+  itself (`components/app-shell/sidebar.tsx`) — the logo was already
+  there from the earlier app-shell rebuild, this was the missing half.
+
+  Verified live: registered a throwaway account, confirmed `/docs` and
+  `/blog` no longer resolve as real routes, confirmed nav/footer links,
+  confirmed the sidebar footer renders. `next build` clean. One stray
+  side-effect caught and fixed during verification: running `pnpm exec`
+  commands against this npm-managed repo left a spurious
+  `apps/web/pnpm-lock.yaml` and pnpm-touched `node_modules` — removed the
+  lockfile and reinstalled with `npm install` to restore the real
+  package-manager state before committing.
