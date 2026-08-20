@@ -937,3 +937,18 @@ should read first.
   `apps/web/pnpm-lock.yaml` and pnpm-touched `node_modules` — removed the
   lockfile and reinstalled with `npm install` to restore the real
   package-manager state before committing.
+
+- **2026-08-21 — In-app "What's New" menu added, calendar update announced.**
+  A follow-up request asked to "add a documentation page" and write up the
+  calendar update on the Submify website — that would have directly
+  reversed the 2026-08-20 Blog/Docs removal above, so it was surfaced via
+  AskUserQuestion instead of assumed; the user chose an in-app changelog
+  over touching the public site. Added `lib/whats-new.ts` (a small,
+  factual entries array — cross-checked against `docs/api.md`'s Calendar &
+  booking section rather than written from memory) and
+  `components/app-shell/whats-new-menu.tsx` (Sparkles icon in the topbar,
+  unseen-dot tracked in `localStorage`, same last-seen convention as the
+  dashboard's submission banner), wired in next to `QuickAccessMenu`.
+  Verified live: real Postgres + `go run ./cmd/server` + `next dev`,
+  registered a throwaway account, opened the menu (dot cleared, content
+  matched), reloaded (dot stayed cleared). `next build` clean.
