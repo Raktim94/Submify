@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { ChevronDown, Settings as SettingsIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { NODEDR_CONTACT_PROXY_REUSE_PROMPT } from '@/lib/nodedrContactProxyReusePrompt';
 import { Card } from '@/components/ui/card';
@@ -9,6 +10,7 @@ import { Field, Input, Textarea } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Tabs } from '@/components/ui/tabs';
 
 type Project = {
   id: string;
@@ -39,15 +41,6 @@ type Project = {
 };
 
 type CopyField = 'public' | 'secret' | null;
-
-function MaskedKeyValue({ label }: { label: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 font-mono text-xs text-slate-800">••••••••••••••••••••••••••••</p>
-    </div>
-  );
-}
 
 function PortalPanel({
   project: p,
@@ -280,6 +273,8 @@ function ProjectCard({
   const [smtpFromDraft, setSmtpFromDraft] = useState(() => p.smtp_from_email ?? '');
   const [recipientsDraft, setRecipientsDraft] = useState(() => (p.notification_recipients ?? []).join(', '));
   const [copied, setCopied] = useState<CopyField>(null);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('origins');
   const originsKey = JSON.stringify(p.allowed_origins ?? []);
 
   async function copyKey(which: Exclude<CopyField, null>) {
@@ -364,247 +359,287 @@ function ProjectCard({
                 >
                   Email: {p.email_notifications_enabled && p.email_configured ? 'Configured' : 'Not set'}
                 </span>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                    p.portal_enabled && p.portal_password_set
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  Portal: {p.portal_enabled && p.portal_password_set ? 'Live' : p.portal_enabled ? 'Needs password' : 'Disabled'}
+                </span>
               </div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <MaskedKeyValue label="Public API key (hidden)" />
-              <MaskedKeyValue label="Secret API key (hidden)" />
             </div>
 
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Secret API key</p>
-              <p className="mt-1 text-xs text-amber-800">Only use server-side for HMAC signing.</p>
-            </div>
-            <Field
-              label={<span className="text-xs font-medium uppercase tracking-wide text-slate-600">Allowed origins (optional)</span>}
-              hint={
-                <>
-                  JSON array of exact origins (e.g. <code className="text-slate-700">https://example.com</code>). Empty{' '}
-                  <code className="rounded bg-slate-100 px-1">[]</code> means no browser restriction.
-                </>
-              }
-            >
-              <Textarea
-                className="mt-2 min-h-[5rem] font-mono text-xs"
-                value={originsDraft}
-                onChange={(e) => setOriginsDraft(e.target.value)}
-                spellCheck={false}
-                aria-label="Allowed origins JSON"
-              />
-              <Button size="sm" variant="outline" className="mt-2" onClick={() => void onSaveOrigins(originsDraft)}>
-                Save origins
+              <Button variant="outline" size="sm" onClick={() => setManageOpen((v) => !v)}>
+                <SettingsIcon className="h-4 w-4" aria-hidden />
+                {manageOpen ? 'Hide settings' : 'Manage settings'}
+                <ChevronDown className={`h-4 w-4 transition-transform ${manageOpen ? 'rotate-180' : ''}`} aria-hidden />
               </Button>
-            </Field>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Telegram notifications (per project)</p>
-              <p className="mt-1 text-xs text-slate-500">
-                Configure a dedicated bot + chat for this project so notifications never mix with other projects.
-              </p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                <Input
-                  className="text-xs"
-                  value={telegramChatDraft}
-                  onChange={(e) => setTelegramChatDraft(e.target.value)}
-                  placeholder="Chat ID (e.g. -1001234567890)"
-                  aria-label="Project Telegram chat ID"
-                />
-                <Input
-                  className="text-xs"
-                  value={telegramTokenDraft}
-                  onChange={(e) => setTelegramTokenDraft(e.target.value)}
-                  placeholder={p.telegram_configured ? 'New bot token (leave blank to keep)' : 'Bot token from @BotFather'}
-                  aria-label="Project Telegram bot token"
-                />
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => void onSaveTelegram(telegramChatDraft, telegramTokenDraft)}>
-                  Save Telegram
-                </Button>
-                <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearTelegram()}>
-                  Clear Telegram
-                </Button>
-              </div>
             </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-600">S3 storage (per project)</p>
-              <p className="mt-1 text-xs text-slate-500">Presigned uploads for this project will use these credentials.</p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                <Input
-                  className="text-xs sm:col-span-2"
-                  value={s3EndpointDraft}
-                  onChange={(e) => setS3EndpointDraft(e.target.value)}
-                  placeholder="Endpoint URL (e.g. https://s3.your-provider.com)"
-                  aria-label="Project S3 endpoint"
+
+            {manageOpen ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                <Tabs
+                  value={settingsTab}
+                  onChange={setSettingsTab}
+                  className="mb-4"
+                  items={[
+                    { value: 'origins', label: 'Origins' },
+                    { value: 'telegram', label: 'Telegram' },
+                    { value: 's3', label: 'S3' },
+                    { value: 'zulivio', label: 'Zulivio' },
+                    { value: 'email', label: 'Email' },
+                    { value: 'portal', label: 'Client Portal' }
+                  ]}
                 />
-                <Input
-                  className="text-xs"
-                  value={s3BucketDraft}
-                  onChange={(e) => setS3BucketDraft(e.target.value)}
-                  placeholder="Bucket"
-                  aria-label="Project S3 bucket"
-                />
-                <Input
-                  className="text-xs"
-                  value={s3AccessDraft}
-                  onChange={(e) => setS3AccessDraft(e.target.value)}
-                  placeholder={p.s3_configured ? 'New access key (blank = keep)' : 'Access key'}
-                  type="password"
-                  aria-label="Project S3 access key"
-                />
-                <Input
-                  className="text-xs sm:col-span-2"
-                  value={s3SecretDraft}
-                  onChange={(e) => setS3SecretDraft(e.target.value)}
-                  placeholder={p.s3_configured ? 'New secret key (blank = keep)' : 'Secret key'}
-                  type="password"
-                  aria-label="Project S3 secret key"
-                />
+
+                {settingsTab === 'origins' ? (
+                  <Field
+                    label={<span className="text-xs font-medium uppercase tracking-wide text-slate-600">Allowed origins (optional)</span>}
+                    hint={
+                      <>
+                        JSON array of exact origins (e.g. <code className="text-slate-700">https://example.com</code>). Empty{' '}
+                        <code className="rounded bg-slate-100 px-1">[]</code> means no browser restriction.
+                      </>
+                    }
+                  >
+                    <Textarea
+                      className="mt-2 min-h-[5rem] font-mono text-xs"
+                      value={originsDraft}
+                      onChange={(e) => setOriginsDraft(e.target.value)}
+                      spellCheck={false}
+                      aria-label="Allowed origins JSON"
+                    />
+                    <Button size="sm" variant="outline" className="mt-2" onClick={() => void onSaveOrigins(originsDraft)}>
+                      Save origins
+                    </Button>
+                  </Field>
+                ) : null}
+
+                {settingsTab === 'telegram' ? (
+                  <div>
+                    <p className="text-xs text-slate-500">
+                      Configure a dedicated bot + chat for this project so notifications never mix with other projects.
+                    </p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <Input
+                        className="text-xs"
+                        value={telegramChatDraft}
+                        onChange={(e) => setTelegramChatDraft(e.target.value)}
+                        placeholder="Chat ID (e.g. -1001234567890)"
+                        aria-label="Project Telegram chat ID"
+                      />
+                      <Input
+                        className="text-xs"
+                        value={telegramTokenDraft}
+                        onChange={(e) => setTelegramTokenDraft(e.target.value)}
+                        placeholder={p.telegram_configured ? 'New bot token (leave blank to keep)' : 'Bot token from @BotFather'}
+                        aria-label="Project Telegram bot token"
+                      />
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => void onSaveTelegram(telegramChatDraft, telegramTokenDraft)}>
+                        Save Telegram
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearTelegram()}>
+                        Clear Telegram
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {settingsTab === 's3' ? (
+                  <div>
+                    <p className="text-xs text-slate-500">Presigned uploads for this project will use these credentials.</p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <Input
+                        className="text-xs sm:col-span-2"
+                        value={s3EndpointDraft}
+                        onChange={(e) => setS3EndpointDraft(e.target.value)}
+                        placeholder="Endpoint URL (e.g. https://s3.your-provider.com)"
+                        aria-label="Project S3 endpoint"
+                      />
+                      <Input
+                        className="text-xs"
+                        value={s3BucketDraft}
+                        onChange={(e) => setS3BucketDraft(e.target.value)}
+                        placeholder="Bucket"
+                        aria-label="Project S3 bucket"
+                      />
+                      <Input
+                        className="text-xs"
+                        value={s3AccessDraft}
+                        onChange={(e) => setS3AccessDraft(e.target.value)}
+                        placeholder={p.s3_configured ? 'New access key (blank = keep)' : 'Access key'}
+                        type="password"
+                        aria-label="Project S3 access key"
+                      />
+                      <Input
+                        className="text-xs sm:col-span-2"
+                        value={s3SecretDraft}
+                        onChange={(e) => setS3SecretDraft(e.target.value)}
+                        placeholder={p.s3_configured ? 'New secret key (blank = keep)' : 'Secret key'}
+                        type="password"
+                        aria-label="Project S3 secret key"
+                      />
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => void onSaveS3(s3EndpointDraft, s3BucketDraft, s3AccessDraft, s3SecretDraft)}>
+                        Save S3
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearS3()}>
+                        Clear S3
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {settingsTab === 'zulivio' ? (
+                  <div>
+                    <p className="text-xs text-slate-500">
+                      Every submission is pushed to Zulivio as a lead using your Zulivio personal API key. Generate one in
+                      Zulivio under Settings → API Keys.
+                    </p>
+                    <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={zulivioEnabledDraft}
+                        onChange={(e) => setZulivioEnabledDraft(e.target.checked)}
+                      />
+                      Push new submissions to Zulivio
+                    </label>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <Input
+                        className="text-xs sm:col-span-2"
+                        value={zulivioUrlDraft}
+                        onChange={(e) => setZulivioUrlDraft(e.target.value)}
+                        placeholder="Zulivio URL (e.g. https://zulivio.yourcompany.com)"
+                        aria-label="Zulivio API URL"
+                      />
+                      <Input
+                        className="text-xs sm:col-span-2"
+                        value={zulivioKeyDraft}
+                        onChange={(e) => setZulivioKeyDraft(e.target.value)}
+                        placeholder={p.zulivio_configured ? 'New API key (blank = keep)' : 'Zulivio personal API key'}
+                        type="password"
+                        aria-label="Zulivio API key"
+                      />
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void onSaveZulivio(zulivioEnabledDraft, zulivioUrlDraft, zulivioKeyDraft)}
+                      >
+                        Save Zulivio
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearZulivio()}>
+                        Disconnect Zulivio
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {settingsTab === 'email' ? (
+                  <div>
+                    <p className="text-xs text-slate-500">
+                      Send each new submission by email through your own SMTP account — pick a sending address, and a list
+                      of destination addresses to deliver to.
+                    </p>
+                    <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-700">
+                      <input type="checkbox" checked={emailEnabledDraft} onChange={(e) => setEmailEnabledDraft(e.target.checked)} />
+                      Email new submissions
+                    </label>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <Input
+                        className="text-xs"
+                        value={smtpHostDraft}
+                        onChange={(e) => setSmtpHostDraft(e.target.value)}
+                        placeholder="SMTP host (e.g. smtp.gmail.com)"
+                        aria-label="SMTP host"
+                      />
+                      <Input
+                        className="text-xs"
+                        type="number"
+                        value={smtpPortDraft}
+                        onChange={(e) => setSmtpPortDraft(Number(e.target.value))}
+                        placeholder="Port (587 or 465)"
+                        aria-label="SMTP port"
+                      />
+                      <Input
+                        className="text-xs"
+                        value={smtpUsernameDraft}
+                        onChange={(e) => setSmtpUsernameDraft(e.target.value)}
+                        placeholder="SMTP username"
+                        aria-label="SMTP username"
+                      />
+                      <Input
+                        className="text-xs"
+                        type="password"
+                        value={smtpPasswordDraft}
+                        onChange={(e) => setSmtpPasswordDraft(e.target.value)}
+                        placeholder={p.email_configured ? 'New password (blank = keep)' : 'SMTP password'}
+                        aria-label="SMTP password"
+                      />
+                      <Input
+                        className="text-xs sm:col-span-2"
+                        type="email"
+                        value={smtpFromDraft}
+                        onChange={(e) => setSmtpFromDraft(e.target.value)}
+                        placeholder="Sending address (e.g. forms@yourcompany.com)"
+                        aria-label="From email address"
+                      />
+                      <Input
+                        className="text-xs sm:col-span-2"
+                        value={recipientsDraft}
+                        onChange={(e) => setRecipientsDraft(e.target.value)}
+                        placeholder="Deliver to (comma-separated: sales@company.com, jane@company.com)"
+                        aria-label="Notification recipient email addresses"
+                      />
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          void onSaveEmail(
+                            emailEnabledDraft,
+                            smtpHostDraft,
+                            smtpPortDraft,
+                            smtpUsernameDraft,
+                            smtpPasswordDraft,
+                            smtpFromDraft,
+                            recipientsDraft
+                              .split(',')
+                              .map((s) => s.trim())
+                              .filter(Boolean)
+                          )
+                        }
+                      >
+                        Save email settings
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearEmail()}>
+                        Disconnect email
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {settingsTab === 'portal' ? (
+                  <PortalPanel
+                    project={p}
+                    revealedPassword={revealedPassword}
+                    onSaveSlug={onSavePortalSlug}
+                    onToggleEnabled={onTogglePortal}
+                    onGeneratePassword={onGeneratePortalPassword}
+                    onSetPassword={onSetPortalPassword}
+                    onDismissPassword={onDismissPortalPassword}
+                  />
+                ) : null}
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => void onSaveS3(s3EndpointDraft, s3BucketDraft, s3AccessDraft, s3SecretDraft)}>
-                  Save S3
-                </Button>
-                <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearS3()}>
-                  Clear S3
-                </Button>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Zulivio CRM (per project)</p>
-              <p className="mt-1 text-xs text-slate-500">
-                Every submission is pushed to Zulivio as a lead using your Zulivio personal API key. Generate one in
-                Zulivio under Settings → API Keys.
-              </p>
-              <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={zulivioEnabledDraft}
-                  onChange={(e) => setZulivioEnabledDraft(e.target.checked)}
-                />
-                Push new submissions to Zulivio
-              </label>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                <Input
-                  className="text-xs sm:col-span-2"
-                  value={zulivioUrlDraft}
-                  onChange={(e) => setZulivioUrlDraft(e.target.value)}
-                  placeholder="Zulivio URL (e.g. https://zulivio.yourcompany.com)"
-                  aria-label="Zulivio API URL"
-                />
-                <Input
-                  className="text-xs sm:col-span-2"
-                  value={zulivioKeyDraft}
-                  onChange={(e) => setZulivioKeyDraft(e.target.value)}
-                  placeholder={p.zulivio_configured ? 'New API key (blank = keep)' : 'Zulivio personal API key'}
-                  type="password"
-                  aria-label="Zulivio API key"
-                />
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void onSaveZulivio(zulivioEnabledDraft, zulivioUrlDraft, zulivioKeyDraft)}
-                >
-                  Save Zulivio
-                </Button>
-                <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearZulivio()}>
-                  Disconnect Zulivio
-                </Button>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Email notifications (per project)</p>
-              <p className="mt-1 text-xs text-slate-500">
-                Send each new submission by email through your own SMTP account — pick a sending address, and a list
-                of destination addresses to deliver to.
-              </p>
-              <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-700">
-                <input type="checkbox" checked={emailEnabledDraft} onChange={(e) => setEmailEnabledDraft(e.target.checked)} />
-                Email new submissions
-              </label>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                <Input
-                  className="text-xs"
-                  value={smtpHostDraft}
-                  onChange={(e) => setSmtpHostDraft(e.target.value)}
-                  placeholder="SMTP host (e.g. smtp.gmail.com)"
-                  aria-label="SMTP host"
-                />
-                <Input
-                  className="text-xs"
-                  type="number"
-                  value={smtpPortDraft}
-                  onChange={(e) => setSmtpPortDraft(Number(e.target.value))}
-                  placeholder="Port (587 or 465)"
-                  aria-label="SMTP port"
-                />
-                <Input
-                  className="text-xs"
-                  value={smtpUsernameDraft}
-                  onChange={(e) => setSmtpUsernameDraft(e.target.value)}
-                  placeholder="SMTP username"
-                  aria-label="SMTP username"
-                />
-                <Input
-                  className="text-xs"
-                  type="password"
-                  value={smtpPasswordDraft}
-                  onChange={(e) => setSmtpPasswordDraft(e.target.value)}
-                  placeholder={p.email_configured ? 'New password (blank = keep)' : 'SMTP password'}
-                  aria-label="SMTP password"
-                />
-                <Input
-                  className="text-xs sm:col-span-2"
-                  type="email"
-                  value={smtpFromDraft}
-                  onChange={(e) => setSmtpFromDraft(e.target.value)}
-                  placeholder="Sending address (e.g. forms@yourcompany.com)"
-                  aria-label="From email address"
-                />
-                <Input
-                  className="text-xs sm:col-span-2"
-                  value={recipientsDraft}
-                  onChange={(e) => setRecipientsDraft(e.target.value)}
-                  placeholder="Deliver to (comma-separated: sales@company.com, jane@company.com)"
-                  aria-label="Notification recipient email addresses"
-                />
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    void onSaveEmail(
-                      emailEnabledDraft,
-                      smtpHostDraft,
-                      smtpPortDraft,
-                      smtpUsernameDraft,
-                      smtpPasswordDraft,
-                      smtpFromDraft,
-                      recipientsDraft
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter(Boolean)
-                    )
-                  }
-                >
-                  Save email settings
-                </Button>
-                <Button size="sm" variant="ghost" className="text-rose-900 hover:bg-rose-50" onClick={() => void onClearEmail()}>
-                  Disconnect email
-                </Button>
-              </div>
-            </div>
-            <PortalPanel
-              project={p}
-              revealedPassword={revealedPassword}
-              onSaveSlug={onSavePortalSlug}
-              onToggleEnabled={onTogglePortal}
-              onGeneratePassword={onGeneratePortalPassword}
-              onSetPassword={onSetPortalPassword}
-              onDismissPassword={onDismissPortalPassword}
-            />
+            ) : null}
           </div>
           <div className="flex flex-col gap-2 sm:shrink-0">
             <Button variant="outline" size="sm" onClick={() => void copyKey('public')}>
@@ -952,19 +987,15 @@ export default function ProjectsPage() {
             </Link>{' '}
             or bulk delete in Submissions before you hit the cap.
           </p>
-          <p className="mt-4 max-w-3xl rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-relaxed text-slate-700">
-            <strong className="text-slate-900">AI builder?</strong> Expand <strong>Prompt you can reuse in chat</strong> below and paste
-            it into Cursor (or any assistant). Read <strong>For AI builders</strong> on{' '}
-            <Link className="font-medium text-brand-700 underline" href="/docs/contact-proxy">
-              /docs/contact-proxy
-            </Link>{' '}
-            first. This page uses <code className="text-xs">POST /api/submit</code> for the <strong>Go API</strong> (your project keys);
-            the optional Next.js Nodedr marketing proxy is <code className="text-xs">/api/contact-submit</code> — do not confuse them.
-          </p>
           <details className="mt-4 max-w-3xl rounded-2xl border border-indigo-200/80 bg-white px-4 py-3 shadow-sm open:shadow-md">
             <summary className="cursor-pointer font-display text-sm font-semibold text-indigo-900">
-              Prompt you can reuse in chat (Nodedr submit API proxy)
+              AI builder? Reuse this API pattern in another project
             </summary>
+            <p className="mt-3 text-sm leading-relaxed text-slate-700">
+              This page uses <code className="text-xs">POST /api/submit</code> for the <strong>Go API</strong> (your project
+              keys) — the optional Next.js Nodedr marketing proxy is <code className="text-xs">/api/contact-submit</code>, do
+              not confuse them. Paste the prompt below into Cursor (or any assistant) to recreate this pattern elsewhere.
+            </p>
             <pre className="mt-4 max-h-[min(60vh,28rem)] overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-4 text-left text-[10px] leading-relaxed text-slate-100 sm:text-xs">
               <code>{NODEDR_CONTACT_PROXY_REUSE_PROMPT}</code>
             </pre>
