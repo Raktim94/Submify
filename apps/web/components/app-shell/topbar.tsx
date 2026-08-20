@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { LogOut, Menu, ShieldCheck } from 'lucide-react';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { QuickAccessMenu } from './quick-access-menu';
+import { WhatsNewMenu } from './whats-new-menu';
 import { logoutSession, type MeResponse } from '@/lib/api';
 
 function initials(name: string): string {
@@ -28,6 +29,7 @@ export function Topbar({ user, onOpenMobileNav }: { user: MeResponse; onOpenMobi
 
       <div className="ml-auto flex items-center gap-2">
         <QuickAccessMenu />
+        <WhatsNewMenu />
         <DropdownMenu
           trigger={({ onClick }) => (
             <button
