@@ -3,6 +3,7 @@ package httpapi
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -466,21 +468,36 @@ func (s *Server) SetBackupS3Config(c *gin.Context) {
 // writing the appropriate error response itself when unusable — callers
 // just check the bool.
 func (s *Server) backupS3Config(c *gin.Context) (storage.S3Config, bool) {
-	sysCfg, err := s.store.GetSystemConfig()
+	cfg, err := s.loadBackupS3Config()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return storage.S3Config{}, false
 	}
-	if sysCfg.S3Endpoint == "" || sysCfg.S3Bucket == "" {
+	if cfg == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "S3 backup destination is not configured — set it first"})
 		return storage.S3Config{}, false
 	}
-	return storage.S3Config{
+	return *cfg, true
+}
+
+// loadBackupS3Config is the gin-free variant backupS3Config wraps — used by
+// the HTTP handlers above (via backupS3Config) and by the background
+// scheduler (checkS3BackupSchedule), which has no request/response to write
+// errors to. Returns (nil, nil) when no S3 destination is configured yet.
+func (s *Server) loadBackupS3Config() (*storage.S3Config, error) {
+	sysCfg, err := s.store.GetSystemConfig()
+	if err != nil {
+		return nil, err
+	}
+	if sysCfg.S3Endpoint == "" || sysCfg.S3Bucket == "" {
+		return nil, nil
+	}
+	return &storage.S3Config{
 		Endpoint:  sysCfg.S3Endpoint,
 		AccessKey: sysCfg.S3AccessKey,
 		SecretKey: sysCfg.S3SecretKey,
 		Bucket:    sysCfg.S3Bucket,
-	}, true
+	}, nil
 }
 
 func (s *Server) BackupToS3(c *gin.Context) {
@@ -498,6 +515,14 @@ func (s *Server) BackupToS3(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "uploading to S3: " + err.Error()})
 		return
 	}
+
+	// Same retention rule applies whether a backup was scheduled or
+	// triggered manually — otherwise manual backups would accumulate
+	// unbounded while only the scheduler's own uploads get pruned.
+	if existing, listErr := storage.ListObjects(c.Request.Context(), s3cfg, s3BackupPrefix); listErr == nil {
+		s.pruneS3Backups(c.Request.Context(), s3cfg, existing)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"status": "uploaded", "key": key, "size": len(data)})
 }
 
@@ -578,4 +603,79 @@ func (s *Server) RestoreFromS3(c *gin.Context) {
 		resp["file_warnings"] = warnings
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// checkS3BackupSchedule is called hourly from StartBackgroundJobs. It's a
+// silent no-op unless an S3 backup destination is configured. Backup
+// filenames are timestamp-sortable, so "when was the last backup" falls out
+// of ListObjects' own newest-first ordering — no separate "last backup at"
+// column to keep in sync. Errors are logged, not surfaced anywhere else
+// (there's no admin session listening on an hourly background tick), same
+// as dispatchDueReminders' own error handling.
+func (s *Server) checkS3BackupSchedule() {
+	cfg, err := s.loadBackupS3Config()
+	if err != nil {
+		log.Printf("S3 backup schedule check: loading config: %v", err)
+		return
+	}
+	if cfg == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	existing, err := storage.ListObjects(ctx, *cfg, s3BackupPrefix)
+	if err != nil {
+		log.Printf("S3 backup schedule check: listing existing backups: %v", err)
+		return
+	}
+
+	intervalDays := s.cfg.S3BackupIntervalDays
+	if intervalDays <= 0 {
+		intervalDays = 3
+	}
+	due := len(existing) == 0
+	if !due {
+		due = time.Since(existing[0].LastModified) >= time.Duration(intervalDays)*24*time.Hour
+	}
+	if !due {
+		return
+	}
+
+	data, err := s.buildBackupArchive()
+	if err != nil {
+		log.Printf("S3 backup schedule check: building archive: %v", err)
+		return
+	}
+	key := s3BackupPrefix + backupFilename()
+	if err := storage.UploadObject(ctx, *cfg, key, data); err != nil {
+		log.Printf("S3 backup schedule check: uploading %s: %v", key, err)
+		return
+	}
+	log.Printf("Scheduled S3 backup uploaded: %s", key)
+
+	s.pruneS3Backups(ctx, *cfg, append([]storage.ObjectInfo{{Key: key}}, existing...))
+}
+
+// pruneS3Backups keeps the newest retainCount backups and deletes the rest
+// — objects is expected newest-first (the freshly-uploaded one prepended
+// ahead of the pre-existing, already-sorted list). Best-effort: a failed
+// delete is logged and skipped, never lets one bad object block pruning the
+// others.
+func (s *Server) pruneS3Backups(ctx context.Context, cfg storage.S3Config, objects []storage.ObjectInfo) {
+	retain := s.cfg.S3BackupRetainCount
+	if retain <= 0 {
+		retain = 2
+	}
+	if len(objects) <= retain {
+		return
+	}
+	for _, stale := range objects[retain:] {
+		if err := storage.DeleteObject(ctx, cfg, stale.Key); err != nil {
+			log.Printf("S3 backup schedule check: pruning %s: %v", stale.Key, err)
+			continue
+		}
+		log.Printf("Pruned old S3 backup: %s", stale.Key)
+	}
 }

@@ -73,6 +73,13 @@ type Config struct {
 	// the repo root, mounted read-write into the container specifically
 	// for this feature (see docker-compose.yml's api service).
 	RepoDir string
+	// S3BackupIntervalDays/S3BackupRetainCount drive the automatic S3
+	// backup schedule (checked hourly, see StartBackgroundJobs) once an
+	// admin has configured an S3 backup destination — same defaults (every
+	// 3 days, keep the latest 2) as Zulivio's equivalent scheduler, so the
+	// two self-hosted products behave identically here.
+	S3BackupIntervalDays int
+	S3BackupRetainCount  int
 }
 
 func Load() Config {
@@ -104,15 +111,17 @@ func Load() Config {
 		RateLimitAuthedUserRPM:      getEnvInt("RATE_LIMIT_AUTH_USER_RPM", 600),
 		SubmitMaxBodyBytes:          int64(getEnvInt("SUBMIT_MAX_BODY_BYTES", 1024*1024)),
 		// Default false so HttpOnly cookies work on plain HTTP (e.g. local Docker on :2512). Set AUTH_COOKIE_SECURE=true behind HTTPS.
-		AuthCookieSecure:   getEnvBool("AUTH_COOKIE_SECURE", false),
-		AuthCookieDomain:   strings.TrimSpace(getEnv("AUTH_COOKIE_DOMAIN", "")),
-		AuthCookieSameSite: strings.ToLower(strings.TrimSpace(getEnv("AUTH_COOKIE_SAMESITE", "lax"))),
-		LocalStorageDir:    getEnv("LOCAL_STORAGE_DIR", "/data/uploads"),
-		SafetyBackupDir:    getEnv("SAFETY_BACKUP_DIR", "/data/safety-backups"),
-		Version:            getEnv("SUBMIFY_VERSION", "0.0.0-dev"),
-		UpdateRepo:         getEnv("SUBMIFY_UPDATE_REPO", "Raktim94/Submify"),
-		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
-		RepoDir:            getEnv("SUBMIFY_REPO_DIR", "/repo"),
+		AuthCookieSecure:     getEnvBool("AUTH_COOKIE_SECURE", false),
+		AuthCookieDomain:     strings.TrimSpace(getEnv("AUTH_COOKIE_DOMAIN", "")),
+		AuthCookieSameSite:   strings.ToLower(strings.TrimSpace(getEnv("AUTH_COOKIE_SAMESITE", "lax"))),
+		LocalStorageDir:      getEnv("LOCAL_STORAGE_DIR", "/data/uploads"),
+		SafetyBackupDir:      getEnv("SAFETY_BACKUP_DIR", "/data/safety-backups"),
+		Version:              getEnv("SUBMIFY_VERSION", "0.0.0-dev"),
+		UpdateRepo:           getEnv("SUBMIFY_UPDATE_REPO", "Raktim94/Submify"),
+		GitHubToken:          getEnv("GITHUB_TOKEN", ""),
+		RepoDir:              getEnv("SUBMIFY_REPO_DIR", "/repo"),
+		S3BackupIntervalDays: getEnvInt("S3_BACKUP_INTERVAL_DAYS", 3),
+		S3BackupRetainCount:  getEnvInt("S3_BACKUP_RETAIN_COUNT", 2),
 	}
 	switch cfg.AuthCookieSameSite {
 	case "strict", "lax", "none":

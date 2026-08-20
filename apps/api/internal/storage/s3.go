@@ -65,6 +65,20 @@ func DownloadObject(ctx context.Context, cfg S3Config, key string) (io.ReadClose
 	return out.Body, nil
 }
 
+// DeleteObject removes a single object — used by the S3 backup schedule's
+// retention pruning (keep the newest N, delete the rest).
+func DeleteObject(ctx context.Context, cfg S3Config, key string) error {
+	c, err := client(ctx, cfg.Endpoint, cfg.AccessKey, cfg.SecretKey)
+	if err != nil {
+		return err
+	}
+	_, err = c.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(cfg.Bucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
 // ListObjects returns every object under prefix, newest first — backup
 // filenames are timestamp-sortable (submify-backup-YYYYMMDD-HHMMSS.zip),
 // so "restore points" and "restore the latest one" both fall out of this

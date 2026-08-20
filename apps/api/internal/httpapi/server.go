@@ -203,6 +203,20 @@ func (s *Server) StartBackgroundJobs() {
 			s.dispatchDueReminders()
 		}
 	}()
+
+	// Checked hourly rather than scheduled directly on a multi-day timer,
+	// so the interval survives container restarts (a plain N-day timer
+	// would reset on every restart) — same reasoning and cadence as
+	// Zulivio's equivalent scheduler. The actual cadence is driven by
+	// comparing "now" against the newest S3 backup's own timestamp, not by
+	// this check's own frequency.
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.checkS3BackupSchedule()
+		}
+	}()
 }
 
 func buildTelegramMessage(project db.Project, data []byte, files []byte) string {
