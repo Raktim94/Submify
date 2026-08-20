@@ -2,8 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Nav } from '../../components/nav';
-import { api, apiBase, userFacingApiError } from '../../lib/api';
+import { api, apiBase, userFacingApiError } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Field, Select } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -54,10 +53,7 @@ export default function ExportPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-cyan-50/30">
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        <Nav />
-
+    <div className="mx-auto max-w-4xl">
         <header className="mb-8">
           <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Export</h1>
           <p className="mt-2 max-w-3xl text-base leading-relaxed text-slate-600 sm:text-lg">
@@ -134,7 +130,6 @@ export default function ExportPage() {
             ) : null}
           </form>
         )}
-      </div>
-    </main>
+    </div>
   );
 }

@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Nav } from '../../../../components/nav';
-import { api } from '../../../../lib/api';
+import { api } from '@/lib/api';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -116,10 +115,8 @@ export default function SubmissionsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-indigo-50/40">
-      <div className="mx-auto max-w-[100rem] px-4 py-8 sm:px-6">
-        <Nav />
-
+    <>
+      <div className="mx-auto max-w-[100rem]">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Project inbox</p>
@@ -280,6 +277,6 @@ export default function SubmissionsPage() {
         onConfirm={bulkDelete}
         onCancel={() => setConfirmBulkDelete(false)}
       />
-    </main>
+    </>
   );
 }

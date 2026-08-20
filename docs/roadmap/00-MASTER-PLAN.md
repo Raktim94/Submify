@@ -1,6 +1,6 @@
 # Submify → Production-Grade Platform: Master Plan
 
-Status: **Phase 1 complete. Phase 2 (Architecture) started — organizations/workspaces schema landed and verified.**
+Status: **Phases 1–2 done. Phase 3 (local storage) and Phase 4 (backup/restore core) landed. Phase 5 (Calendar & Booking) functionally complete including UI. Phase 6 partially landed (simplified Zulivio integration, email notifications). Phase 7 (UX) started (app shell). Phases 8–13 not started.** (This line was stale for several sessions — corrected 2026-08-20; the per-phase checklists above and the Session Log below are the actual source of truth, this line is just a summary pointer.)
 Owner: Raktim | Driver: Claude Code
 Source brief: full 93-section master engineering prompt, given 2026-08-19.
 This file is the single source of truth for the program — read this instead
@@ -266,15 +266,71 @@ not silently missing)
       function was called). **Not done**: email/webhook/SMS/WhatsApp/Slack/
       Teams reminder channels, and no per-event-type notification
       preferences yet (always fires if the host has Telegram configured).
-- [ ] Calendar UI: month/week/day/upcoming views. Design target (user spec,
-      2026-08-19): Google-Calendar-grade density/polish and interaction
-      feel — but an original visual identity, not a lookalike clone (the
-      brief itself, §6, explicitly forbids copying another company's
-      proprietary design). Build on shadcn/ui (already wired via the
-      per-project shadcn MCP pattern — run `npx shadcn@latest mcp init
-      --client claude` in this repo if not yet done) + this machine's
-      `animation` skill (Framer Motion/GSAP) for drag-to-reschedule, view
-      transitions, and smooth date navigation — no jank, no layout shift
+- [x] **Calendar UI landed** (2026-08-20): real month/week/day grid views
+      at `/calendar` (`components/calendar/month-view.tsx`,
+      `time-grid-view.tsx` — one shared hourly-grid implementation behind
+      both Week and Day, parameterized by how many day columns render),
+      a mini-calendar date picker, click-to-create/edit via
+      `event-dialog.tsx`, current-time indicator, all-day row. Built with
+      `date-fns` + `lucide-react` + `framer-motion` (none existed in this
+      app before — added this session) instead of shadcn, since this
+      project's hand-rolled `components/ui/*` primitives (not shadcn — see
+      `CLAUDE.md`) were the actual existing pattern to extend. Original
+      visual identity (indigo/violet/slate, matching the existing brand),
+      not a lookalike clone, per the brief's §6 instruction. **Also
+      landed alongside it, not originally scoped as part of this line**:
+      a new personal-events/reminders feature (§ below) so the grid shows
+      the user's own agenda, not just bookings — see the new checklist
+      item under this phase. Drag-to-reschedule (mentioned in this line's
+      original text) explicitly **not built** — scoped out as real added
+      complexity or a follow-up increment, documented plainly rather than
+      silently dropped.
+- [x] **Personal calendar events/reminders landed** (2026-08-20, ADR
+      [0008](../decisions/0008-personal-calendar-events.md)) — new
+      `personal_events` table (migration `0014`), org+user-scoped so one
+      user never sees another's items even in the same org (live-verified:
+      a second user in the same org correctly got `[]`/404 on another
+      user's items via `GET`/`PATCH`/`DELETE`). Reminders fire a real
+      Telegram notification at `remind_at` via a new background job
+      (`StartBackgroundJobs` was previously an empty stub — this is the
+      first real background job in the codebase, a 60s `time.Ticker`, not
+      a queue/cron dependency) — live-verified: a fake bot token produced
+      a real Telegram API 401, confirming the request genuinely fires, and
+      `reminder_sent_at` correctly prevented a re-send on the next tick.
+      Full backup/restore round trip re-verified with a pending
+      (not-yet-fired) reminder included — survived correctly. New
+      `docs/api.md` section, `GET/POST /calendar/items`,
+      `PATCH/DELETE /calendar/items/{id}`.
+- [x] **App shell replaced with a real application layout** (2026-08-20,
+      user-reported: the authenticated app "looks like a website" because
+      every page hand-duplicated the marketing site's `components/nav.tsx`
+      pill-nav with zero shared layout). New `app/(app)/` route group +
+      `components/app-shell/*` (persistent sidebar with icons, topbar,
+      mobile slide-over drawer via `framer-motion`) wraps
+      dashboard/calendar/projects/submissions/settings/export; marketing
+      pages keep their own nav, untouched. New global "+ Create" quick-
+      access menu (topbar, reachable from every authenticated page) plus a
+      quick-actions row on the Dashboard. This is a meaningful slice of
+      Phase 7's "unified design system" item below, done early because it
+      was directly requested — Phase 7's remaining scope (Settings
+      reorganization, full onboarding/empty/error states, a11y pass) is
+      still open.
+      **Two real bugs found and fixed only by actually looking at the
+      running app** (not catchable by `tsc`/`next build`/lint — same
+      lesson already logged once in this file for the booking pages):
+      (1) an infinite refetch loop on `/calendar` — `date` was recomputed
+      as a fresh `Date` object every render, breaking the
+      `useMemo`/`useCallback` dependency chain, hammering the API into 429s;
+      fixed by memoizing on the raw string search-param. (2) every raw
+      `<button>`'s *inactive* state (tabs, calendar day numbers, mini-
+      calendar days, dropdown items, chevrons) rendered solid brand-purple
+      instead of its intended color, because `globals.css`'s unscoped
+      `button { bg-brand-500 }` reset wins whenever a branch doesn't set
+      its own explicit background — every new raw button now sets one
+      unconditionally. A third bug (Day view's date range starting from
+      "right now" instead of local midnight when no `date` URL param was
+      present, silently hiding same-day items earlier than the current
+      time) was also found via live Playwright testing and fixed.
 - [ ] External calendar provider *architecture* (Google/Outlook/ICS) — only
       implement what's completable with credentials we actually have;
       otherwise ship the adapter framework + config UI/docs and say so
@@ -659,3 +715,62 @@ should read first.
   far from 100% of the original brief — it is, however, now several
   real, independently-verified, end-to-end-working features deep, with
   nothing faked or left as scaffolding.
+
+- **2026-08-20**: User reported the authenticated app "looks like a
+  website" and asked for a real app-shell redesign, quick-access buttons,
+  and a Google-Calendar-style calendar UI where the user can track their
+  own day's work/reminders — closing out Phase 5's Calendar UI line and a
+  slice of Phase 7. Landed all three: a new `app/(app)/` route group +
+  sidebar/topbar app shell replacing every page's duplicated marketing-nav
+  wrapper; a new personal-events/reminders backend feature (ADR 0008,
+  migration `0014_personal_events.sql`) with real Telegram reminder
+  delivery via a new background job; and a full month/week/day calendar
+  grid unifying personal items with existing bookings.
+
+  **Verification, in order**: `go build`/`vet`/`test ./...` green. Live
+  against a real throwaway Postgres: created a second user in the same
+  organization and confirmed they cannot see/edit/delete the first user's
+  personal items (org+user-scoped, not just org-scoped); exercised the
+  reminder job directly (real Telegram API 401 from a fake token, retried
+  3x per `internal/telegram`'s existing pattern, `reminder_sent_at`
+  correctly idempotent); full backup→restore round trip onto a completely
+  separate fresh instance, including a *pending* (not-yet-fired) reminder,
+  which correctly survived and remained pending. `tsc --noEmit`, lint, and
+  a real `next build` all clean. Built the actual production Docker images
+  (`docker compose build api web`, not just local toolchains) — this
+  repo's own `./data/postgres` already held real initialized data from a
+  prior run, so live functional testing used a fully isolated compose
+  stack (`-p submify-verify`, separate container names/ports/volumes) to
+  avoid touching it; torn down and cleaned up afterward, original data
+  never touched. Real Playwright session against that isolated stack:
+  registered a user, walked month/week/day views, created a task with a
+  15-minutes-before reminder, confirmed it round-trips correctly through
+  edit, confirmed cross-view consistency, confirmed the pre-existing Event
+  Types tab still works unchanged, and checked responsive layout at
+  375/768/1440px (sidebar correctly collapses to a slide-over drawer on
+  mobile).
+
+  **Found and fixed three real bugs this way, none catchable by
+  `tsc`/`build`/lint** — logged in detail in Phase 5/7's checklist items
+  above, restated briefly here since this is exactly the kind of thing
+  future sessions should keep watching for: an infinite refetch loop from
+  an unmemoized `Date` object breaking a `useMemo`/`useCallback` chain
+  (hammered the API into 429s); every inactive-state raw `<button>`
+  rendering solid brand-purple because of `globals.css`'s unscoped global
+  `button` reset (same bug class as one already logged in this file for
+  the original booking pages — now hit again on new components, worth
+  remembering as a standing hazard in this codebase specifically); and
+  Day view's date range starting from "right now" instead of local
+  midnight, silently hiding same-day items earlier than the current time.
+
+  **What's genuinely still open**: drag-to-reschedule on the grid,
+  recurring personal events, and Phase 7's remaining scope (Settings
+  reorganization into documented sections, onboarding/empty/error states,
+  a full accessibility pass — this session's a11y check was inconclusive:
+  the standalone `accesslint` scanner has no way to carry over an
+  authenticated session, so it audited the unauthenticated `/login`
+  redirect instead of the real pages; the Playwright accessibility-tree
+  snapshots taken during live verification did confirm a `main` landmark,
+  `h1`, `navigation` landmark, and `aria-label`s on icon-only buttons are
+  present, but that's not a substitute for a real automated pass). Nothing
+  else in the overall program changed this session.

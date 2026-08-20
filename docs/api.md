@@ -442,6 +442,49 @@ Organization's bookings. **Query:** `from`, `to` (RFC3339, default: now to
 Cancels a booking on behalf of the organization (as opposed to the attendee
 cancelling via their manage link, below).
 
+### Personal calendar items
+
+A **personal event** is the logged-in user's own private agenda item — a
+task, a timed event, or a reminder — distinct from event types/bookings
+above (which model external attendees booking a slot). Every route is
+scoped to both the caller's organization **and** their own user ID: one
+user can never see or edit another user's personal items, even within the
+same organization.
+
+### `GET /calendar/items`
+
+**Query (both required):** `from`, `to` (RFC3339) — items whose range
+overlaps `[from, to)`.
+
+**Response:** `200` `{ "items": [PersonalEvent, ...] }`
+
+### `POST /calendar/items`
+
+**Body:** `title` (required), `description`, `kind` (`event` | `task` |
+`reminder`, default `event`), `starts_at` (RFC3339, required), `ends_at`
+(RFC3339, optional — omit for a point-in-time task/reminder), `all_day`,
+`color`, `remind_at` (RFC3339, optional — when set, a Telegram notification
+fires at that time via the caller's own Telegram bot token/chat ID, same
+mechanism as booking reminders; silently does nothing if Telegram isn't
+configured).
+
+**Response:** `201` `{ "item": PersonalEvent }`
+
+### `PATCH /calendar/items/{id}`
+
+Partial update — every field is optional and a missing key leaves that
+field unchanged. **Exception:** `ends_at`/`remind_at` are nullable
+server-side; send an explicit empty string `""` to clear one, not JSON
+`null` (the server can't distinguish an absent key from an explicit
+`null`).
+
+**Response:** `200` `{ "item": PersonalEvent }`, or `404` if the item
+doesn't exist or doesn't belong to the caller.
+
+### `DELETE /calendar/items/{id}`
+
+**Response:** `200` `{ "status": "deleted" }`, or `404`.
+
 ### `GET /public/event-types/{id}`
 
 Public booking-page info: `id`, `title`, `description`, `duration_minutes`,

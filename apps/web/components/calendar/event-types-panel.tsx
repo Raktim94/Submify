@@ -1,7 +1,6 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Nav } from '../../components/nav';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/card';
 import { Field, Input, Textarea } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -183,12 +182,12 @@ function NewEventTypeForm({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-export default function CalendarPage() {
+export function EventTypesPanel({ initialShowForm = false }: { initialShowForm?: boolean }) {
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(initialShowForm);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingCancel, setPendingCancel] = useState<Booking | null>(null);
   const [origin, setOrigin] = useState('');
@@ -240,114 +239,104 @@ export default function CalendarPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-indigo-50/50">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-        <Nav />
+    <>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-600">Booking pages your organization can share, and upcoming appointments.</p>
+        <Button onClick={() => setShowForm((v) => !v)}>{showForm ? 'Close' : 'New event type'}</Button>
+      </div>
 
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="font-display text-2xl font-bold text-slate-900">Calendar</h1>
-            <p className="mt-1 text-sm text-slate-600">Booking pages your organization can share, and upcoming appointments.</p>
-          </div>
-          <Button onClick={() => setShowForm((v) => !v)}>{showForm ? 'Close' : 'New event type'}</Button>
-        </div>
+      {error ? (
+        <Alert variant="error" className="mb-6">
+          {error}
+        </Alert>
+      ) : null}
 
-        {error ? (
-          <Alert variant="error" className="mb-6">
-            {error}
-          </Alert>
-        ) : null}
-
-        {showForm ? (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>New event type</CardTitle>
-              <CardDescription>Set a duration and weekly hours — a shareable booking link is generated automatically.</CardDescription>
-            </CardHeader>
-            <CardBody>
-              <NewEventTypeForm
-                onCreated={() => {
-                  setShowForm(false);
-                  load();
-                }}
-              />
-            </CardBody>
-          </Card>
-        ) : null}
-
+      {showForm ? (
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>Event types</CardTitle>
-            <CardDescription>Each has its own shareable public booking link.</CardDescription>
+            <CardTitle>New event type</CardTitle>
+            <CardDescription>Set a duration and weekly hours — a shareable booking link is generated automatically.</CardDescription>
           </CardHeader>
           <CardBody>
-            {loading ? (
-              <p className="text-sm text-slate-500">Loading…</p>
-            ) : eventTypes.length === 0 ? (
-              <p className="text-sm text-slate-500">No event types yet — create one to start taking bookings.</p>
-            ) : (
-              <div className="space-y-3">
-                {eventTypes.map((et) => (
-                  <div
-                    key={et.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-900">{et.title}</p>
-                      <p className="text-sm text-slate-500">
-                        {et.duration_minutes} min · {et.timezone}
-                        {et.location ? ` · ${et.location}` : ''}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={() => copyLink(et.id)}>
-                        {copiedId === et.id ? 'Copied!' : 'Copy booking link'}
-                      </Button>
-                      <a href={`/book/${et.id}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-indigo-600 hover:underline">
-                        Preview
-                      </a>
-                      <Button variant="danger" size="sm" onClick={() => removeEventType(et.id)}>
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <NewEventTypeForm
+              onCreated={() => {
+                setShowForm(false);
+                load();
+              }}
+            />
           </CardBody>
         </Card>
+      ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Upcoming bookings</CardTitle>
-            <CardDescription>Next 30 days.</CardDescription>
-          </CardHeader>
-          <CardBody>
-            {loading ? (
-              <p className="text-sm text-slate-500">Loading…</p>
-            ) : upcoming.length === 0 ? (
-              <p className="text-sm text-slate-500">No upcoming bookings.</p>
-            ) : (
-              <div className="space-y-3">
-                {upcoming.map((b) => (
-                  <div key={b.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3">
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-900">{formatDateTime(b.starts_at)}</p>
-                      <p className="text-sm text-slate-500">
-                        {b.attendee_name} ({b.attendee_email}) · {eventTypeById[b.event_type_id]?.title ?? 'Event'}
-                      </p>
-                      {b.notes ? <p className="mt-1 text-sm text-slate-600">&ldquo;{b.notes}&rdquo;</p> : null}
-                    </div>
-                    <Button variant="danger" size="sm" onClick={() => setPendingCancel(b)}>
-                      Cancel
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Event types</CardTitle>
+          <CardDescription>Each has its own shareable public booking link.</CardDescription>
+        </CardHeader>
+        <CardBody>
+          {loading ? (
+            <p className="text-sm text-slate-500">Loading…</p>
+          ) : eventTypes.length === 0 ? (
+            <p className="text-sm text-slate-500">No event types yet — create one to start taking bookings.</p>
+          ) : (
+            <div className="space-y-3">
+              {eventTypes.map((et) => (
+                <div key={et.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-900">{et.title}</p>
+                    <p className="text-sm text-slate-500">
+                      {et.duration_minutes} min · {et.timezone}
+                      {et.location ? ` · ${et.location}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => copyLink(et.id)}>
+                      {copiedId === et.id ? 'Copied!' : 'Copy booking link'}
+                    </Button>
+                    <a href={`/book/${et.id}`} target="_blank" rel="noreferrer" className="text-sm font-medium text-indigo-600 hover:underline">
+                      Preview
+                    </a>
+                    <Button variant="danger" size="sm" onClick={() => removeEventType(et.id)}>
+                      Delete
                     </Button>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardBody>
-        </Card>
-      </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Upcoming bookings</CardTitle>
+          <CardDescription>Next 30 days.</CardDescription>
+        </CardHeader>
+        <CardBody>
+          {loading ? (
+            <p className="text-sm text-slate-500">Loading…</p>
+          ) : upcoming.length === 0 ? (
+            <p className="text-sm text-slate-500">No upcoming bookings.</p>
+          ) : (
+            <div className="space-y-3">
+              {upcoming.map((b) => (
+                <div key={b.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-900">{formatDateTime(b.starts_at)}</p>
+                    <p className="text-sm text-slate-500">
+                      {b.attendee_name} ({b.attendee_email}) · {eventTypeById[b.event_type_id]?.title ?? 'Event'}
+                    </p>
+                    {b.notes ? <p className="mt-1 text-sm text-slate-600">&ldquo;{b.notes}&rdquo;</p> : null}
+                  </div>
+                  <Button variant="danger" size="sm" onClick={() => setPendingCancel(b)}>
+                    Cancel
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardBody>
+      </Card>
 
       <ConfirmDialog
         open={pendingCancel !== null}
@@ -359,6 +348,6 @@ export default function CalendarPage() {
         onConfirm={confirmCancel}
         onCancel={() => setPendingCancel(null)}
       />
-    </main>
+    </>
   );
 }

@@ -23,6 +23,7 @@ var backupTables = []string{
 	"availability_rules",
 	"availability_overrides",
 	"bookings",
+	"personal_events",
 }
 
 // BackupTables returns the ordered list of tables a backup covers. Restore

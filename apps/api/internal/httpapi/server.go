@@ -144,6 +144,11 @@ func (s *Server) Router() *gin.Engine {
 		secured.PUT("/event-types/:id/overrides", s.UpsertEventTypeOverride)
 		secured.GET("/bookings", s.ListOrgBookings)
 		secured.POST("/bookings/:id/cancel", s.CancelOrgBooking)
+
+		secured.GET("/calendar/items", s.ListPersonalEvents)
+		secured.POST("/calendar/items", s.CreatePersonalEvent)
+		secured.PATCH("/calendar/items/:id", s.UpdatePersonalEvent)
+		secured.DELETE("/calendar/items/:id", s.DeletePersonalEvent)
 	}
 
 	// Public booking flow — reachable by anyone with an event type's link,
@@ -172,7 +177,20 @@ func (s *Server) Router() *gin.Engine {
 	return r
 }
 
+// StartBackgroundJobs runs the process's periodic maintenance work. As of
+// the personal-events reminder feature this is the first real background
+// job in this codebase (previously an empty stub) — a simple time.Ticker
+// goroutine, not a cron library or job queue, matching this repo's
+// existing "no unnecessary infra" principle (same reasoning as the
+// in-memory upload-token store, see docs/decisions/0003).
 func (s *Server) StartBackgroundJobs() {
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.dispatchDueReminders()
+		}
+	}()
 }
 
 func buildTelegramMessage(project db.Project, data []byte, files []byte) string {

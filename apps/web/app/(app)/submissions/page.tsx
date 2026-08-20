@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Nav } from '../../components/nav';
-import { api } from '../../lib/api';
+import { api } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Alert } from '@/components/ui/alert';
 
@@ -26,10 +25,7 @@ export default function SubmissionsHubPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-violet-50/40">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-        <Nav />
-
+    <div className="mx-auto max-w-5xl">
         <header className="mb-8">
           <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Submissions</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-600">
@@ -79,7 +75,6 @@ export default function SubmissionsHubPage() {
             ))}
           </ul>
         )}
-      </div>
-    </main>
+    </div>
   );
 }

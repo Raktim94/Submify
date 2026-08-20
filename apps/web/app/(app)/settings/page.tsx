@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Nav } from '../../components/nav';
 import {
   changePassword,
   createUser,
@@ -14,7 +13,7 @@ import {
   updateIntegrations,
   type AccountUser,
   type MeResponse
-} from '../../lib/api';
+} from '@/lib/api';
 import { Card, CardBody, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -246,31 +245,22 @@ export default function SettingsPage() {
 
   if (loadError) {
     return (
-      <main className="min-h-screen bg-slate-50 px-4 py-8">
-        <div className="mx-auto max-w-4xl">
-          <Nav />
-          <Alert variant="error">{loadError}</Alert>
-        </div>
-      </main>
+      <div className="mx-auto max-w-4xl">
+        <Alert variant="error">{loadError}</Alert>
+      </div>
     );
   }
 
   if (!me) {
     return (
-      <main className="min-h-screen bg-slate-50 px-4 py-8">
-        <div className="mx-auto max-w-4xl">
-          <Nav />
-          <p className="text-slate-600">Loading your settings…</p>
-        </div>
-      </main>
+      <div className="mx-auto max-w-4xl">
+        <p className="text-slate-600">Loading your settings…</p>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-indigo-50/40">
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        <Nav />
-
+    <div className="mx-auto max-w-4xl">
         <header className="mb-8">
           <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Settings</h1>
           <p className="mt-2 max-w-3xl text-base leading-relaxed text-slate-600 sm:text-lg">
@@ -580,7 +570,6 @@ export default function SettingsPage() {
         </form>
 
         {status ? <StatusMessage message={status} isError={status.includes('Failed') || status.startsWith('Save failed')} /> : null}
-      </div>
-    </main>
+    </div>
   );
 }

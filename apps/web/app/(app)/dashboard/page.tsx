@@ -2,10 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Nav } from '../../components/nav';
-import { api, getDashboardSummary, getMe, type DashboardSummary } from '../../lib/api';
+import { useRouter } from 'next/navigation';
+import { Bell, CalendarPlus, CheckSquare, Link2 } from 'lucide-react';
+import { api, getDashboardSummary, getMe, type DashboardSummary } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { EventDialog } from '@/components/calendar/event-dialog';
+import type { PersonalEventKind } from '@/lib/personal-events';
 
 type HealthState = { status: string; db: string } | null;
 
@@ -21,6 +24,8 @@ function StatusDot({ ok }: { ok: boolean }) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [quickDialogKind, setQuickDialogKind] = useState<PersonalEventKind | null>(null);
   const [health, setHealth] = useState<HealthState>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [welcomeName, setWelcomeName] = useState('');
@@ -106,9 +111,35 @@ export default function DashboardPage() {
   const overallOk = dbOk && apiOk;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-indigo-50/50">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-        <Nav />
+    <div className="mx-auto max-w-5xl">
+      <div className="mb-6 flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => setQuickDialogKind('event')}>
+          <CalendarPlus className="h-4 w-4" aria-hidden /> New event
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setQuickDialogKind('task')}>
+          <CheckSquare className="h-4 w-4" aria-hidden /> New task
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setQuickDialogKind('reminder')}>
+          <Bell className="h-4 w-4" aria-hidden /> New reminder
+        </Button>
+        <Link
+          href="/calendar?tab=event-types"
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/50"
+        >
+          <Link2 className="h-4 w-4" aria-hidden /> New booking link
+        </Link>
+      </div>
+
+      <EventDialog
+        open={quickDialogKind !== null}
+        kind={quickDialogKind ?? 'event'}
+        initialDate={new Date()}
+        onClose={() => setQuickDialogKind(null)}
+        onSaved={(item) => {
+          setQuickDialogKind(null);
+          router.push(`/calendar?view=day&date=${item.starts_at.slice(0, 10)}`);
+        }}
+      />
 
         {notificationPermission !== null && notificationPermission !== 'unsupported' ? (
           <div className="mb-6 rounded-2xl border border-indigo-200/90 bg-gradient-to-r from-indigo-50 via-white to-violet-50/80 px-4 py-4 shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-4">
@@ -310,8 +341,7 @@ export default function DashboardPage() {
               </ul>
             )}
           </Card>
-        </div>
       </div>
-    </main>
+    </div>
   );
 }
