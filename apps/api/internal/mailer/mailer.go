@@ -26,20 +26,65 @@ func (c Config) addr() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 
+// sanitizeHeaderValue strips CR/LF from a value before it's interpolated
+// into a raw RFC 5322 header line. from/to/subject here ultimately trace
+// back to user-supplied fields (project.Name, project.NotificationRecipients)
+// — buildMessage writes headers via direct string formatting, so an
+// unsanitized "\r\n" would let an attacker who controls one of those
+// fields terminate its header early and smuggle arbitrary extra header
+// lines (a hidden Bcc, a spoofed Reply-To) into every notification email
+// that project sends (CWE-93 email header injection). Safe to just drop
+// stray control characters here — they carry no meaning in a header value
+// and stripping them can't misdirect the message the way silently
+// mutating an address could (see validateAddresses below for why
+// addresses are rejected instead of sanitized).
+func sanitizeHeaderValue(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
+}
+
 // buildMessage constructs a minimal, valid RFC 5322 message with a plain
 // text body. Recipients are joined into a single To header (all visible
 // to each other) — appropriate for a small internal notification list,
-// not a bulk-mail use case.
+// not a bulk-mail use case. Only header VALUES are sanitized here — body
+// is intentionally left untouched: the submission's field data is meant
+// to appear verbatim in the email body (see ADR 0007), and body content
+// can't smuggle headers since it's always written after the blank line
+// that already terminates the header block.
 func buildMessage(from string, to []string, subject, body string) []byte {
 	var b strings.Builder
-	fmt.Fprintf(&b, "From: %s\r\n", from)
-	fmt.Fprintf(&b, "To: %s\r\n", strings.Join(to, ", "))
-	fmt.Fprintf(&b, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&b, "From: %s\r\n", sanitizeHeaderValue(from))
+	safeTo := make([]string, len(to))
+	for i, addr := range to {
+		safeTo[i] = sanitizeHeaderValue(addr)
+	}
+	fmt.Fprintf(&b, "To: %s\r\n", strings.Join(safeTo, ", "))
+	fmt.Fprintf(&b, "Subject: %s\r\n", sanitizeHeaderValue(subject))
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
 	b.WriteString("\r\n")
 	b.WriteString(body)
 	return []byte(b.String())
+}
+
+// validateAddresses rejects (rather than silently mutates) any from/to
+// address containing CR or LF. Go's stdlib smtp.SendMail already does
+// this internally for its own from/to arguments — but sendImplicitTLS
+// below talks to smtp.Client's Mail()/Rcpt() directly, which has no such
+// built-in check, so a CRLF in an address there could inject raw SMTP
+// protocol commands into the session (a more severe class than header
+// injection). Called once in send() so both paths get the same
+// protection uniformly, rather than relying on the STARTTLS path's
+// built-in check and leaving the implicit-TLS path uncovered.
+func validateAddresses(from string, to []string) error {
+	if strings.ContainsAny(from, "\r\n") {
+		return fmt.Errorf("invalid from address")
+	}
+	for _, addr := range to {
+		if strings.ContainsAny(addr, "\r\n") {
+			return fmt.Errorf("invalid recipient address")
+		}
+	}
+	return nil
 }
 
 // send picks implicit TLS (common on port 465) vs. STARTTLS (587 and most
@@ -48,6 +93,9 @@ func buildMessage(from string, to []string, subject, body string) []byte {
 // common self-hosted SMTP support issue, worth handling correctly rather
 // than requiring the operator to pick a "mode" themselves.
 func send(cfg Config, to []string, subject, body string) error {
+	if err := validateAddresses(cfg.FromEmail, to); err != nil {
+		return err
+	}
 	msg := buildMessage(cfg.FromEmail, to, subject, body)
 	auth := smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
 
