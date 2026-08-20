@@ -66,9 +66,36 @@ services:
       # Zero-config fallback used whenever a project/account has no S3-compatible
       # credentials configured — see docs/decisions/0003-local-storage-fallback.md.
       LOCAL_STORAGE_DIR: /data/uploads
+      # Automatic pre-restore safety backup, taken before any restore over an
+      # already-active install — always local disk, never S3. See
+      # docs/decisions/0009-s3-backup-and-self-update.md.
+      SAFETY_BACKUP_DIR: /data/safety-backups
+      # SUBMIFY_VERSION is normally baked in at image-build time (see
+      # apps/api/Dockerfile's VERSION build-arg); harmless to also default it
+      # here for a plain `docker compose build` with no --build-arg passed.
+      SUBMIFY_VERSION: ${SUBMIFY_VERSION:-0.0.0-dev}
+      SUBMIFY_UPDATE_REPO: ${SUBMIFY_UPDATE_REPO:-Raktim94/Submify}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      SUBMIFY_REPO_DIR: /repo
       GIN_MODE: release
     volumes:
       - ./data/uploads:/data/uploads
+      - ./data/safety-backups:/data/safety-backups
+      # Self-update support: the update-apply endpoint can't safely run
+      # `docker compose up` on its own service from inside the container
+      # being recreated (it would kill its own process mid-sequence), so it
+      # spawns a separate one-shot helper container through this socket
+      # instead — see docs/decisions/0009-s3-backup-and-self-update.md.
+      # Equivalent to Watchtower/Portainer's own self-update pattern; be
+      # aware this mount already gives the api container host-root-equivalent
+      # control (hence apps/api/Dockerfile also runs it as root, not a
+      # separate unprivileged user — that separation provided no real
+      # isolation once docker.sock is mounted).
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Read-write repo checkout, so the update-apply endpoint's helper
+      # container can `git pull --ff-only` from the same tree `docker
+      # compose up --build` is later run from.
+      - .:/repo
     logging: *api-logging
     depends_on:
       db:

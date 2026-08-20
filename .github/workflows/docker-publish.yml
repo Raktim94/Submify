@@ -97,5 +97,11 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ steps.version.outputs.owner }}/${{ matrix.image }}:${{ steps.version.outputs.version }}
             ${{ env.REGISTRY }}/${{ steps.version.outputs.owner }}/${{ matrix.image }}:latest
+          # Only submify-api's Dockerfile declares/uses VERSION (feeds the
+          # self-update checker's "what am I currently running" — see
+          # internal/update.Checker); harmless no-op build-arg for the
+          # other two images, which don't declare it.
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

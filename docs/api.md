@@ -403,6 +403,69 @@ already-active installation is not supported by this endpoint.
 corrupted backup (missing manifest, unsupported `backupVersion`, or a
 checksum mismatch — the backup is rejected before anything is written).
 
+### `POST /system/restore/active`
+
+Admin-only. Restores a local uploaded `.zip` **over an already-active
+install** — unlike `POST /system/restore` above, this permanently replaces
+all current data. Always takes an automatic pre-restore safety backup
+(written to `SAFETY_BACKUP_DIR` on local disk) before the destructive
+write. See `docs/decisions/0009-s3-backup-and-self-update.md`.
+
+**Body:** `multipart/form-data`, fields `backup` (the `.zip`) and `confirm`
+(must be exactly `RESTORE`, or the request is rejected with `400` before
+anything happens).
+
+**Response:** `200` — same shape as `POST /system/restore`, plus
+`"safety_backup": "<path>"`.
+
+### `PUT /system/backup/s3-config`
+
+Admin-only. Sets the instance-wide S3-compatible backup destination
+(separate from any project's own S3 upload-storage credentials).
+
+**Body:** `{ "endpoint": "...", "access_key": "...", "secret_key": "...", "bucket": "..." }`
+
+### `POST /system/backup/s3`
+
+Admin-only. Builds a backup archive (same format as `POST /system/backup`)
+and uploads it to the configured S3 destination under `backups/`.
+
+**Response:** `200` `{ "status": "uploaded", "key": "backups/submify-backup-<ts>.zip", "size": <bytes> }`
+
+### `GET /system/backup/s3`
+
+Admin-only. Lists available S3 restore points, newest first. Pass
+`?latest=1` to get just the newest one directly (`404` if none exist).
+
+**Response:** `200` `{ "backups": [{ "key", "size", "last_modified" }, ...] }` (or `{ "backup": {...} }` with `?latest=1`).
+
+### `POST /system/backup/s3/restore`
+
+Admin-only. Downloads the given key from the configured S3 destination and
+restores it over the active install — same typed-confirmation and
+automatic-safety-backup guarantees as `POST /system/restore/active`.
+
+**Body:** `{ "key": "backups/...", "confirm": "RESTORE" }`
+
+**Response:** `200` — same shape as `POST /system/restore/active`, plus `"restored_from": "<key>"`.
+
+### `GET /system/update/check`
+
+Admin-only. Compares this build's own version against the latest release/
+tag on `SUBMIFY_UPDATE_REPO` and persists the result.
+
+**Response:** `200` `{ "current_version", "latest_version", "update_available" }`
+
+### `POST /system/update/apply`
+
+Admin-only. Triggers a real self-update: pulls the latest code and rebuilds/
+restarts the stack via a separate helper container (see
+`docs/decisions/0009-s3-backup-and-self-update.md` for why it can't just run
+the update inline). Responds immediately, before the update finishes — poll
+`GET /api/v1/system/health` afterward to detect when the instance is back.
+
+**Response:** `202` `{ "status": "update started" }`
+
 ## Calendar & booking
 
 An **event type** defines a bookable service (duration, weekly hours,

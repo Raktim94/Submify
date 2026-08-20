@@ -210,17 +210,49 @@ Check items off as they're **actually verified working**, not merely coded.
       checksum layer specifically — confirming that layer isn't dead
       code shadowed by the zip format's own integrity check. Confirmed
       zero partial writes after both rejected-restore attempts.
-- [ ] **Not done in this slice**: automatic scheduled backups (daily/
-      weekly/monthly + retention policy — this slice is the "create one
-      now" building block that would sit under a scheduler, not the
-      scheduler itself); S3 as a backup *destination* (today's backup
-      only ever produces a local download — no "upload the backup to a
-      bucket" path yet, separate from S3 being usable as an *upload*
-      storage backend since Phase 3); restore-over-an-active-installation
-      (§27 — needs a pre-restore safety backup, explicit UI confirmation,
-      and is deliberately harder/riskier, scoped out of this slice on
-      purpose, see ADR 0004); backup encryption (§26 — not evaluated yet
-      either way, still open).
+- [x] **S3 backup destination + restore-over-an-active-install + real
+      self-update landed** (2026-08-20, ADR
+      [0009](../decisions/0009-s3-backup-and-self-update.md)): `PUT/GET/
+      POST /system/backup/s3*` (config, upload, list-with-`?latest=1`,
+      restore-from-S3) and `POST /system/restore/active` (local upload
+      over an already-active install) — both restore paths admin-only,
+      gated behind a required `"confirm": "RESTORE"` field, and always
+      take an automatic pre-restore safety backup to local disk first.
+      `GET /system/update/check` + `POST /system/update/apply` wire up
+      the previously-dead `internal/update.Checker` to a real one-shot-
+      helper-container self-update (can't run `docker compose up` on its
+      own service from inside itself — see ADR for why — so it spawns a
+      separate ephemeral container via its own mounted `docker.sock`).
+      New Settings UI: "Backup & restore" and "Updates" cards, admin-
+      gated, `lib/backup.ts`. A real bug was caught and fixed during
+      verification: the existing `RestoreTableJSONL` only ever `INSERT`s,
+      which is fine for fresh-install restore (empty tables) but fails
+      immediately with duplicate-key errors once restoring over an
+      already-active install with existing rows — fixed by `TRUNCATE`ing
+      each affected table inside the restore transaction first (a no-op
+      on the fresh-install path, so 0004's existing behavior is
+      unaffected).
+      **Verified live**: full round trip against a real Postgres
+      container (register → create data → download backup → restore-
+      over-active-install via a real browser file upload in Playwright →
+      confirm data matches, confirm the *automatic safety backup itself*
+      is restorable — not just written); S3 backup/list/restore-from-S3
+      against a real MinIO container, exercised both via `curl` and live
+      through the browser UI; corrupted-zip and tampered-checksum
+      archives both correctly rejected with `400` before any write;
+      typed-confirmation dialogs confirmed to gate the Restore/Update
+      buttons in the actual browser (disabled until the exact phrase is
+      typed). **Not verified** (documented plainly in the ADR rather than
+      assumed): the actual "container restarts itself after update-apply"
+      behavior — this sandboxed dev environment has no second real Docker
+      host to observe that on; confirm on a real deployment before
+      relying on it.
+- [ ] **Still not done**: automatic scheduled backups (daily/weekly/
+      monthly + retention policy — today is still "create one now" on
+      demand, s3 or local, not a scheduler); backup encryption (§26 —
+      not evaluated yet either way, still open); pruning old files in
+      `SAFETY_BACKUP_DIR` (every restore attempt adds one, including
+      failed/rejected ones, with no automatic cleanup yet).
 
 ### Phase 5 — Calendar & Booking (§6–15) — functionally complete end-to-end 2026-08-19
 (remaining gaps: team scheduling, external calendar sync, custom booking

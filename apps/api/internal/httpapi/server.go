@@ -172,6 +172,18 @@ func (s *Server) Router() *gin.Engine {
 		admin.POST("/users", s.CreateUser)
 		admin.DELETE("/users/:id", s.DeleteUser)
 		admin.POST("/system/backup", s.CreateBackup)
+		// Restore over an ALREADY-active install — distinct from the
+		// unauthenticated fresh-install-only /system/restore above. See
+		// docs/decisions/0009-s3-backup-and-self-update.md.
+		admin.POST("/system/restore/active", s.RestoreSystemActive)
+
+		admin.PUT("/system/backup/s3-config", s.SetBackupS3Config)
+		admin.POST("/system/backup/s3", s.BackupToS3)
+		admin.GET("/system/backup/s3", s.ListS3Backups)
+		admin.POST("/system/backup/s3/restore", s.RestoreFromS3)
+
+		admin.GET("/system/update/check", s.CheckForUpdate)
+		admin.POST("/system/update/apply", s.ApplyUpdate)
 	}
 
 	return r
@@ -572,4 +584,3 @@ func pushToZulivio(project db.Project, data map[string]interface{}) {
 	}
 	zulivio.PushAsync(project.ZulivioAPIURL, project.ZulivioAPIKey, lead)
 }
-

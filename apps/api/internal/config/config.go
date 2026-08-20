@@ -10,10 +10,10 @@ import (
 )
 
 type Config struct {
-	Port                         string
-	DatabaseURL                  string
-	JWTSecret                    string
-	AllowedOrigins               []string
+	Port           string
+	DatabaseURL    string
+	JWTSecret      string
+	AllowedOrigins []string
 	// CorsRelaxPrivateNetworks allows browser Origins on loopback, RFC1918, and link-local IPs
 	// when not explicitly listed in AllowedOrigins (self-hosted LAN access).
 	CorsRelaxPrivateNetworks bool
@@ -32,17 +32,17 @@ type Config struct {
 	// reachable via a plain page link/iframe.
 	CorsPublicBookingAnyOrigin bool
 	TrustedProxies             []string
-	UploadMaxSizeBytes           int64
-	AllowedMIMETypes             map[string]struct{}
-	PresignExpiryMinutes         int
-	RefreshTokenTTLHours         int
-	AccessTokenTTLMinutes        int
+	UploadMaxSizeBytes         int64
+	AllowedMIMETypes           map[string]struct{}
+	PresignExpiryMinutes       int
+	RefreshTokenTTLHours       int
+	AccessTokenTTLMinutes      int
 	// PortalTokenTTLHours is how long a client-portal (read-only) session stays valid.
-	PortalTokenTTLHours          int
-	RateLimitSensitivePublicRPM  int
-	RateLimitSubmitIPRPM         int
-	RateLimitSubmitKeyRPM        int
-	RateLimitAuthedUserRPM       int
+	PortalTokenTTLHours         int
+	RateLimitSensitivePublicRPM int
+	RateLimitSubmitIPRPM        int
+	RateLimitSubmitKeyRPM       int
+	RateLimitAuthedUserRPM      int
 	// SubmitMaxBodyBytes caps JSON body size for POST /api/submit.
 	SubmitMaxBodyBytes int64
 	AuthCookieSecure   bool
@@ -52,6 +52,27 @@ type Config struct {
 	// S3-compatible credentials configured — the zero-config default for
 	// self-hosted deployments. See docs/decisions/0003-local-storage-fallback.md.
 	LocalStorageDir string
+	// SafetyBackupDir holds the automatic pre-restore backup taken
+	// immediately before any restore-over-an-active-install (local or S3)
+	// — see docs/decisions/0009-s3-backup-and-self-update.md. Always
+	// local disk, deliberately not S3, so it doesn't depend on S3 being
+	// reachable at exactly the moment a restore is being attempted.
+	SafetyBackupDir string
+	// Version is this build's own version, resolved at image-publish time
+	// from a real git tag (see .github/workflows/docker-publish.yml) and
+	// baked in via the Dockerfile's VERSION build-arg. Falls back to
+	// "0.0.0-dev" for local `docker compose build` (no build-arg passed).
+	Version string
+	// UpdateRepo is the GitHub "owner/repo" the update checker compares
+	// Version against (internal/update.Checker).
+	UpdateRepo string
+	// GitHubToken is optional — raises the update checker's GitHub API
+	// rate limit; unauthenticated requests work fine at low frequency.
+	GitHubToken string
+	// RepoDir is where the self-update endpoint runs `git pull` from —
+	// the repo root, mounted read-write into the container specifically
+	// for this feature (see docker-compose.yml's api service).
+	RepoDir string
 }
 
 func Load() Config {
@@ -61,7 +82,7 @@ func Load() Config {
 	}
 	// Defaults match docker-compose.yml when env vars are unset (self-host / tunnel / nginx in front).
 	cfg := Config{
-		Port: getEnv("PORT", "8080"),
+		Port:                        getEnv("PORT", "8080"),
 		DatabaseURL:                 getEnv("DATABASE_URL", "postgres://submify:submify@db:5432/submify?sslmode=disable"),
 		JWTSecret:                   getJWTSecret(),
 		AllowedOrigins:              splitCSV(getEnv("ALLOWED_ORIGINS", "http://localhost:2512,http://127.0.0.1:2512")),
@@ -83,10 +104,15 @@ func Load() Config {
 		RateLimitAuthedUserRPM:      getEnvInt("RATE_LIMIT_AUTH_USER_RPM", 600),
 		SubmitMaxBodyBytes:          int64(getEnvInt("SUBMIT_MAX_BODY_BYTES", 1024*1024)),
 		// Default false so HttpOnly cookies work on plain HTTP (e.g. local Docker on :2512). Set AUTH_COOKIE_SECURE=true behind HTTPS.
-		AuthCookieSecure:            getEnvBool("AUTH_COOKIE_SECURE", false),
-		AuthCookieDomain:            strings.TrimSpace(getEnv("AUTH_COOKIE_DOMAIN", "")),
-		AuthCookieSameSite:          strings.ToLower(strings.TrimSpace(getEnv("AUTH_COOKIE_SAMESITE", "lax"))),
-		LocalStorageDir:             getEnv("LOCAL_STORAGE_DIR", "/data/uploads"),
+		AuthCookieSecure:   getEnvBool("AUTH_COOKIE_SECURE", false),
+		AuthCookieDomain:   strings.TrimSpace(getEnv("AUTH_COOKIE_DOMAIN", "")),
+		AuthCookieSameSite: strings.ToLower(strings.TrimSpace(getEnv("AUTH_COOKIE_SAMESITE", "lax"))),
+		LocalStorageDir:    getEnv("LOCAL_STORAGE_DIR", "/data/uploads"),
+		SafetyBackupDir:    getEnv("SAFETY_BACKUP_DIR", "/data/safety-backups"),
+		Version:            getEnv("SUBMIFY_VERSION", "0.0.0-dev"),
+		UpdateRepo:         getEnv("SUBMIFY_UPDATE_REPO", "Raktim94/Submify"),
+		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
+		RepoDir:            getEnv("SUBMIFY_REPO_DIR", "/repo"),
 	}
 	switch cfg.AuthCookieSameSite {
 	case "strict", "lax", "none":

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nodedr/submify/apps/api/internal/keys"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/nodedr/submify/apps/api/internal/keys"
 )
 
 type Store struct {
@@ -42,39 +42,39 @@ type User struct {
 }
 
 type Project struct {
-	ID             string    `json:"id"`
-	UserID         string    `json:"user_id"`
-	OrganizationID string    `json:"organization_id"`
-	Name           string    `json:"name"`
-	IsDefault      bool      `json:"is_default"`
-	APIKey         string    `json:"api_key"`
-	APISecret      string    `json:"api_secret"`
-	AllowedOrigins []string  `json:"allowed_origins,omitempty"`
-	TelegramBotToken string  `json:"-"`
-	TelegramChatID   string  `json:"telegram_chat_id"`
-	TelegramConfigured bool  `json:"telegram_configured"`
-	S3Endpoint       string  `json:"s3_endpoint"`
-	S3AccessKey      string  `json:"-"`
-	S3SecretKey      string  `json:"-"`
-	S3Bucket         string  `json:"s3_bucket"`
-	S3Configured     bool    `json:"s3_configured"`
-	PortalSlug         string `json:"portal_slug"`
-	PortalEnabled      bool   `json:"portal_enabled"`
-	PortalPasswordSet  bool   `json:"portal_password_set"`
-	PortalPasswordHash string `json:"-"`
-	ZulivioEnabled    bool   `json:"zulivio_enabled"`
-	ZulivioAPIURL     string `json:"zulivio_api_url"`
-	ZulivioAPIKey     string `json:"-"`
-	ZulivioConfigured bool   `json:"zulivio_configured"`
-	EmailNotificationsEnabled bool     `json:"email_notifications_enabled"`
-	SMTPHost                  string   `json:"smtp_host"`
-	SMTPPort                  int      `json:"smtp_port"`
-	SMTPUsername              string   `json:"smtp_username"`
-	SMTPPassword              string   `json:"-"`
-	SMTPFromEmail             string   `json:"smtp_from_email"`
-	NotificationRecipients    []string `json:"notification_recipients,omitempty"`
-	EmailConfigured           bool     `json:"email_configured"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID                        string    `json:"id"`
+	UserID                    string    `json:"user_id"`
+	OrganizationID            string    `json:"organization_id"`
+	Name                      string    `json:"name"`
+	IsDefault                 bool      `json:"is_default"`
+	APIKey                    string    `json:"api_key"`
+	APISecret                 string    `json:"api_secret"`
+	AllowedOrigins            []string  `json:"allowed_origins,omitempty"`
+	TelegramBotToken          string    `json:"-"`
+	TelegramChatID            string    `json:"telegram_chat_id"`
+	TelegramConfigured        bool      `json:"telegram_configured"`
+	S3Endpoint                string    `json:"s3_endpoint"`
+	S3AccessKey               string    `json:"-"`
+	S3SecretKey               string    `json:"-"`
+	S3Bucket                  string    `json:"s3_bucket"`
+	S3Configured              bool      `json:"s3_configured"`
+	PortalSlug                string    `json:"portal_slug"`
+	PortalEnabled             bool      `json:"portal_enabled"`
+	PortalPasswordSet         bool      `json:"portal_password_set"`
+	PortalPasswordHash        string    `json:"-"`
+	ZulivioEnabled            bool      `json:"zulivio_enabled"`
+	ZulivioAPIURL             string    `json:"zulivio_api_url"`
+	ZulivioAPIKey             string    `json:"-"`
+	ZulivioConfigured         bool      `json:"zulivio_configured"`
+	EmailNotificationsEnabled bool      `json:"email_notifications_enabled"`
+	SMTPHost                  string    `json:"smtp_host"`
+	SMTPPort                  int       `json:"smtp_port"`
+	SMTPUsername              string    `json:"smtp_username"`
+	SMTPPassword              string    `json:"-"`
+	SMTPFromEmail             string    `json:"smtp_from_email"`
+	NotificationRecipients    []string  `json:"notification_recipients,omitempty"`
+	EmailConfigured           bool      `json:"email_configured"`
+	CreatedAt                 time.Time `json:"created_at"`
 }
 
 type Submission struct {
@@ -87,6 +87,19 @@ type Submission struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
+// SystemConfig is a single row (id=1) predating the current organizations-
+// based bootstrap (POST /auth/register) — CreateInitialSystemConfig below
+// is legacy, unreachable from any live route (confirmed: GetSystemConfig/
+// UpdateSystemConfig/CreateInitialSystemConfig have zero callers outside
+// this file as of 2026-08-20). A real instance bootstrapped via
+// /auth/register never inserts this row at all. The S3Endpoint/S3AccessKey/
+// S3SecretKey/S3Bucket and UpdateAvail/LatestVersion fields are repurposed
+// (not renamed, to avoid a migration) as the instance-wide backup-S3-
+// destination config and update-checker result respectively — see
+// SetBackupS3Config/SetUpdateCheckResult below and
+// docs/decisions/0009-s3-backup-and-self-update.md for why this table
+// (rather than the per-account users.s3_* fields already used for
+// presigned uploads) is the right home for backup config.
 type SystemConfig struct {
 	ID             int       `json:"id"`
 	S3Endpoint     string    `json:"s3_endpoint"`
@@ -187,6 +200,11 @@ func (s *Store) CreateInitialSystemConfig(cfg SystemConfig) error {
 	return tx.Commit()
 }
 
+// GetSystemConfig returns a zero-value SystemConfig (not an error) when the
+// row doesn't exist yet — the normal state for any instance bootstrapped
+// via /auth/register, which never inserts it (see the type's own doc
+// comment). Callers should read a zero value as "not configured", not
+// treat its absence as a failure.
 func (s *Store) GetSystemConfig() (SystemConfig, error) {
 	var cfg SystemConfig
 	err := s.DB.QueryRow(`
@@ -199,7 +217,36 @@ func (s *Store) GetSystemConfig() (SystemConfig, error) {
 		&cfg.TelegramToken, &cfg.TelegramChatID, &cfg.AdminEmail, &cfg.AdminHash,
 		&cfg.UpdateAvail, &cfg.LatestVersion, &cfg.UpdatedAt,
 	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SystemConfig{}, nil
+	}
 	return cfg, err
+}
+
+// SetBackupS3Config upserts just the S3 backup-destination fields — the
+// row may not exist yet (see GetSystemConfig's comment), so this is an
+// INSERT ... ON CONFLICT rather than a bare UPDATE. The other NOT NULL
+// legacy columns (telegram_*, admin_*) default to empty on first insert
+// and are left untouched on conflict, since this method has nothing to do
+// with them.
+func (s *Store) SetBackupS3Config(endpoint, accessKey, secretKey, bucket string) error {
+	_, err := s.DB.Exec(`
+		INSERT INTO system_configs (id, s3_endpoint, s3_access_key, s3_secret_key, s3_bucket, telegram_bot_token, telegram_chat_id, admin_email, admin_password_hash)
+		VALUES (1, $1, $2, $3, $4, '', '', '', '')
+		ON CONFLICT (id) DO UPDATE SET s3_endpoint=$1, s3_access_key=$2, s3_secret_key=$3, s3_bucket=$4, updated_at=NOW()
+	`, endpoint, accessKey, secretKey, bucket)
+	return err
+}
+
+// SetUpdateCheckResult upserts the update-checker's result, same
+// upsert-because-the-row-may-not-exist reasoning as SetBackupS3Config.
+func (s *Store) SetUpdateCheckResult(available bool, latestVersion string) error {
+	_, err := s.DB.Exec(`
+		INSERT INTO system_configs (id, s3_endpoint, s3_access_key, s3_secret_key, s3_bucket, telegram_bot_token, telegram_chat_id, admin_email, admin_password_hash, update_available, latest_version)
+		VALUES (1, '', '', '', '', '', '', '', '', $1, $2)
+		ON CONFLICT (id) DO UPDATE SET update_available=$1, latest_version=$2, updated_at=NOW()
+	`, available, latestVersion)
+	return err
 }
 
 func (s *Store) UpdateSystemConfig(cfg SystemConfig) error {
@@ -919,4 +966,3 @@ func (s *Store) RevokeRefreshSession(jti, userID string) error {
 	}
 	return nil
 }
-

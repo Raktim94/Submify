@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   changePassword,
@@ -14,6 +14,20 @@ import {
   type AccountUser,
   type MeResponse
 } from '@/lib/api';
+import {
+  applyUpdate,
+  backupToS3,
+  checkForUpdate,
+  downloadBackup,
+  listS3Backups,
+  restoreBackupFromFile,
+  restoreBackupFromS3,
+  setBackupS3Config,
+  waitForHealthy,
+  type S3BackupObject,
+  type UpdateCheckResult
+} from '@/lib/backup';
+import { downloadBlob } from '@/lib/submissionFormat';
 import { Card, CardBody, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -49,6 +63,28 @@ export default function SettingsPage() {
   const [creatingUser, setCreatingUser] = useState(false);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<AccountUser | null>(null);
 
+  // --- Backup & restore ---
+  const restoreFileInputRef = useRef<HTMLInputElement>(null);
+  const [downloadingBackup, setDownloadingBackup] = useState(false);
+  const [backupStatus, setBackupStatus] = useState('');
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [confirmRestoreLocal, setConfirmRestoreLocal] = useState(false);
+  const [restoringLocal, setRestoringLocal] = useState(false);
+  const [savingS3Backup, setSavingS3Backup] = useState(false);
+  const [s3BackupStatus, setS3BackupStatus] = useState('');
+  const [s3Backups, setS3Backups] = useState<S3BackupObject[] | null>(null);
+  const [backingUpToS3, setBackingUpToS3] = useState(false);
+  const [confirmRestoreS3Key, setConfirmRestoreS3Key] = useState<string | null>(null);
+  const [restoringS3, setRestoringS3] = useState(false);
+
+  // --- Updates ---
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState('');
+  const [confirmApplyUpdate, setConfirmApplyUpdate] = useState(false);
+  const [applyingUpdate, setApplyingUpdate] = useState(false);
+  const [updateApplyStatus, setUpdateApplyStatus] = useState('');
+
   useEffect(() => {
     getMe()
       .then((m) => setMe(m))
@@ -60,6 +96,12 @@ export default function SettingsPage() {
     listUsers()
       .then((res) => setUsers(res.users))
       .catch((e) => setUsersStatus(e instanceof Error ? e.message : 'Failed to load accounts'));
+  }, [me?.is_admin]);
+
+  useEffect(() => {
+    if (!me?.is_admin) return;
+    loadS3Backups(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.is_admin]);
 
   async function onCreateUser(e: FormEvent<HTMLFormElement>) {
@@ -99,6 +141,150 @@ export default function SettingsPage() {
       setUsersStatus(`Removed ${target.email}.`);
     } catch (err) {
       setUsersStatus(err instanceof Error ? err.message : 'Could not remove account');
+    }
+  }
+
+  async function loadS3Backups(silent = false) {
+    try {
+      const res = await listS3Backups();
+      setS3Backups(res.backups);
+    } catch (err) {
+      // Silent on initial mount: "not configured yet" is the expected state
+      // for most instances and shouldn't render as an alert before the
+      // admin has done anything. Explicit actions (save config, back up
+      // now) still report their own errors below.
+      if (!silent) {
+        setS3BackupStatus(err instanceof Error ? err.message : 'Could not list S3 backups');
+      }
+    }
+  }
+
+  async function onDownloadBackup() {
+    setBackupStatus('');
+    setDownloadingBackup(true);
+    try {
+      const { blob, filename } = await downloadBackup();
+      downloadBlob(blob, filename);
+      setBackupStatus('Backup downloaded.');
+    } catch (err) {
+      setBackupStatus(err instanceof Error ? err.message : 'Backup failed');
+    } finally {
+      setDownloadingBackup(false);
+    }
+  }
+
+  function onRestoreFileChosen(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setRestoreFile(file);
+    if (file) setConfirmRestoreLocal(true);
+  }
+
+  async function onConfirmRestoreLocal() {
+    setConfirmRestoreLocal(false);
+    if (!restoreFile) return;
+    setBackupStatus('');
+    setRestoringLocal(true);
+    try {
+      const res = await restoreBackupFromFile(restoreFile, 'RESTORE');
+      const rows = Object.values(res.tables).reduce((a, b) => a + b, 0);
+      setBackupStatus(`Restored ${rows} row(s) across ${Object.keys(res.tables).length} table(s). A safety backup of the previous state was saved on the server before restoring.`);
+    } catch (err) {
+      setBackupStatus(err instanceof Error ? err.message : 'Restore failed');
+    } finally {
+      setRestoringLocal(false);
+      setRestoreFile(null);
+      if (restoreFileInputRef.current) restoreFileInputRef.current.value = '';
+    }
+  }
+
+  function onCancelRestoreLocal() {
+    setConfirmRestoreLocal(false);
+    setRestoreFile(null);
+    if (restoreFileInputRef.current) restoreFileInputRef.current.value = '';
+  }
+
+  async function onSaveS3BackupConfig(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setS3BackupStatus('');
+    setSavingS3Backup(true);
+    const form = new FormData(e.currentTarget);
+    try {
+      await setBackupS3Config({
+        endpoint: String(form.get('backup_s3_endpoint') ?? '').trim(),
+        access_key: String(form.get('backup_s3_access_key') ?? '').trim(),
+        secret_key: String(form.get('backup_s3_secret_key') ?? '').trim(),
+        bucket: String(form.get('backup_s3_bucket') ?? '').trim()
+      });
+      setS3BackupStatus('S3 backup destination saved.');
+      await loadS3Backups();
+    } catch (err) {
+      setS3BackupStatus(err instanceof Error ? err.message : 'Could not save S3 backup destination');
+    } finally {
+      setSavingS3Backup(false);
+    }
+  }
+
+  async function onBackupToS3() {
+    setS3BackupStatus('');
+    setBackingUpToS3(true);
+    try {
+      const res = await backupToS3();
+      setS3BackupStatus(`Backed up to S3: ${res.key}`);
+      await loadS3Backups();
+    } catch (err) {
+      setS3BackupStatus(err instanceof Error ? err.message : 'S3 backup failed');
+    } finally {
+      setBackingUpToS3(false);
+    }
+  }
+
+  async function onConfirmRestoreS3() {
+    const key = confirmRestoreS3Key;
+    setConfirmRestoreS3Key(null);
+    if (!key) return;
+    setS3BackupStatus('');
+    setRestoringS3(true);
+    try {
+      const res = await restoreBackupFromS3(key, 'RESTORE');
+      const rows = Object.values(res.tables).reduce((a, b) => a + b, 0);
+      setS3BackupStatus(`Restored ${rows} row(s) from ${key}. A safety backup of the previous state was saved on the server before restoring.`);
+    } catch (err) {
+      setS3BackupStatus(err instanceof Error ? err.message : 'Restore from S3 failed');
+    } finally {
+      setRestoringS3(false);
+    }
+  }
+
+  async function onCheckForUpdate() {
+    setUpdateCheckStatus('');
+    setCheckingUpdate(true);
+    try {
+      const res = await checkForUpdate();
+      setUpdateCheck(res);
+    } catch (err) {
+      setUpdateCheckStatus(err instanceof Error ? err.message : 'Could not check for updates');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
+  async function onConfirmApplyUpdate() {
+    setConfirmApplyUpdate(false);
+    setUpdateApplyStatus('');
+    setApplyingUpdate(true);
+    try {
+      await applyUpdate();
+      setUpdateApplyStatus('Update started — the app is restarting. Waiting for it to come back…');
+      const healthy = await waitForHealthy();
+      setUpdateApplyStatus(
+        healthy
+          ? 'Update complete — the app is back up. Reload the page to see the new version.'
+          : 'Still restarting after 3 minutes — check back shortly, or check server logs if this persists.'
+      );
+    } catch (err) {
+      setUpdateApplyStatus(err instanceof Error ? err.message : 'Could not start the update');
+    } finally {
+      setApplyingUpdate(false);
     }
   }
 
@@ -373,6 +559,194 @@ export default function SettingsPage() {
           danger
           onConfirm={onDeleteUser}
           onCancel={() => setConfirmDeleteUser(null)}
+        />
+
+        {me.is_admin ? (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Backup &amp; restore</CardTitle>
+              <CardDescription>
+                A backup includes every organization, user, project, submission, and calendar item, plus any files stored
+                locally on this server. Restoring replaces all current data — an automatic safety backup of the previous
+                state is always saved on the server first.
+              </CardDescription>
+            </CardHeader>
+
+            <CardBody>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Local</p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <Button variant="outline" loading={downloadingBackup} onClick={onDownloadBackup}>
+                    Download backup
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    loading={restoringLocal}
+                    onClick={() => restoreFileInputRef.current?.click()}
+                  >
+                    Restore from file…
+                  </Button>
+                  <input
+                    ref={restoreFileInputRef}
+                    type="file"
+                    accept=".zip"
+                    className="hidden"
+                    onChange={onRestoreFileChosen}
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-sm font-semibold text-slate-900">S3-compatible destination</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  A separate destination from the presigned-upload storage above — used only for instance backups.
+                </p>
+                <form className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={onSaveS3BackupConfig}>
+                  <div className="md:col-span-2">
+                    <Field label="Endpoint URL" htmlFor="backup_s3_endpoint">
+                      <Input id="backup_s3_endpoint" name="backup_s3_endpoint" placeholder="https://s3.your-provider.com" />
+                    </Field>
+                  </div>
+                  <Field label="Bucket" htmlFor="backup_s3_bucket">
+                    <Input id="backup_s3_bucket" name="backup_s3_bucket" placeholder="Bucket name" />
+                  </Field>
+                  <Field label="Access key" htmlFor="backup_s3_access_key">
+                    <Input id="backup_s3_access_key" name="backup_s3_access_key" type="password" autoComplete="off" />
+                  </Field>
+                  <div className="md:col-span-2">
+                    <Field label="Secret key" htmlFor="backup_s3_secret_key">
+                      <Input id="backup_s3_secret_key" name="backup_s3_secret_key" type="password" autoComplete="off" />
+                    </Field>
+                  </div>
+                  <Button type="submit" variant="outline" loading={savingS3Backup} className="md:col-span-2 md:w-fit">
+                    Save S3 destination
+                  </Button>
+                </form>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <Button variant="outline" loading={backingUpToS3} onClick={onBackupToS3}>
+                    Back up to S3 now
+                  </Button>
+                  {s3Backups && s3Backups.length > 0 ? (
+                    <Button
+                      variant="outline"
+                      loading={restoringS3}
+                      onClick={() => setConfirmRestoreS3Key(s3Backups[0].key)}
+                    >
+                      Restore latest from S3
+                    </Button>
+                  ) : null}
+                </div>
+
+                {s3Backups && s3Backups.length > 0 ? (
+                  <ul className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200">
+                    {s3Backups.map((b) => (
+                      <li key={b.key} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{b.key}</p>
+                          <p className="text-xs text-slate-500">
+                            {new Date(b.last_modified).toLocaleString()} · {(b.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                        <Button
+                          variant="danger"
+                          className="text-xs"
+                          loading={restoringS3}
+                          onClick={() => setConfirmRestoreS3Key(b.key)}
+                        >
+                          Restore
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : s3Backups && s3Backups.length === 0 ? (
+                  <p className="mt-4 text-xs text-slate-500">No S3 backups yet.</p>
+                ) : null}
+              </div>
+            </CardBody>
+
+            {backupStatus ? <StatusMessage message={backupStatus} isError={/failed|error/i.test(backupStatus)} /> : null}
+            {s3BackupStatus ? (
+              <StatusMessage message={s3BackupStatus} isError={/failed|could not|not configured|error/i.test(s3BackupStatus)} />
+            ) : null}
+          </Card>
+        ) : null}
+
+        <ConfirmDialog
+          open={confirmRestoreLocal}
+          title="Restore this backup?"
+          description={`This permanently replaces all current data with the contents of ${restoreFile?.name ?? 'the selected file'}. A safety backup of the current state is saved first.`}
+          confirmText="RESTORE"
+          confirmLabel="Restore"
+          danger
+          onConfirm={onConfirmRestoreLocal}
+          onCancel={onCancelRestoreLocal}
+        />
+        <ConfirmDialog
+          open={Boolean(confirmRestoreS3Key)}
+          title="Restore this backup?"
+          description={`This permanently replaces all current data with ${confirmRestoreS3Key ?? 'the selected backup'} from S3. A safety backup of the current state is saved first.`}
+          confirmText="RESTORE"
+          confirmLabel="Restore"
+          danger
+          onConfirm={onConfirmRestoreS3}
+          onCancel={() => setConfirmRestoreS3Key(null)}
+        />
+
+        {me.is_admin ? (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Updates</CardTitle>
+              <CardDescription>
+                Checks the latest release on GitHub and, if you confirm, pulls and rebuilds the app in place. The app is
+                briefly unavailable while it restarts.
+              </CardDescription>
+            </CardHeader>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" loading={checkingUpdate} onClick={onCheckForUpdate}>
+                Check for update
+              </Button>
+              {updateCheck ? (
+                <p className="text-sm text-slate-700">
+                  Running <span className="font-medium">{updateCheck.current_version}</span>
+                  {updateCheck.update_available ? (
+                    <>
+                      {' '}
+                      — <span className="font-semibold text-emerald-700">v{updateCheck.latest_version} available</span>
+                    </>
+                  ) : (
+                    ' — up to date.'
+                  )}
+                </p>
+              ) : null}
+            </div>
+            {updateCheck?.update_available ? (
+              <Button
+                variant="danger"
+                className="mt-4"
+                loading={applyingUpdate}
+                onClick={() => setConfirmApplyUpdate(true)}
+              >
+                Update now
+              </Button>
+            ) : null}
+            {updateCheckStatus ? <StatusMessage message={updateCheckStatus} isError /> : null}
+            {updateApplyStatus ? (
+              <StatusMessage message={updateApplyStatus} isError={/could not|fail/i.test(updateApplyStatus)} />
+            ) : null}
+          </Card>
+        ) : null}
+
+        <ConfirmDialog
+          open={confirmApplyUpdate}
+          title={`Update to v${updateCheck?.latest_version}?`}
+          description="The app will restart in place. This takes a minute or two, during which it will be unreachable."
+          confirmText="UPDATE"
+          confirmLabel="Update now"
+          danger
+          onConfirm={onConfirmApplyUpdate}
+          onCancel={() => setConfirmApplyUpdate(false)}
         />
 
         <Card className="mb-8">
