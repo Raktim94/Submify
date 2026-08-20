@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { NODEDR_CONTACT_PROXY_REUSE_PROMPT } from '@/lib/nodedrContactProxyReusePrompt';
+import { CopyableCode } from '@/components/ui/copyable-code';
+import { CopyButton } from '@/components/ui/copy-button';
 
 export default function DocsPage() {
   return (
@@ -31,9 +33,12 @@ export default function DocsPage() {
           <summary className="cursor-pointer font-display text-sm font-semibold text-slate-900">
             Prompt you can reuse in chat (copy for AI assistants)
           </summary>
-          <pre className="mt-4 max-h-[min(50vh,24rem)] overflow-auto rounded-xl border border-slate-100 bg-slate-950 p-4 text-left text-[11px] leading-relaxed text-slate-100 sm:text-xs">
-            <code>{NODEDR_CONTACT_PROXY_REUSE_PROMPT}</code>
-          </pre>
+          <div className="group relative mt-4">
+            <pre className="max-h-[min(50vh,24rem)] overflow-auto rounded-xl border border-slate-100 bg-slate-950 p-4 text-left text-[11px] leading-relaxed text-slate-100 sm:text-xs">
+              <code>{NODEDR_CONTACT_PROXY_REUSE_PROMPT}</code>
+            </pre>
+            <CopyButton text={NODEDR_CONTACT_PROXY_REUSE_PROMPT} className="absolute right-3 top-3" />
+          </div>
           <p className="mt-3 text-xs text-slate-600">
             In <strong>this</strong> monorepo the Next.js proxy is <code className="rounded bg-slate-100 px-1">/api/contact-submit</code>;{' '}
             <code className="rounded bg-slate-100 px-1">POST /api/submit</code> is the Go API (project keys). See{' '}
@@ -184,12 +189,12 @@ export default function DocsPage() {
           JSON object. Common shape includes <code>data</code> for fields and <code>files</code> for references; the API stores the
           payload and may notify Telegram if configured.
         </p>
-        <pre>
-          <code>{`{
+        <CopyableCode
+          code={`{
   "data": { "name": "Ada", "email": "ada@example.com" },
   "files": []
-}`}</code>
-        </pre>
+}`}
+        />
         <p>
           <strong>Limits</strong> — Body size is capped (configurable on the server). Each project has a submission cap (e.g. 5,000
           rows); export or delete old data before hitting it.
@@ -264,18 +269,16 @@ export default function DocsPage() {
           access from other devices on your network (or from the internet), add the following to your <code>.env</code> file and
           restart the stack:
         </p>
-        <pre>
-          <code>{`# Bind to all interfaces so other devices can reach port 2512.
+        <CopyableCode
+          code={`# Bind to all interfaces so other devices can reach port 2512.
 # Replace 0.0.0.0 with a specific IP to restrict to one interface.
 SUBMIFY_BIND_IP=0.0.0.0
 
 # Add your server IP or hostname to the CORS allowlist.
 # Replace 192.168.1.100 with your actual server IP or domain.
-ALLOWED_ORIGINS=http://localhost:2512,http://127.0.0.1:2512,http://192.168.1.100:2512`}</code>
-        </pre>
-        <pre>
-          <code>{`docker compose up -d`}</code>
-        </pre>
+ALLOWED_ORIGINS=http://localhost:2512,http://127.0.0.1:2512,http://192.168.1.100:2512`}
+        />
+        <CopyableCode code="docker compose up -d" />
         <p>
           Also open port <code>2512</code> on your host firewall (UFW: <code>sudo ufw allow 2512/tcp</code>), then open{' '}
           <code>http://&lt;server-ip&gt;:2512</code> from any device on the network.

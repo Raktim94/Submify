@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { NODEDR_CONTACT_PROXY_REUSE_PROMPT } from '@/lib/nodedrContactProxyReusePrompt';
+import { CopyButton } from '@/components/ui/copy-button';
 
 export default function ContactProxyDocsPage() {
   return (
@@ -184,9 +185,12 @@ export default function ContactProxyDocsPage() {
           for <strong>this</strong> monorepo, swap <code>/api/submit</code> → <code>/api/contact-submit</code> in the generated client
           code.
         </p>
-        <pre className="max-h-[min(70vh,32rem)] overflow-auto rounded-2xl border border-slate-200 bg-slate-950 p-5 text-[13px] leading-relaxed text-slate-100 shadow-inner">
-          <code>{NODEDR_CONTACT_PROXY_REUSE_PROMPT}</code>
-        </pre>
+        <div className="group relative">
+          <pre className="max-h-[min(70vh,32rem)] overflow-auto rounded-2xl border border-slate-200 bg-slate-950 p-5 text-[13px] leading-relaxed text-slate-100 shadow-inner">
+            <code>{NODEDR_CONTACT_PROXY_REUSE_PROMPT}</code>
+          </pre>
+          <CopyButton text={NODEDR_CONTACT_PROXY_REUSE_PROMPT} className="absolute right-3 top-3" />
+        </div>
         <p className="mt-4 text-sm text-slate-600">
           Canonical rules reference: <code className="rounded bg-slate-100 px-1 font-mono">15-formsubmit-and-contact-forms.mdc</code>{' '}
           (Nodedr submit API section).

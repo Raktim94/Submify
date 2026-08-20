@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { InstallCommand } from '@/components/landing/install-command';
 
 const features = [
   { name: 'Unlimited projects', benefit: 'Manage forms for multiple clients or sites from one dashboard.' },
@@ -129,12 +130,18 @@ export function LandingStory() {
         </ul>
       </section>
 
-      <section className="text-center">
-        <h3 className="font-display text-2xl font-bold text-slate-900">Get started in minutes</h3>
-        <ol className="mx-auto mt-6 max-w-2xl list-decimal space-y-3 pl-6 text-left text-slate-700">
-          <li>
-            <strong className="text-slate-900">Deploy</strong> — Run Docker Compose on your VPS or homelab.
-          </li>
+      <section id="install" className="scroll-mt-20 text-center">
+        <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">Quick start</p>
+        <h3 className="font-display mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
+          Up and running in one command
+        </h3>
+        <p className="mx-auto mt-3 max-w-xl text-slate-600">
+          Clones the repo and starts the full stack — Postgres, API, web, and nginx — with auto-generated secrets on
+          first run.
+        </p>
+        <InstallCommand className="mx-auto mt-6 max-w-xl text-left" />
+
+        <ol className="mx-auto mt-10 max-w-2xl list-decimal space-y-3 pl-6 text-left text-slate-700">
           <li>
             <strong className="text-slate-900">Create</strong> — Register and add a project; copy your public key.
           </li>
