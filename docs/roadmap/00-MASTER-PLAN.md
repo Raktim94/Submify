@@ -952,3 +952,35 @@ should read first.
   Verified live: real Postgres + `go run ./cmd/server` + `next dev`,
   registered a throwaway account, opened the menu (dot cleared, content
   matched), reloaded (dot stayed cleared). `next build` clean.
+
+- **2026-08-21 — Local Docker instance rebuilt to close a drift gap; production
+  cutover deliberately deferred.** A request to wire a "book a meeting" flow
+  into the nodedr.com marketing site surfaced two real findings, not just a
+  feature request: (1) the public `api.nodedrdev.com` domain — the shared
+  `/api/submit` backend every Nodedr marketing site depends on — is still
+  serving an old, unrelated Vercel-hosted Submify build with no calendar
+  support at all, completely disconnected from this repo; (2) that old
+  deployment has its own separate database, so any DNS cutover would
+  invalidate every live client site's `pk_live_...` key simultaneously.
+  Confirmed the new `/api/submit` handler (`handlers.go:761`) uses the same
+  `x-api-key: pk_live_*` contract, so a cutover is code-compatible — but the
+  user explicitly deferred the actual DNS/Cloudflare-Tunnel migration
+  (real blast-radius risk to unrelated client businesses) rather than have
+  it done under a fast/auto-mode pass. Scoped down to: rebuild and restart
+  the **local** CasaOS-managed Docker Compose stack only (`docker compose
+  build && up -d`, no `-v`, existing Postgres volume untouched) to close a
+  ~6.5-hour drift between the running containers and HEAD. Verified: build
+  clean, containers recreated without data loss, no migration errors,
+  `/calendar` and `/book/<id>` both still 200 post-rebuild. The
+  `api.nodedrdev.com` cutover remains open — needs a real migration plan
+  (recreate/import every existing client project + key) before any DNS
+  change, not attempted here.
+
+  Also answered a scoping question while here: calendar/booking rows are
+  keyed by `organization_id` (`db/calendar.go`), so a client shared into an
+  org via the existing collaborator model would see both submissions and
+  bookings together — but the **view-only client portal** (`docs/page.tsx`
+  "Client portal" section) is explicitly submissions-only by design ("and
+  nothing else"), so portal-based clients do *not* currently see bookings
+  through that link. Flagged as a real gap between what's built and what
+  was asked, not silently assumed to already work.
