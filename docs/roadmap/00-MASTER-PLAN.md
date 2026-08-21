@@ -1065,3 +1065,58 @@ should read first.
   that file. Did not touch the production deployment or any file outside
   this repo and the one `acweb` docs page, per this project's standing
   "don't touch production" instruction.
+
+- **2026-08-21 — CasaOS/ZimaOS package republished to `0.2.0`, closing the
+  gap between the store listing and the two features that landed this
+  session (Calendar & Booking UI, read-only portal calendar).** The
+  previously-published images (`ghcr.io/raktim94/submify-{api,web,nginx}:0.1.0`)
+  predated both. Built all three from current `main` HEAD (`6114afd`) as
+  real multi-arch images (`linux/amd64` + `linux/arm64`, matching the
+  package's declared `architectures`) via a `docker-container` buildx
+  builder with QEMU (`tonistiigi/binfmt`) for arm64 emulation, and pushed
+  `0.2.0` + `latest` tags for all three to GHCR (`docker login ghcr.io`
+  via `gh auth token`). Pushed manifest-list digests: `submify-api@sha256:
+  8b5c8e1bdc1114fdcc7a1b1fecde9b33c42e9cf15648024a5f2a1d77878d4f20`,
+  `submify-web@sha256:6f918c5ef49a130d1eb8b7d854fb7235891a87b266eae9b19e893ed3a5a9ef4f`,
+  `submify-nginx@sha256:1c61a48afe9c3bb49cd669262e9e7eb7d7801d3e5cf5055c138ef0f2986600b3`
+  — each confirmed live via `docker manifest inspect` (both amd64/arm64
+  platform entries present) after a fresh `docker rmi` + `docker pull`
+  (not just trusting `docker push`'s own success message).
+
+  `casaos/docker-compose.yml` updated: all three `image:` refs bumped to
+  `0.2.0`, `x-casaos.version` → `"0.2.0"`, `update_at` → `"2026-08-21"`,
+  and a new `0.2.0:` line added to `release_notes` (full calendar/booking
+  UI, event types, public booking pages, `.ics` export, Telegram
+  reminders, and the read-only client-portal calendar). The top-level
+  `description` already named calendar/booking prominently — left as-is,
+  not rewritten.
+
+  **Verified against the actual published `0.2.0` images**, not local
+  dev builds: stood up an isolated throwaway stack (`docker compose -p
+  submify-test-verify`, all four container names + bind-mount sources +
+  the published port remapped to a scratch dir under `/tmp` and port
+  `25120`, since a real `submify-{db,api,web,nginx}` dev stack was already
+  running on this host and had to stay untouched — confirmed still up
+  and healthy afterward). Confirmed live: the `POSTGRES_PASSWORD_FILE`/
+  `JWT_SECRET` first-boot secret-generation entrypoints both fired
+  correctly; registration → login → default project listing all worked
+  through nginx on the mapped port; created a real event type with weekly
+  availability rules, fetched public slots, and booked a real slot via
+  the public booking API; enabled the project's client portal, logged
+  into it, and confirmed `GET /portal/bookings` returns the booking
+  correctly (attendee name, event title, time) while genuinely omitting
+  `manage_token`/`attendee_email`/`notes` — matching ADR 0010's read-only
+  design — and that an unauthenticated request to the same endpoint
+  correctly gets `401`; also confirmed `.ics` download and the portal's
+  web page (`/verify-slug`) both return `200`. `docker compose -f
+  casaos/docker-compose.yml config -q` (the same structural check
+  `IceWhaleTech/CasaOS-AppStore`'s CI runs) passed cleanly. Torn down the
+  throwaway stack and deleted the scratch directory afterward.
+
+  **Explicitly out of scope, not done here**: no PR was opened against
+  `IceWhaleTech/CasaOS-AppStore` — confirmed via `gh api repos/Raktim94/
+  CasaOS-AppStore/contents/Apps` that no `Submify` entry exists there yet,
+  so the app still isn't listed on the actual public store. That
+  submission (fork, `Apps/Submify/` directory, PR against `main`, per the
+  established pattern from nodedr-pos #996 and OrderRestro #1001) remains
+  a separate future step if the user wants it publicly listed.
