@@ -1,10 +1,28 @@
-import type { Booking } from '@/lib/calendar';
 import type { PersonalEvent, PersonalEventKind } from '@/lib/personal-events';
+
+// Structural shape both the dashboard's full `Booking` (lib/calendar.ts) and
+// the client portal's minimized `PortalBooking` (lib/portal.ts) satisfy —
+// the grid/dialog components below render off this, not either concrete
+// type, so they don't assume a full JWT-authenticated org member is calling.
+// attendee_email/notes are optional because the portal deliberately never
+// receives them (see docs/decisions/0010-portal-calendar-read-only.md).
+export type BookingLike = {
+  id: string;
+  event_type_id: string;
+  starts_at: string;
+  ends_at: string;
+  attendee_name: string;
+  attendee_email?: string;
+  notes?: string;
+  location?: string;
+  status: string;
+};
 
 // A single shape the grid views render, merging the two very different
 // backend concepts that share one calendar: personal_events (a user's own
-// private agenda — editable) and bookings (external attendees booking an
-// event type — read-only here, already managed on the Event Types tab).
+// private agenda — editable, dashboard-only, never sent to the portal) and
+// bookings (external attendees booking an event type — read-only here,
+// already managed on the Event Types tab in the dashboard).
 export type CalendarEntry = {
   id: string;
   title: string;
@@ -16,12 +34,12 @@ export type CalendarEntry = {
   kind: PersonalEventKind | 'booking';
   isCompleted?: boolean;
   personalEvent?: PersonalEvent;
-  booking?: Booking;
+  booking?: BookingLike;
 };
 
 export function buildCalendarEntries(
   personalItems: PersonalEvent[],
-  bookings: Booking[],
+  bookings: BookingLike[],
   eventTypeTitleById: Record<string, string>
 ): CalendarEntry[] {
   const fromPersonal: CalendarEntry[] = personalItems.map((p) => ({

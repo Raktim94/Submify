@@ -13,7 +13,7 @@ import { MiniCalendar } from '@/components/calendar/mini-calendar';
 import { EventDialog } from '@/components/calendar/event-dialog';
 import { BookingDetailsDialog } from '@/components/calendar/booking-details-dialog';
 import { EventTypesPanel } from '@/components/calendar/event-types-panel';
-import { buildCalendarEntries, type CalendarEntry } from '@/components/calendar/entries';
+import { buildCalendarEntries, type BookingLike, type CalendarEntry } from '@/components/calendar/entries';
 import { listEventTypes, listOrgBookings, type Booking, type EventType } from '@/lib/calendar';
 import { listPersonalEvents, type PersonalEvent, type PersonalEventKind } from '@/lib/personal-events';
 
@@ -82,7 +82,7 @@ function CalendarPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [dialogState, setDialogState] = useState<DialogState>(null);
-  const [bookingDialog, setBookingDialog] = useState<Booking | null>(null);
+  const [bookingDialog, setBookingDialog] = useState<BookingLike | null>(null);
 
   const range = useMemo(() => {
     if (view === 'month') return { from: startOfWeek(startOfMonth(date)), to: endOfWeek(endOfMonth(date)) };

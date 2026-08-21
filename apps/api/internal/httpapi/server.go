@@ -115,6 +115,11 @@ func (s *Server) Router() *gin.Engine {
 		portal.GET("/info", s.PortalInfo)
 		portal.GET("/submissions", s.PortalSubmissions)
 		portal.GET("/export", s.PortalExport)
+		// Read-only calendar views — organization-scoped (bookings have no
+		// project_id), never write-capable. See
+		// docs/decisions/0010-portal-calendar-read-only.md.
+		portal.GET("/event-types", s.PortalEventTypes)
+		portal.GET("/bookings", s.PortalBookings)
 	}
 
 	secured := api.Group("")

@@ -2,11 +2,19 @@
 
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, startOfDay, startOfMonth, startOfWeek, subMonths, subWeeks } from 'date-fns';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { SubmifyLogo } from '@/components/submify-logo';
 import { Card } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
+import { Tabs } from '@/components/ui/tabs';
+import { MonthView } from '@/components/calendar/month-view';
+import { TimeGridView } from '@/components/calendar/time-grid-view';
+import { MiniCalendar } from '@/components/calendar/mini-calendar';
+import { BookingDetailsDialog } from '@/components/calendar/booking-details-dialog';
+import { buildCalendarEntries, type BookingLike, type CalendarEntry } from '@/components/calendar/entries';
 import {
   portalInfo,
   portalLogin,
@@ -14,7 +22,11 @@ import {
   portalLookup,
   portalSubmissions,
   portalExport,
-  type PortalSubmission
+  portalEventTypes,
+  portalBookings,
+  type PortalSubmission,
+  type PortalEventType,
+  type PortalBooking
 } from '@/lib/portal';
 import {
   allDataKeys,
@@ -29,6 +41,8 @@ import {
 } from '@/lib/submissionFormat';
 
 type Phase = 'loading' | 'password' | 'authed' | 'notfound' | 'error';
+type PortalTab = 'submissions' | 'calendar';
+type GridView = 'month' | 'week' | 'day';
 
 export default function PortalPage() {
   const params = useParams<{ slug: string }>();
@@ -46,7 +60,62 @@ export default function PortalPage() {
   const [listError, setListError] = useState('');
   const [exporting, setExporting] = useState<'xlsx' | 'pdf' | null>(null);
 
+  // --- Calendar (read-only) — see docs/decisions/0010-portal-calendar-read-only.md ---
+  const [portalTab, setPortalTab] = useState<PortalTab>('submissions');
+  const [view, setView] = useState<GridView>('month');
+  const [calDate, setCalDate] = useState(() => startOfDay(new Date()));
+  const [eventTypes, setEventTypes] = useState<PortalEventType[]>([]);
+  const [bookings, setBookings] = useState<PortalBooking[]>([]);
+  const [calLoading, setCalLoading] = useState(false);
+  const [calError, setCalError] = useState('');
+  const [bookingDialog, setBookingDialog] = useState<BookingLike | null>(null);
+
   const dataKeys = useMemo(() => allDataKeys(items), [items]);
+
+  const calRange = useMemo(() => {
+    if (view === 'month') return { from: startOfWeek(startOfMonth(calDate)), to: endOfWeek(endOfMonth(calDate)) };
+    if (view === 'week') return { from: startOfWeek(calDate), to: endOfWeek(calDate) };
+    return { from: calDate, to: addDays(calDate, 1) };
+  }, [view, calDate]);
+
+  const loadCalendar = useCallback(async () => {
+    setCalLoading(true);
+    setCalError('');
+    try {
+      const [et, b] = await Promise.all([portalEventTypes(), portalBookings(calRange.from.toISOString(), calRange.to.toISOString())]);
+      setEventTypes(et);
+      setBookings(b);
+    } catch (e) {
+      setCalError(e instanceof Error ? e.message : 'Could not load calendar');
+    } finally {
+      setCalLoading(false);
+    }
+  }, [calRange.from, calRange.to]);
+
+  useEffect(() => {
+    if (phase === 'authed' && portalTab === 'calendar') void loadCalendar();
+  }, [phase, portalTab, loadCalendar]);
+
+  const eventTypeTitleById = useMemo(() => Object.fromEntries(eventTypes.map((e) => [e.id, e.title])), [eventTypes]);
+  const calEntries: CalendarEntry[] = useMemo(() => buildCalendarEntries([], bookings, eventTypeTitleById), [bookings, eventTypeTitleById]);
+  const calGridDays = view === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(calDate), i)) : [calDate];
+
+  function calGoToday() {
+    setCalDate(startOfDay(new Date()));
+  }
+  function calGoPrev() {
+    if (view === 'month') setCalDate((d) => subMonths(d, 1));
+    else if (view === 'week') setCalDate((d) => subWeeks(d, 1));
+    else setCalDate((d) => addDays(d, -1));
+  }
+  function calGoNext() {
+    if (view === 'month') setCalDate((d) => addMonths(d, 1));
+    else if (view === 'week') setCalDate((d) => addWeeks(d, 1));
+    else setCalDate((d) => addDays(d, 1));
+  }
+  function selectCalEntry(entry: CalendarEntry) {
+    if (entry.booking) setBookingDialog(entry.booking);
+  }
 
   const loadSubmissions = useCallback(async () => {
     setLoadingItems(true);
@@ -127,6 +196,10 @@ export default function PortalPage() {
     setItems([]);
     setPassword('');
     setPhase('password');
+    setPortalTab('submissions');
+    setEventTypes([]);
+    setBookings([]);
+    setBookingDialog(null);
   }
 
   function downloadCsv() {
@@ -235,12 +308,97 @@ export default function PortalPage() {
         </button>
       }
     >
-      <div className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Client portal</p>
-        <h1 className="font-display text-3xl font-bold text-slate-900">{projectName || 'Submissions'}</h1>
-        <p className="mt-1 text-sm text-slate-500">Read-only access — view and export submissions.</p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Client portal</p>
+          <h1 className="font-display text-3xl font-bold text-slate-900">{projectName || 'Submissions'}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Read-only access — {portalTab === 'submissions' ? 'view and export submissions.' : 'view scheduled bookings on a real calendar.'}
+          </p>
+        </div>
+        <Tabs
+          value={portalTab}
+          onChange={(v) => setPortalTab(v as PortalTab)}
+          items={[
+            { value: 'submissions', label: 'Submissions' },
+            { value: 'calendar', label: 'Calendar' }
+          ]}
+        />
       </div>
 
+      {portalTab === 'calendar' ? (
+        <div className="grid gap-6 lg:grid-cols-[1fr_260px]">
+          <div>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={calGoToday}>
+                  Today
+                </Button>
+                <button type="button" onClick={calGoPrev} className="rounded-lg bg-transparent p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Previous">
+                  <ChevronLeft className="h-4 w-4" aria-hidden />
+                </button>
+                <button type="button" onClick={calGoNext} className="rounded-lg bg-transparent p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Next">
+                  <ChevronRight className="h-4 w-4" aria-hidden />
+                </button>
+                <p className="ml-2 text-base font-semibold text-slate-900">
+                  {view === 'month'
+                    ? format(calDate, 'MMMM yyyy')
+                    : view === 'week'
+                      ? `Week of ${format(startOfWeek(calDate), 'MMM d')}`
+                      : format(calDate, 'EEEE, MMM d')}
+                </p>
+              </div>
+              <Tabs
+                value={view}
+                onChange={(v) => setView(v as GridView)}
+                items={[
+                  { value: 'month', label: 'Month' },
+                  { value: 'week', label: 'Week' },
+                  { value: 'day', label: 'Day' }
+                ]}
+              />
+            </div>
+
+            {calError ? (
+              <Alert variant="error" className="mb-4">
+                {calError}
+              </Alert>
+            ) : null}
+
+            {calLoading ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-6 py-16 text-center text-sm text-slate-500">
+                Loading calendar…
+              </div>
+            ) : view === 'month' ? (
+              <MonthView
+                month={calDate}
+                entries={calEntries}
+                onSelectDay={(d) => {
+                  setCalDate(d);
+                  setView('day');
+                }}
+                onSelectEntry={selectCalEntry}
+                onCreateAt={() => {}}
+              />
+            ) : (
+              <TimeGridView days={calGridDays} entries={calEntries} onSelectEntry={selectCalEntry} onCreateAt={() => {}} />
+            )}
+          </div>
+
+          <div className="order-first lg:order-last">
+            <MiniCalendar
+              month={calDate}
+              selected={calDate}
+              onSelectDate={(d) => {
+                setCalDate(d);
+                setView('day');
+              }}
+              onChangeMonth={(m) => setCalDate(m)}
+            />
+          </div>
+        </div>
+      ) : (
+        <>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Button size="sm" onClick={() => void download('xlsx')} loading={exporting === 'xlsx'} disabled={exporting !== null || items.length === 0}>
           Export XLSX
@@ -322,6 +480,15 @@ export default function PortalPage() {
           })}
         </ul>
       )}
+        </>
+      )}
+
+      <BookingDetailsDialog
+        booking={bookingDialog}
+        eventTypeTitle={bookingDialog ? eventTypeTitleById[bookingDialog.event_type_id] : undefined}
+        manageHint="Read-only — contact the organization directly to reschedule or cancel."
+        onClose={() => setBookingDialog(null)}
+      />
     </Shell>
   );
 }

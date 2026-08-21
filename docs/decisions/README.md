@@ -66,5 +66,8 @@ is enough; the full reasoning lives here, not duplicated at every call site.
 | [0005](./0005-calendar-booking-architecture.md) | Calendar/booking core — buffer-inclusive ranges for conflict detection, DB-level exclusion constraint, pure-Go availability engine |
 | [0006](./0006-zulivio-integration-via-existing-api-key.md) | Zulivio integration pushes leads via Zulivio's existing personal API key — no new Zulivio-side infrastructure |
 | [0007](./0007-email-notifications-smtp-relay.md) | Email notifications are a per-project SMTP relay config, not a managed sending service |
+| [0008](./0008-personal-calendar-events.md) | Personal calendar events are a separate, per-user-private table — not an extension of event_types/bookings |
+| [0009](./0009-s3-backup-and-self-update.md) | S3 backup destination, restore-over-an-active-install, and self-update |
+| [0010](./0010-portal-calendar-read-only.md) | Client portal calendar is view-only — no booking create/reschedule/cancel, and organization-wide by necessity |
 
 See `../roadmap/00-MASTER-PLAN.md` for the full program plan and status.

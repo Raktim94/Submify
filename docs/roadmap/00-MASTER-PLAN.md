@@ -984,3 +984,84 @@ should read first.
   nothing else"), so portal-based clients do *not* currently see bookings
   through that link. Flagged as a real gap between what's built and what
   was asked, not silently assumed to already work.
+
+- **2026-08-21 — Client portal calendar closes the gap flagged above: a
+  portal visitor can now view (not manage) their organization's real
+  bookings.** Direct follow-up to the same-day entry above and to an
+  explicit request: "Clients should see their calendar bookings and use
+  full calendar features." That phrasing is ambiguous between a full
+  read-only *viewing* experience and actual booking management
+  (reschedule/cancel) by the portal visitor — defaulted to the former
+  (matching the portal's existing "view and export, nothing else, no
+  delete rights" posture) rather than silently granting write access to
+  real scheduled meetings, and recorded as
+  `docs/decisions/0010-portal-calendar-read-only.md`.
+
+  Backend: two new `PortalGuard`-protected, read-only routes —
+  `GET /portal/event-types` and `GET /portal/bookings?from=&to=`
+  (`apps/api/internal/httpapi/portal_calendar.go`). `PortalGuard`
+  (`portal.go`) now also resolves and stashes `portal_organization_id`
+  from the session's project, since bookings/event types are keyed by
+  `organization_id`, not `project_id` — no such column exists on either
+  table, so a portal session's calendar view is necessarily
+  organization-wide, not scoped to just that one project's client. Both
+  responses are deliberately minimized: no `manage_token` (would let a
+  portal visitor reschedule/cancel a real booking via the existing
+  `/public/bookings/:token/*` flow), no `attendee_email`/`notes` (would
+  leak the org's *other* clients' contact details to whoever holds this
+  one project's portal password). Neither handler touches
+  `personal_events` (ADR 0008) at all — verified live, not just by code
+  inspection.
+
+  Frontend: the dashboard's calendar grid components (`MonthView`,
+  `TimeGridView`, `MiniCalendar`, `BookingDetailsDialog`,
+  `buildCalendarEntries`) were already prop-driven, not fetching their own
+  data, so they dropped into `/[slug]` with only one real coupling fixed —
+  `CalendarEntry`/`BookingDetailsDialog` assumed the dashboard's full
+  `Booking` type (required `attendee_email`). Generalized to a structural
+  `BookingLike` type (`components/calendar/entries.ts`), satisfied by both
+  the dashboard's `Booking` and the portal's new minimized `PortalBooking`
+  — no duplicate dialog/grid components. Added a "Submissions"/"Calendar"
+  tab to `app/[slug]/page.tsx` with its own month/week/day navigation
+  state (no URL persistence, unlike the dashboard's version — the portal
+  doesn't need deep-linkable calendar state) and its own `lib/portal.ts`
+  client functions (`portalEventTypes`, `portalBookings`).
+
+  Docs updated: `docs/api.md`'s Client portal section (new endpoints +
+  scope note), `acweb`'s `submify.nodedr.com/app/docs/page.tsx` Client
+  portal section (no longer says "and nothing else" — now describes
+  read-only calendar visibility and the organization-wide caveat),
+  `docs/decisions/README.md` index backfilled for 0008-0010 (0008/0009
+  were missing from the index before this).
+
+  **Verified live**: real Postgres via Docker + `go run ./cmd/server` +
+  `next dev`. Registered a throwaway account, created a real project with
+  a real event type and a real confirmed booking (attendee "Jane Client"),
+  created a personal reminder as the org member
+  ("SECRET-PERSONAL-REMINDER..."), then logged into that project's real
+  portal with its real portal password. Confirmed: `GET /portal/bookings`
+  returns the booking stripped of `manage_token`/`attendee_email`/`notes`
+  and never contains the personal reminder text (grep-verified, 0
+  matches); an unauthenticated request to `/portal/bookings` gets `401`;
+  the portal cookie session cannot reach the dashboard's
+  `/bookings/:id/cancel` endpoint (`401`, no bearer token) and no portal
+  cancel/reschedule route exists at all (`404`). In the browser: month
+  view shows the real booking chip on the right day; clicking it opens a
+  read-only dialog showing "Jane Client" (no email), "Zoom", and "Read-only
+  — contact the organization directly to reschedule or cancel." (no
+  "manage from Event Types tab" dashboard text); Week and Day views both
+  render the same booking at its correct time slot; Today/Prev/Next
+  navigation moves between months/weeks/days correctly (confirmed
+  Day-view Next advanced from Fri Aug 21 to Sat Aug 22 with an empty
+  grid); switching back to the Submissions tab and back to Calendar
+  doesn't leak or duplicate state; checked responsive layout at 375px
+  (no horizontal overflow). `go build ./...` and `go vet ./...` clean;
+  `npx tsc --noEmit` clean in both `apps/web` and the `acweb` docs repo;
+  `next build` clean (0 errors, 0 warnings). Local-only: a temporary
+  same-origin dev proxy was added to `next.config.js` purely to test the
+  portal's HttpOnly cookie under `next dev`'s separate port from the API
+  (SameSite cookie behavior needs same-site origins to test realistically)
+  — reverted before commit, confirmed via `git diff` showing no changes to
+  that file. Did not touch the production deployment or any file outside
+  this repo and the one `acweb` docs page, per this project's standing
+  "don't touch production" instruction.

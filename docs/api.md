@@ -320,10 +320,12 @@ target a user outside the caller's organization (`404`).
 ## Client portal (per-project, read-only)
 
 Each project can expose a public, read-only portal at `https://<host>/<portal_slug>` so a
-client can **view and export** that project's submissions — and nothing else. A project's
-portal is created with an auto-generated password (shown once on project creation). The
-account owner can change the slug, (re)generate the password, and enable/disable the portal
-from **Projects** in the dashboard, then share the URL + password with the client.
+client can **view and export** that project's submissions, and **view (not manage) the
+organization's calendar bookings** in a real month/week/day calendar — nothing else, and
+no write access to either. A project's portal is created with an auto-generated password
+(shown once on project creation). The account owner can change the slug, (re)generate the
+password, and enable/disable the portal from **Projects** in the dashboard, then share the
+URL + password with the client.
 
 Portal sessions use a project-scoped `portal` token stored in an HttpOnly cookie
 (`submify_portal_token`, path `/api/v1/portal`). They carry no account identity and can only
@@ -362,6 +364,23 @@ session's project.
 ### `GET /portal/export?format=xlsx|pdf`
 
 Portal session required. File download of the project's submissions (first 5,000 rows).
+
+### `GET /portal/event-types`
+
+Portal session required. Read-only, minimized event types for the portal session's
+**organization** (bookings/event types have no `project_id` — see
+`docs/decisions/0010-portal-calendar-read-only.md`). **Response:** `200`
+`{ "event_types": [{ "id", "title", "description", "duration_minutes", "location", "timezone", "is_active" }] }`
+— no `host_user_id` or scheduling-policy internals.
+
+### `GET /portal/bookings?from=&to=`
+
+Portal session required. Read-only bookings for the portal session's organization, RFC3339
+`from`/`to` (default: now to +30 days), same date-range contract as `GET /bookings`.
+Deliberately excludes `manage_token`, `attendee_email`, and `notes` — a portal visitor can see
+that a slot is booked and by whom (name only), not reschedule/cancel it or see the other
+attendee's contact details. **Response:** `200`
+`{ "bookings": [{ "id", "event_type_id", "event_type_title", "location", "starts_at", "ends_at", "attendee_name", "status", "created_at", "cancelled_at" }], "from", "to" }`
 
 ### Project portal fields (owner endpoints)
 

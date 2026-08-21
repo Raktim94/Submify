@@ -199,10 +199,17 @@ func (s *Server) PortalGuard() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "this portal is disabled"})
 			return
 		}
-		// Submissions are private data — never let a proxy or the browser cache them.
+		// Submissions (and, as of the portal calendar, bookings) are private
+		// data — never let a proxy or the browser cache them.
 		c.Header("Cache-Control", "no-store")
 		c.Set("portal_project_id", project.ID)
 		c.Set("portal_project_name", project.Name)
+		// Bookings/event types are organization-scoped, not project-scoped
+		// (no project_id column exists on either table) — resolve the
+		// portal session's organization once here so calendar handlers can
+		// scope their queries correctly. See
+		// docs/decisions/0010-portal-calendar-read-only.md.
+		c.Set("portal_organization_id", project.OrganizationID)
 		c.Next()
 	}
 }
