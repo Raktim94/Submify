@@ -75,6 +75,19 @@ works on an empty DB isn't actually verified for real installs.
   integration, no calendar/booking of any kind exist yet — all greenfield.
 - Test coverage is minimal (2 unit tests, JWT + password hashing only).
 
+## API docs live in two places — keep them in sync by hand
+
+`docs/api.md` (canonical, GitHub-facing) and `apps/web/content/api.md`
+(rendered live at submify.nodedr.com/docs via `apps/web/app/docs/page.tsx`
++ `react-markdown`) are two separate files that must be edited together.
+This duplication exists only because the `web` service's Docker build
+context (`docker-compose.yml` → `web.build.context: ./apps/web`) doesn't
+include the repo-root `docs/` directory, so the live site can't read
+`docs/api.md` directly at build or run time. **Any API change — new
+endpoint, changed field, changed behavior — must update both files**, or
+the public docs page silently drifts from the real API contract. There is
+no CI check enforcing this yet.
+
 ## Secrets policy
 
 Same as the rest of NodeDR's projects: never commit real credentials, only

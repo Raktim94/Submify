@@ -105,14 +105,9 @@ export default function HomePage() {
             Made by <span className="font-medium text-slate-700">NODEDR INFOTECH PRIVATE LIMITED</span>
           </p>
           <p className="mt-2">
-            <a
-              href={`${GITHUB_REPO}#readme`}
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-brand-700 hover:underline"
-            >
+            <Link href="/docs" className="font-medium text-brand-700 hover:underline">
               Documentation
-            </a>{' '}
+            </Link>{' '}
             ·{' '}
             <a href={SUPPORT_URL} target="_blank" rel="noreferrer" className="font-medium text-brand-700 hover:underline">
               Support

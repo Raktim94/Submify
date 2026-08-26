@@ -1145,3 +1145,67 @@ should read first.
   slots, booking creation, and the `409` double-booked-slot case), and a
   CORS note pointing at `CORS_PUBLIC_BOOKING_ANY_ORIGIN`/`ALLOWED_ORIGINS`
   for locked-down instances. No code changes — documentation only.
+
+- **2026-08-26 — public `/docs` page brought back to submify.nodedr.com
+  (a deliberate reversal, confirmed via AskUserQuestion).** Immediate
+  follow-up request: "Add API document information into the website." This
+  is exactly the reversal flagged as a possibility in the 2026-08-20 and
+  2026-08-21 entries above — surfaced explicitly rather than assumed
+  (options: real public `/docs` page vs. just fixing the footer link vs.
+  something narrower), and the user chose to bring the public page back.
+
+  **What shipped**: `apps/web/app/docs/page.tsx`, a server component that
+  renders `apps/web/content/api.md` (a byte-identical copy of
+  `docs/api.md`, made **because Docker build context for the `web` service
+  is `./apps/web` only** — `docker-compose.yml`'s `web.build.context`
+  doesn't include the repo-root `docs/` directory, so it can't be read at
+  build or run time; changing the build context to the repo root was
+  considered and rejected as disproportionate to this task, since it'd also
+  touch the published/versioned CI image build) via `react-markdown` +
+  `remark-gfm` (added as new deps — first markdown-rendering dependency in
+  this app). No dynamic APIs are used in the page, so `next build`
+  statically prerenders it (`○ /docs`) — confirmed the built Docker image
+  serves the page correctly with **no runtime dependency** on
+  `content/api.md` outside the image (verified: built the image, ran the
+  container standalone, curled `/docs`, got the real content back).
+
+  **Known duplication, accepted deliberately**: `docs/api.md` (GitHub-
+  facing) and `apps/web/content/api.md` (site-facing) are two files that
+  must be kept in sync by hand — there is currently no build step or CI
+  check enforcing this. **Any future edit to the API reference must be
+  applied to both files**, or the two docs surfaces will drift. Flagging
+  as a real follow-up risk, not resolving it now (would need either the
+  build-context change above, or a sync script/CI diff-check).
+
+  **Other fixes made while building this**: (1) heading-anchor ids
+  originally used `String(children)` on react-markdown's children, which
+  breaks (`[object Object]`) for any heading containing inline code —
+  replaced with a proper recursive text-flattening helper; (2) the anchor
+  algorithm was also fixed to match GitHub's actual slugger (spaces →
+  individual hyphens, not collapsed as a run), because `docs/api.md`
+  contains real in-content links like `(#organization--members)` (double
+  hyphen, from "Organization & members") that only resolve correctly under
+  GitHub's exact algorithm — verified every `href="#...` in the rendered
+  page resolves to a real heading id, not just eyeballed; (3) found and
+  fixed a real mobile horizontal-scroll bug — long inline `<code>` tokens
+  (env var names, an inline JSON example) had no `overflow-wrap`, so they
+  pushed the whole page 19px wider than a 375px viewport; added
+  `overflow-wrap: anywhere` to `.doc-prose code` in `globals.css`; (4) wide
+  tables now scroll in their own `overflow-x-auto` box instead of the page;
+  (5) ran a live accessibility audit (`accesslint`) against the page after
+  the above — it correctly flagged the new scrollable `<pre>`/table regions
+  as keyboard-unreachable (serious) and, after adding `tabIndex={0}`, the
+  bare `<div>`s as having no interactive role (moderate) and then — once
+  `role="region"` was tried — as duplicate-labeled landmarks (moderate);
+  settled on `role="group"` + `tabIndex={0}` + a shared `aria-label`, which
+  audits clean with zero violations at `min_impact: minor`.
+
+  Also updated: `apps/web/app/sitemap.ts` (added `/docs` back), and the
+  homepage footer's "Documentation" link (`apps/web/app/page.tsx`) now
+  points to `/docs` instead of GitHub's README.
+
+  Verified live via Playwright at 375/768/1440px (screenshots, not just
+  code) and a real `docker build` + standalone container run, not just
+  `next build` locally. Not yet committed to git at the time of this log
+  entry — see the next Session Log entry (or `git log`) for the actual
+  commit.
