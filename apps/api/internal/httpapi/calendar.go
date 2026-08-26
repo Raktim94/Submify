@@ -25,8 +25,8 @@ func (s *Server) notifyHostOfBooking(et db.EventType, action string, b db.Bookin
 		return
 	}
 	msg := fmt.Sprintf(
-		"Booking %s\nEvent: %s\nWhen: %s\nAttendee: %s (%s)",
-		action, et.Title, b.StartsAt.Local().Format("Mon, Jan 2 2006 3:04 PM"), b.AttendeeName, b.AttendeeEmail,
+		"Booking %s\nEvent: %s\nWhen: %s\nAttendee: %s (%s)\nAttendee timezone: %s",
+		action, et.Title, b.StartsAt.Local().Format("Mon, Jan 2 2006 3:04 PM"), b.AttendeeName, b.AttendeeEmail, b.AttendeeTimezone,
 	)
 	telegram.NotifyAsync(host.TelegramBotToken, host.TelegramChatID, msg)
 }

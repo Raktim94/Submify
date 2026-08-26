@@ -66,6 +66,21 @@ func (s *Server) PublicBookingICS(c *gin.Context) {
 		status = "CANCELLED"
 	}
 	description := et.Description
+	// Attendee contact details and the timezone they actually booked in —
+	// missing from the calendar event entirely before this, which left the
+	// host with no way to email/call the attendee, or to know whether
+	// "9:30" in the event title means the host's own local time or the
+	// attendee's, without going back to the Submify dashboard.
+	var attendeeLines []string
+	if b.AttendeeEmail != "" {
+		attendeeLines = append(attendeeLines, fmt.Sprintf("Attendee email: %s", b.AttendeeEmail))
+	}
+	if b.AttendeeTimezone != "" {
+		attendeeLines = append(attendeeLines, fmt.Sprintf("Booked from timezone: %s", b.AttendeeTimezone))
+	}
+	if len(attendeeLines) > 0 {
+		description = strings.TrimSpace(description + "\n\n" + strings.Join(attendeeLines, "\n"))
+	}
 	if b.Notes != "" {
 		description = strings.TrimSpace(description + "\n\n" + b.Notes)
 	}
