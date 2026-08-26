@@ -576,6 +576,94 @@ booking widget, not just link to `/book/{id}` as a plain page. Set
 `CORS_PUBLIC_BOOKING_ANY_ORIGIN=false` to require origins to be explicitly
 allowlisted instead (see `ALLOWED_ORIGINS`).
 
+### Connecting calendar booking to your website
+
+**No API key is involved.** Unlike `POST /api/submit` (which needs
+`x-api-key`), every `/public/event-types/*` and `/public/bookings/*` route
+below is authorized purely by the **event-type ID** (or the booking's
+`manage_token`) being unguessable — the identical trust model as this
+project's client-portal links and presigned upload URLs. Don't look for an
+API key in the Calendar settings for this; there isn't one to find, by
+design.
+
+**1. Get the event-type ID.** In the dashboard: **Calendar → Event Types →
+Copy Link** on the event type you want to embed. That copies
+`https://<your-submify-host>/book/<event-type-id>` — the ID is the last URL
+segment. You'll use `<event-type-id>` in both integration options below.
+
+**2. Pick an integration style:**
+
+- **Simplest — link or `<iframe>` to the hosted booking page.** No code
+  beyond a link/embed. Submify already renders a complete booking flow at
+  `/book/{id}`.
+
+  ```html
+  <a href="https://your-submify-host.com/book/<event-type-id>" target="_blank">
+    Book a time
+  </a>
+
+  <!-- or embed it in place -->
+  <iframe
+    src="https://your-submify-host.com/book/<event-type-id>"
+    style="width:100%;height:700px;border:0"
+    title="Book a time"
+  ></iframe>
+  ```
+
+- **Custom widget — call the public API directly.** Build your own UI
+  (matching your site's design) against the three endpoints documented
+  below. Minimal end-to-end example:
+
+  ```js
+  const SUBMIFY_HOST = 'https://your-submify-host.com';
+  const EVENT_TYPE_ID = '<event-type-id>';
+
+  // 1. Load event type details (title, duration, location, timezone)
+  const eventType = await fetch(
+    `${SUBMIFY_HOST}/api/v1/public/event-types/${EVENT_TYPE_ID}`
+  ).then((r) => r.json());
+
+  // 2. Load open slots and render them as buttons/a picker
+  const { slots } = await fetch(
+    `${SUBMIFY_HOST}/api/v1/public/event-types/${EVENT_TYPE_ID}/slots`
+  ).then((r) => r.json());
+
+  // 3. When the visitor picks a slot and submits the form, create the booking
+  async function bookSlot(slot, attendee) {
+    const res = await fetch(
+      `${SUBMIFY_HOST}/api/v1/public/event-types/${EVENT_TYPE_ID}/bookings`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          starts_at: slot.start,
+          attendee_name: attendee.name,
+          attendee_email: attendee.email,
+          attendee_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+      }
+    );
+
+    if (res.status === 409) {
+      // Someone else just took this slot — reload slots and ask the visitor to pick again.
+      throw new Error('That slot was just booked. Please choose another.');
+    }
+    if (!res.ok) throw new Error('Booking failed.');
+
+    const { booking, manage_url } = await res.json();
+    // Show `manage_url` to the visitor so they can reschedule/cancel later —
+    // it's also emailed to them via `booking.manage_token`'s reschedule/cancel flow.
+    return booking;
+  }
+  ```
+
+  This works cross-origin from any website out of the box
+  (`CORS_PUBLIC_BOOKING_ANY_ORIGIN=true` by default on the Submify instance)
+  — no server-side proxy or secret needed, since nothing here is a secret.
+  If the instance has been locked down with
+  `CORS_PUBLIC_BOOKING_ANY_ORIGIN=false`, ask whoever administers that
+  instance to add your site's origin to `ALLOWED_ORIGINS`.
+
 ### `GET /public/event-types/{id}`
 
 Public booking-page info: `id`, `title`, `description`, `duration_minutes`,

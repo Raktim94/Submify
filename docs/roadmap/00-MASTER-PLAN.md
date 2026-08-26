@@ -1120,3 +1120,28 @@ should read first.
   submission (fork, `Apps/Submify/` directory, PR against `main`, per the
   established pattern from nodedr-pos #996 and OrderRestro #1001) remains
   a separate future step if the user wants it publicly listed.
+
+- **2026-08-26 — "Connecting calendar booking to your website" guide added
+  to `docs/api.md`.** Request was to document how to hook booking up to an
+  external site "using the API keys." Before writing, surfaced two things
+  via AskUserQuestion rather than assuming: (1) where the doc should live —
+  this is the same shape of request as the 2026-08-21 entry above (adding
+  a documentation page reverses the 2026-08-20 Blog/Docs removal), and the
+  user confirmed **`docs/api.md`** (what the site's footer "Documentation"
+  link already points to on GitHub), not the public site or in-app help;
+  (2) a factual correction — checked `apps/api/internal/httpapi/` and
+  confirmed the public booking endpoints (`/public/event-types/*`,
+  `/public/bookings/*`) use the event-type ID as their access control, not
+  an `x-api-key` (that header is only for `/api/submit` and Zulivio). User
+  confirmed to write it correctly rather than force an API-key framing.
+
+  Added a new "Connecting calendar booking to your website" subsection
+  right after the existing CORS paragraph in the Calendar & booking section
+  of `docs/api.md`: where to find the event-type ID (dashboard → Calendar →
+  Event Types → Copy Link — confirmed against `event-types-panel.tsx`'s
+  actual `copyLink`/`/book/${id}` behavior, not guessed), two integration
+  paths (hosted `/book/{id}` link/iframe for zero-code embedding, and a
+  full `fetch()`-based custom-widget example covering event-type lookup,
+  slots, booking creation, and the `409` double-booked-slot case), and a
+  CORS note pointing at `CORS_PUBLIC_BOOKING_ANY_ORIGIN`/`ALLOWED_ORIGINS`
+  for locked-down instances. No code changes — documentation only.
