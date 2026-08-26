@@ -664,6 +664,61 @@ segment. You'll use `<event-type-id>` in both integration options below.
   `CORS_PUBLIC_BOOKING_ANY_ORIGIN=false`, ask whoever administers that
   instance to add your site's origin to `ALLOWED_ORIGINS`.
 
+- **AI coding agent — paste this prompt.** Fill in the two placeholders
+  (your Submify host and event-type ID, both from step 1 above) and hand
+  the whole block to Claude Code, Cursor, or any other coding agent working
+  in your website's repo. It has the full API contract inline, so the agent
+  doesn't need internet access to this doc to build a correct integration.
+
+  ```
+  Add a "book a call" flow to this website using Submify's public booking
+  API (no API key — the event-type ID itself is the access control).
+
+  SUBMIFY_HOST = "https://<your-submify-host>"
+  EVENT_TYPE_ID = "<event-type-id>"
+
+  API contract (all under SUBMIFY_HOST/api/v1/public, no auth headers):
+  - GET /event-types/{EVENT_TYPE_ID}
+    -> { id, title, description, duration_minutes, location, timezone }
+  - GET /event-types/{EVENT_TYPE_ID}/slots
+    -> { slots: [{ start: RFC3339, end: RFC3339 }, ...], timezone }
+    Only returns genuinely open slots (weekly hours, buffers, minimum
+    notice, and existing bookings already applied) — don't re-derive
+    availability client-side, just render what's returned.
+  - POST /event-types/{EVENT_TYPE_ID}/bookings
+    body: { starts_at: RFC3339 (one of the returned slots), attendee_name,
+            attendee_email, attendee_timezone (optional, e.g.
+            Intl.DateTimeFormat().resolvedOptions().timeZone), notes (optional) }
+    -> 201 { booking: {..., manage_token}, manage_url }
+    -> 409 if the slot was just taken by someone else (real double-booking
+       prevention at the DB level, not just a validation nicety) — on 409,
+       re-fetch slots and ask the visitor to pick again, don't just show a
+       generic error.
+  - GET /bookings/{manage_token}, POST /bookings/{manage_token}/reschedule
+    ({ starts_at }), POST /bookings/{manage_token}/cancel — let a visitor
+    manage their own booking later via manage_url, no login needed.
+  - GET /bookings/{manage_token}/ics — downloads a calendar file for the
+    booking; link this as "Add to calendar" after a successful booking.
+
+  Requirements:
+  - Match this site's existing design system (colors, spacing, fonts,
+    button/card styles) — don't introduce a visually generic/bolted-on
+    widget.
+  - Show duration and location/timezone from the event-type response, not
+    hardcoded values.
+  - Group slots by day for readability if there are more than ~15 (a full
+    multi-day flat list is overwhelming); a simple day-tabs or day-grouped
+    layout is enough, doesn't need to be fancy.
+  - Handle the 409 conflict case explicitly (see above) — don't let it show
+    as an unexplained failure.
+  - After a successful booking, show the confirmed time (in the visitor's
+    own timezone), the "Add to calendar" link, and the manage_url for
+    reschedule/cancel — don't just show a bare "success" message.
+  - This calls SUBMIFY_HOST directly from the browser (CORS is already
+    open for this) — no server-side proxy route needed unless this
+    codebase's conventions require one for other outbound calls.
+  ```
+
 ### `GET /public/event-types/{id}`
 
 Public booking-page info: `id`, `title`, `description`, `duration_minutes`,
