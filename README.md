@@ -58,13 +58,21 @@ Email notifications aren't built in — send mail from your own app after postin
 
 ## Quick start
 
-Requires [Docker Engine and the Compose v2 plugin](https://docs.docker.com/engine/install/).
+**Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Raktim94/Submify/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Raktim94/Submify/main/scripts/quickstart.sh | bash
 ```
 
-That single command clones the repo into `./Submify`, generates strong random secrets on first run, and brings up Postgres, the API, the dashboard, and Nginx with `docker compose up --build -d`. Re-run it any time to pull the latest version and redeploy.
+**Windows (PowerShell) — no Docker Desktop required:**
+
+```powershell
+irm https://raw.githubusercontent.com/Raktim94/Submify/main/scripts/quickstart.ps1 | iex
+```
+
+The Windows version installs WSL2 (Windows' own free Linux subsystem) with a real Docker Engine + Docker CLI inside it if needed, plus the native Windows Docker CLI via winget — never Docker Desktop.
+
+Either command installs Docker (and git) first if either is missing, clones the repo into `./Submify`, generates strong random secrets on first run, and brings up Postgres, the API, the dashboard, and Nginx with `docker compose up --build -d`. Re-run it any time to pull the latest version and redeploy.
 
 Once the containers are up, open **http://localhost:2512** and create your first account at `/register`.
 
@@ -176,7 +184,9 @@ Default Compose uses **`./data/postgres`** next to the compose file, so the stac
 2. Verify: `docker --version` and `docker compose version`.
 3. Add your user to the `docker` group so you don't need `sudo` for every command: `sudo usermod -aG docker $USER`, then re-login.
 
-**Windows / macOS:** install Docker Desktop, make sure it's running, then verify the same two commands above.
+**macOS:** install Docker Desktop, make sure it's running, then verify the same two commands above.
+
+**Windows:** the [Quick start](#quick-start) one-liner above sets up Docker via WSL2 for you, no Docker Desktop needed. If you're doing the manual steps below instead, either install Docker Desktop, or set up WSL2 + Docker Engine yourself (see [Microsoft's WSL container docs](https://learn.microsoft.com/windows/wsl/tutorials/wsl-containers)) and run the manual commands from inside that WSL distro.
 
 > **Debian users — common pitfall:** If you installed Docker from the Debian repositories (`apt install docker.io`), the Compose v2 plugin is **not included**. Running `docker compose version` will return `docker: 'compose' is not a docker command`. Follow the fix below before running the installer.
 
