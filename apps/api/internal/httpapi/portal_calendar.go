@@ -8,12 +8,14 @@ import (
 )
 
 // Read-only calendar views for the client portal. See
-// docs/decisions/0010-portal-calendar-read-only.md for the scope decision:
-// a portal visitor can *view* the organization's real bookings in a real
-// month/week/day calendar, but cannot create, reschedule, or cancel a
-// booking, and never sees personal_events (private per-user agenda items —
+// docs/decisions/0010-portal-calendar-read-only.md for the read-only scope
+// decision: a portal visitor can *view* real bookings in a real month/week/
+// day calendar, but cannot create, reschedule, or cancel a booking, and
+// never sees personal_events (private per-user agenda items —
 // docs/decisions/0008-personal-calendar-events.md), which these handlers
-// deliberately never query.
+// deliberately never query. As of ADR 0011, these are scoped to the portal
+// session's own project (not the whole organization) — event_types/
+// bookings now carry a project_id.
 
 // portalEventType is a read-only subset of db.EventType for the portal
 // calendar — strips host_user_id and scheduling-policy internals
@@ -33,9 +35,8 @@ type portalEventType struct {
 // safe for exposure through a project's shared portal link. It omits the
 // manage_token (a bearer credential that would let its holder reschedule or
 // cancel the real booking) and the attendee's email/notes — neither is
-// needed to render a calendar, and both would otherwise leak PII about the
-// organization's *other* clients to whoever holds this one project's portal
-// password (bookings are organization-scoped, not project-scoped).
+// needed to render a calendar, and both would be unnecessary PII exposure
+// even now that bookings are project-scoped (ADR 0011).
 type portalBooking struct {
 	ID             string     `json:"id"`
 	EventTypeID    string     `json:"event_type_id"`
@@ -49,13 +50,14 @@ type portalBooking struct {
 	CancelledAt    *time.Time `json:"cancelled_at,omitempty"`
 }
 
-// PortalEventTypes lists the portal session's organization's event types
+// PortalEventTypes lists the portal session's project's event types
 // (read-only) so the portal calendar UI can label bookings by title/
 // location. Includes inactive event types too — a past booking can
 // reference one, and dropping it would leave that booking unlabeled.
 func (s *Server) PortalEventTypes(c *gin.Context) {
 	orgID := c.GetString("portal_organization_id")
-	items, err := s.store.ListEventTypes(orgID)
+	projectID := c.GetString("portal_project_id")
+	items, err := s.store.ListEventTypes(orgID, projectID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -75,12 +77,13 @@ func (s *Server) PortalEventTypes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"event_types": out})
 }
 
-// PortalBookings lists the portal session's organization's bookings within
+// PortalBookings lists the portal session's project's bookings within
 // a date range (defaults to the next 30 days, matching the authenticated
 // dashboard's ListOrgBookings), stripped down to portalBooking's read-only,
 // PII-minimized shape.
 func (s *Server) PortalBookings(c *gin.Context) {
 	orgID := c.GetString("portal_organization_id")
+	projectID := c.GetString("portal_project_id")
 	from := time.Now().UTC()
 	to := from.AddDate(0, 0, 30)
 	if v := c.Query("from"); v != "" {
@@ -93,12 +96,12 @@ func (s *Server) PortalBookings(c *gin.Context) {
 			to = t
 		}
 	}
-	bookings, err := s.store.ListBookingsForOrganization(orgID, from, to)
+	bookings, err := s.store.ListBookingsForOrganization(orgID, projectID, from, to)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	eventTypes, err := s.store.ListEventTypes(orgID)
+	eventTypes, err := s.store.ListEventTypes(orgID, projectID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

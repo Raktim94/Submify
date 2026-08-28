@@ -5,6 +5,7 @@ export type PersonalEventKind = 'event' | 'task' | 'reminder';
 export type PersonalEvent = {
   id: string;
   organization_id: string;
+  project_id: string;
   user_id: string;
   title: string;
   description: string;
@@ -21,6 +22,7 @@ export type PersonalEvent = {
 };
 
 export type PersonalEventInput = {
+  project_id: string;
   title: string;
   description?: string;
   kind?: PersonalEventKind;
@@ -33,8 +35,9 @@ export type PersonalEventInput = {
 
 export type PersonalEventPatch = Partial<PersonalEventInput> & { is_completed?: boolean };
 
-export async function listPersonalEvents(from: string, to: string): Promise<{ items: PersonalEvent[] }> {
-  return api<{ items: PersonalEvent[] }>(`/calendar/items?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+export async function listPersonalEvents(projectId: string, from: string, to: string): Promise<{ items: PersonalEvent[] }> {
+  const q = new URLSearchParams({ project_id: projectId, from, to });
+  return api<{ items: PersonalEvent[] }>(`/calendar/items?${q.toString()}`);
 }
 
 export async function createPersonalEvent(input: PersonalEventInput): Promise<{ item: PersonalEvent }> {

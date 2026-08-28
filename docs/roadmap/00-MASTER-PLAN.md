@@ -1209,3 +1209,83 @@ should read first.
   `next build` locally. Not yet committed to git at the time of this log
   entry — see the next Session Log entry (or `git log`) for the actual
   commit.
+
+- **2026-08-28 — Calendar becomes project-scoped: every project now has its
+  own, separate calendar.** User request: "make sure every project has its
+  own calendar, different from each other, in the calendar tab from a
+  dropdown I can choose the calendar and create events like previously —
+  every project gets their own calendar, and calendar in their client
+  portal." This is exactly the schema change ADR 0010 flagged and
+  deliberately deferred back on 2026-08-21 ("a future request for real
+  per-project calendar isolation ... is a schema change ... don't try to
+  bolt project filtering onto the existing handlers without that
+  migration"). Full reasoning in
+  [ADR 0011](../decisions/0011-project-scoped-calendar.md).
+
+  **Schema**: migration `0015_project_scoped_calendar.sql` adds
+  `project_id NOT NULL` to `event_types`, `bookings`, `personal_events`,
+  backfilled to each organization's default project (no data dropped).
+  Also had to move `event_types`'s `UNIQUE(slug)` constraint from
+  `organization_id` to `project_id` — found live during this migration's
+  own verification, not anticipated up front: two different projects in
+  the same org now legitimately need to both use a common slug like
+  "consultation", which the old organization-wide constraint blocked.
+
+  **Backend**: `db.CreateEventType`/`ListEventTypes`/
+  `ListBookingsForOrganization`/`CreatePersonalEvent`/`ListPersonalEvents`
+  all now take/require a `projectID`. New `resolveProjectID` helper
+  (`httpapi/calendar.go`) validates a client-supplied `project_id` via the
+  existing `store.ProjectOwnedBy` before trusting it — the same IDOR
+  boundary every other project-scoped endpoint already uses. New
+  `db.BookingOwnedBy` replaces `CancelOrgBooking`'s old approach of
+  scanning the organization's next-10-years of bookings just to confirm
+  ownership — a real inefficiency fixed in passing since that function was
+  being touched anyway. Portal handlers (`PortalEventTypes`/
+  `PortalBookings`) now read the already-resolved `portal_project_id`
+  instead of only `portal_organization_id` — this directly closes ADR
+  0010's disclosed gap: a portal visitor now sees only their own project's
+  bookings, not the whole organization's.
+
+  **Frontend**: `/calendar` gained a project `<Select>` (mirrors
+  `/export`'s existing project-picker pattern), shared across the Calendar
+  grid and Event Types tabs, persisted in the URL as `?project=`. The
+  client portal (`app/[slug]/page.tsx`) needed **no frontend change at
+  all** — it already calls the calendar endpoints with no project
+  parameter (a portal session is inherently single-project), so the fix
+  was entirely backend-side.
+
+  **Verified live**, not just unit tests: fresh-install migration against
+  a real throwaway Postgres (schema, NOT NULL, FKs, indexes all correct);
+  registered an account, created a second project, created event types
+  with the *same slug* on both projects (previously would have collided,
+  now correctly succeeds); confirmed `GET /event-types?project_id=`
+  returns only that project's event types on both projects; created a
+  public booking and confirmed its `project_id` was correctly denormalized
+  from its event type; confirmed `GET /bookings?project_id=` isolation the
+  same way; set a real portal password on the second project, logged into
+  its portal, and confirmed `GET /portal/event-types` returns **only**
+  that project's event type, not the first project's — the actual ADR 0010
+  gap, closed and confirmed, not just asserted. Also separately verified
+  the backfill UPDATE queries themselves against simulated pre-migration
+  data (columns nulled out, re-run just the backfill SQL) — both
+  pre-existing event types correctly landed on the org's flagged default
+  project, zero rows left null, `NOT NULL` reapplies cleanly. `go build`/
+  `vet`/`test ./...` green throughout; frontend `tsc --noEmit` and
+  `next build` both clean.
+
+  **Deliberately not project-scoped further** (see ADR 0011's
+  "Consequences"): `GetEventType`/`DeleteEventType`/
+  `UpsertEventTypeOverride`/`UpdatePersonalEvent`/`DeletePersonalEvent`
+  still authorize by organization only, keyed on the record's own id — no
+  "move between projects" feature was requested or added.
+  `docs/api.md`/`apps/web/content/api.md`'s Calendar & Booking and Client
+  portal sections updated in both files (project_id is now a required
+  field/query-param on the affected endpoints — a breaking API change for
+  those three endpoints, flagged in the ADR rather than silently shipped,
+  accepted since no external integrators are known to exist yet).
+
+  **Not yet done — user is handling this part themselves**: applying
+  migration `0015` to the live production database, and the production
+  deploy itself. User explicitly said "I'll handle migration myself" and
+  asked to push the code to GitHub instead — done (see `git log` for the
+  commit). Nothing in this slice was run against production.

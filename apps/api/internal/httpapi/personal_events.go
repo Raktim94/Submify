@@ -23,6 +23,7 @@ func parsePersonalEventTimeField(v string, fieldName string) (time.Time, error) 
 }
 
 type createPersonalEventRequest struct {
+	ProjectID   string  `json:"project_id" binding:"required"`
 	Title       string  `json:"title" binding:"required"`
 	Description string  `json:"description"`
 	Kind        string  `json:"kind"`
@@ -74,7 +75,12 @@ func (s *Server) CreatePersonalEvent(c *gin.Context) {
 		remindAt = &t
 	}
 
-	item, err := s.store.CreatePersonalEvent(organizationIDFromContext(c), userIDFromContext(c), db.PersonalEventInput{
+	orgID := organizationIDFromContext(c)
+	projectID, ok := s.resolveProjectID(c, orgID, req.ProjectID)
+	if !ok {
+		return
+	}
+	item, err := s.store.CreatePersonalEvent(orgID, projectID, userIDFromContext(c), db.PersonalEventInput{
 		Title: req.Title, Description: req.Description, Kind: req.Kind,
 		StartsAt: startsAt, EndsAt: endsAt, AllDay: req.AllDay, Color: req.Color, RemindAt: remindAt,
 	})
@@ -105,7 +111,12 @@ func (s *Server) ListPersonalEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	items, err := s.store.ListPersonalEvents(organizationIDFromContext(c), userIDFromContext(c), from, to)
+	orgID := organizationIDFromContext(c)
+	projectID, ok := s.resolveProjectID(c, orgID, c.Query("project_id"))
+	if !ok {
+		return
+	}
+	items, err := s.store.ListPersonalEvents(orgID, projectID, userIDFromContext(c), from, to)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

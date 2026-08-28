@@ -6,7 +6,9 @@ import { addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, startOfDay
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
+import { Field, Select } from '@/components/ui/field';
 import { Alert } from '@/components/ui/alert';
+import { api } from '@/lib/api';
 import { MonthView } from '@/components/calendar/month-view';
 import { TimeGridView } from '@/components/calendar/time-grid-view';
 import { MiniCalendar } from '@/components/calendar/mini-calendar';
@@ -19,6 +21,7 @@ import { listPersonalEvents, type PersonalEvent, type PersonalEventKind } from '
 
 type GridView = 'month' | 'week' | 'day';
 type CalendarTab = 'grid' | 'event-types';
+type Project = { id: string; name: string };
 
 type DialogState = { mode: 'create'; kind: PersonalEventKind; date: Date } | { mode: 'edit'; item: PersonalEvent } | null;
 
@@ -66,15 +69,47 @@ function CalendarPageInner() {
   const date = useMemo(() => parseDateParam(dateParam), [dateParam]);
 
   const setParams = useCallback(
-    (next: { tab?: CalendarTab; view?: GridView; date?: Date }) => {
+    (next: { tab?: CalendarTab; view?: GridView; date?: Date; project?: string }) => {
       const params = new URLSearchParams(searchParams.toString());
       if (next.tab) params.set('tab', next.tab);
       if (next.view) params.set('view', next.view);
       if (next.date) params.set('date', format(next.date, 'yyyy-MM-dd'));
+      if (next.project) params.set('project', next.project);
       router.replace(`/calendar?${params.toString()}`);
     },
     [router, searchParams]
   );
+
+  // Every project has its own, separate calendar — event types, bookings,
+  // and personal agenda items are all scoped server-side by project_id
+  // (see docs/decisions/0011-project-scoped-calendar.md). This dropdown
+  // picks which project's calendar the grid/event-types tabs show and
+  // where a newly created event/event-type lands, mirroring the project
+  // picker already used on /export. Persisted in the URL (?project=) like
+  // the other view state on this page.
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState(() => searchParams.get('project') ?? '');
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+
+  useEffect(() => {
+    api<{ projects: Project[] }>('/projects')
+      .then((data) => {
+        setProjects(data.projects);
+        setProjectId((current) => {
+          if (current && data.projects.some((p) => p.id === current)) return current;
+          return data.projects[0]?.id ?? '';
+        });
+      })
+      .catch(() => {
+        /* surfaced via the empty-projects/error states below once loaded */
+      })
+      .finally(() => setProjectsLoaded(true));
+  }, []);
+
+  function selectProject(id: string) {
+    setProjectId(id);
+    setParams({ project: id });
+  }
 
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -91,13 +126,14 @@ function CalendarPageInner() {
   }, [view, date]);
 
   const load = useCallback(async () => {
+    if (!projectId) return;
     setLoading(true);
     setError('');
     try {
       const [et, b, pe] = await Promise.all([
-        listEventTypes(),
-        listOrgBookings(range.from.toISOString(), range.to.toISOString()),
-        listPersonalEvents(range.from.toISOString(), range.to.toISOString())
+        listEventTypes(projectId),
+        listOrgBookings(projectId, range.from.toISOString(), range.to.toISOString()),
+        listPersonalEvents(projectId, range.from.toISOString(), range.to.toISOString())
       ]);
       setEventTypes(et.event_types);
       setBookings(b.bookings);
@@ -107,11 +143,11 @@ function CalendarPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [range.from, range.to]);
+  }, [projectId, range.from, range.to]);
 
   useEffect(() => {
-    if (tab === 'grid') load();
-  }, [tab, load]);
+    if (tab === 'grid' && projectId) load();
+  }, [tab, projectId, load]);
 
   const eventTypeTitleById = useMemo(() => Object.fromEntries(eventTypes.map((e) => [e.id, e.title])), [eventTypes]);
   const entries: CalendarEntry[] = useMemo(
@@ -150,18 +186,38 @@ function CalendarPageInner() {
           <h1 className="font-display text-2xl font-bold text-slate-900">Calendar</h1>
           <p className="mt-1 text-sm text-slate-600">Your agenda, bookings, and shareable booking links — all in one place.</p>
         </div>
-        <Tabs
-          value={tab}
-          onChange={(v) => setParams({ tab: v as CalendarTab })}
-          items={[
-            { value: 'grid', label: 'Calendar' },
-            { value: 'event-types', label: 'Event Types' }
-          ]}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          {projects.length > 1 ? (
+            <div className="w-56">
+              <Field label="Calendar" htmlFor="calendar-project">
+                <Select id="calendar-project" value={projectId} onChange={(e) => selectProject(e.target.value)}>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          ) : null}
+          <Tabs
+            value={tab}
+            onChange={(v) => setParams({ tab: v as CalendarTab })}
+            items={[
+              { value: 'grid', label: 'Calendar' },
+              { value: 'event-types', label: 'Event Types' }
+            ]}
+          />
+        </div>
       </div>
 
-      {tab === 'event-types' ? (
-        <EventTypesPanel />
+      {projectsLoaded && projects.length === 0 ? (
+        <Alert variant="info" className="text-center">
+          <p className="font-medium">No projects found.</p>
+          <p className="mt-2 text-sm">Create a project first — every project gets its own calendar.</p>
+        </Alert>
+      ) : tab === 'event-types' ? (
+        <EventTypesPanel projectId={projectId} />
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_260px]">
           <div>
@@ -194,7 +250,7 @@ function CalendarPageInner() {
                     { value: 'day', label: 'Day' }
                   ]}
                 />
-                <Button size="sm" onClick={() => setDialogState({ mode: 'create', kind: 'event', date })}>
+                <Button size="sm" disabled={!projectId} onClick={() => setDialogState({ mode: 'create', kind: 'event', date })}>
                   <Plus className="h-4 w-4" aria-hidden /> New
                 </Button>
               </div>
@@ -241,6 +297,7 @@ function CalendarPageInner() {
 
       <EventDialog
         open={dialogState !== null}
+        projectId={projectId}
         item={dialogState?.mode === 'edit' ? dialogState.item : null}
         kind={dialogState?.mode === 'create' ? dialogState.kind : undefined}
         initialDate={dialogState?.mode === 'create' ? dialogState.date : undefined}

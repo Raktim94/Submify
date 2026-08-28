@@ -24,6 +24,7 @@ func isExclusionViolation(err error) bool {
 type EventType struct {
 	ID                  string    `json:"id"`
 	OrganizationID      string    `json:"organization_id"`
+	ProjectID           string    `json:"project_id"`
 	HostUserID          string    `json:"host_user_id"`
 	Slug                string    `json:"slug"`
 	Title               string    `json:"title"`
@@ -40,11 +41,11 @@ type EventType struct {
 	CreatedAt           time.Time `json:"created_at"`
 }
 
-const eventTypeSelect = `id, organization_id, host_user_id, slug, title, description, duration_minutes, location, timezone, buffer_before_minutes, buffer_after_minutes, min_notice_minutes, max_advance_days, slot_interval_minutes, is_active, created_at`
+const eventTypeSelect = `id, organization_id, project_id, host_user_id, slug, title, description, duration_minutes, location, timezone, buffer_before_minutes, buffer_after_minutes, min_notice_minutes, max_advance_days, slot_interval_minutes, is_active, created_at`
 
 func scanEventType(row interface{ Scan(...any) error }) (EventType, error) {
 	var e EventType
-	err := row.Scan(&e.ID, &e.OrganizationID, &e.HostUserID, &e.Slug, &e.Title, &e.Description, &e.DurationMinutes, &e.Location, &e.Timezone, &e.BufferBeforeMinutes, &e.BufferAfterMinutes, &e.MinNoticeMinutes, &e.MaxAdvanceDays, &e.SlotIntervalMinutes, &e.IsActive, &e.CreatedAt)
+	err := row.Scan(&e.ID, &e.OrganizationID, &e.ProjectID, &e.HostUserID, &e.Slug, &e.Title, &e.Description, &e.DurationMinutes, &e.Location, &e.Timezone, &e.BufferBeforeMinutes, &e.BufferAfterMinutes, &e.MinNoticeMinutes, &e.MaxAdvanceDays, &e.SlotIntervalMinutes, &e.IsActive, &e.CreatedAt)
 	return e, err
 }
 
@@ -62,17 +63,20 @@ type CreateEventTypeInput struct {
 	SlotIntervalMinutes int
 }
 
-func (s *Store) CreateEventType(orgID, hostUserID string, in CreateEventTypeInput) (EventType, error) {
+func (s *Store) CreateEventType(orgID, projectID, hostUserID string, in CreateEventTypeInput) (EventType, error) {
 	row := s.DB.QueryRow(`
-		INSERT INTO event_types (id, organization_id, host_user_id, slug, title, description, duration_minutes, location, timezone, buffer_before_minutes, buffer_after_minutes, min_notice_minutes, max_advance_days, slot_interval_minutes)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO event_types (id, organization_id, project_id, host_user_id, slug, title, description, duration_minutes, location, timezone, buffer_before_minutes, buffer_after_minutes, min_notice_minutes, max_advance_days, slot_interval_minutes)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING `+eventTypeSelect+`
-	`, orgID, hostUserID, in.Slug, in.Title, in.Description, in.DurationMinutes, in.Location, in.Timezone, in.BufferBeforeMinutes, in.BufferAfterMinutes, in.MinNoticeMinutes, in.MaxAdvanceDays, in.SlotIntervalMinutes)
+	`, orgID, projectID, hostUserID, in.Slug, in.Title, in.Description, in.DurationMinutes, in.Location, in.Timezone, in.BufferBeforeMinutes, in.BufferAfterMinutes, in.MinNoticeMinutes, in.MaxAdvanceDays, in.SlotIntervalMinutes)
 	return scanEventType(row)
 }
 
 // EventTypeOwnedBy resolves an event type only if it belongs to orgID —
 // the tenant-isolation boundary for the authenticated management API.
+// Deliberately org-scoped, not project-scoped: callers already have the
+// event type's own id (from an already project-filtered list), so this is
+// authorization, not a second filtering step. See ADR 0011.
 func (s *Store) EventTypeOwnedBy(orgID, id string) (EventType, error) {
 	row := s.DB.QueryRow(`SELECT `+eventTypeSelect+` FROM event_types WHERE id=$1 AND organization_id=$2`, id, orgID)
 	return scanEventType(row)
@@ -86,8 +90,8 @@ func (s *Store) EventTypeByID(id string) (EventType, error) {
 	return scanEventType(row)
 }
 
-func (s *Store) ListEventTypes(orgID string) ([]EventType, error) {
-	rows, err := s.DB.Query(`SELECT `+eventTypeSelect+` FROM event_types WHERE organization_id=$1 ORDER BY created_at DESC`, orgID)
+func (s *Store) ListEventTypes(orgID, projectID string) ([]EventType, error) {
+	rows, err := s.DB.Query(`SELECT `+eventTypeSelect+` FROM event_types WHERE organization_id=$1 AND project_id=$2 ORDER BY created_at DESC`, orgID, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +216,7 @@ func (s *Store) ListAvailabilityOverrides(eventTypeID string) ([]AvailabilityOve
 type Booking struct {
 	ID               string     `json:"id"`
 	OrganizationID   string     `json:"organization_id"`
+	ProjectID        string     `json:"project_id"`
 	EventTypeID      string     `json:"event_type_id"`
 	StartsAt         time.Time  `json:"starts_at"`
 	EndsAt           time.Time  `json:"ends_at"`
@@ -225,12 +230,12 @@ type Booking struct {
 	CancelledAt      *time.Time `json:"cancelled_at,omitempty"`
 }
 
-const bookingSelect = `id, organization_id, event_type_id, starts_at, ends_at, attendee_name, attendee_email, attendee_timezone, notes, status, manage_token, created_at, cancelled_at`
+const bookingSelect = `id, organization_id, project_id, event_type_id, starts_at, ends_at, attendee_name, attendee_email, attendee_timezone, notes, status, manage_token, created_at, cancelled_at`
 
 func scanBooking(row interface{ Scan(...any) error }) (Booking, error) {
 	var b Booking
 	var cancelledAt sql.NullTime
-	err := row.Scan(&b.ID, &b.OrganizationID, &b.EventTypeID, &b.StartsAt, &b.EndsAt, &b.AttendeeName, &b.AttendeeEmail, &b.AttendeeTimezone, &b.Notes, &b.Status, &b.ManageToken, &b.CreatedAt, &cancelledAt)
+	err := row.Scan(&b.ID, &b.OrganizationID, &b.ProjectID, &b.EventTypeID, &b.StartsAt, &b.EndsAt, &b.AttendeeName, &b.AttendeeEmail, &b.AttendeeTimezone, &b.Notes, &b.Status, &b.ManageToken, &b.CreatedAt, &cancelledAt)
 	if cancelledAt.Valid {
 		b.CancelledAt = &cancelledAt.Time
 	}
@@ -258,10 +263,10 @@ func (s *Store) CreateBooking(orgID string, et EventType, in CreateBookingInput)
 	busyEnd := in.EndsAt.Add(time.Duration(et.BufferAfterMinutes) * time.Minute)
 
 	row := s.DB.QueryRow(`
-		INSERT INTO bookings (id, organization_id, event_type_id, starts_at, ends_at, busy_starts_at, busy_ends_at, attendee_name, attendee_email, attendee_timezone, notes, manage_token)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO bookings (id, organization_id, project_id, event_type_id, starts_at, ends_at, busy_starts_at, busy_ends_at, attendee_name, attendee_email, attendee_timezone, notes, manage_token)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING `+bookingSelect+`
-	`, orgID, et.ID, in.StartsAt, in.EndsAt, busyStart, busyEnd, in.AttendeeName, in.AttendeeEmail, in.AttendeeTimezone, in.Notes, token)
+	`, orgID, et.ProjectID, et.ID, in.StartsAt, in.EndsAt, busyStart, busyEnd, in.AttendeeName, in.AttendeeEmail, in.AttendeeTimezone, in.Notes, token)
 	b, err := scanBooking(row)
 	if isExclusionViolation(err) {
 		return Booking{}, ErrSlotConflict
@@ -271,6 +276,15 @@ func (s *Store) CreateBooking(orgID string, et EventType, in CreateBookingInput)
 
 func (s *Store) BookingByManageToken(token string) (Booking, error) {
 	row := s.DB.QueryRow(`SELECT `+bookingSelect+` FROM bookings WHERE manage_token=$1`, token)
+	return scanBooking(row)
+}
+
+// BookingOwnedBy resolves a booking only if it belongs to orgID — the
+// tenant-isolation boundary for the authenticated dashboard's cancel
+// action, keyed on the booking's own id (already org-scoped is sufficient;
+// see ADR 0011 for why this isn't also project-scoped).
+func (s *Store) BookingOwnedBy(orgID, id string) (Booking, error) {
+	row := s.DB.QueryRow(`SELECT `+bookingSelect+` FROM bookings WHERE id=$1 AND organization_id=$2`, id, orgID)
 	return scanBooking(row)
 }
 
@@ -329,12 +343,12 @@ func (s *Store) ListBusyRanges(eventTypeID string, from, to time.Time) ([]BusyRa
 	return out, rows.Err()
 }
 
-func (s *Store) ListBookingsForOrganization(orgID string, from, to time.Time) ([]Booking, error) {
+func (s *Store) ListBookingsForOrganization(orgID, projectID string, from, to time.Time) ([]Booking, error) {
 	rows, err := s.DB.Query(`
 		SELECT `+bookingSelect+` FROM bookings
-		WHERE organization_id=$1 AND starts_at >= $2 AND starts_at < $3
+		WHERE organization_id=$1 AND project_id=$2 AND starts_at >= $3 AND starts_at < $4
 		ORDER BY starts_at ASC
-	`, orgID, from, to)
+	`, orgID, projectID, from, to)
 	if err != nil {
 		return nil, err
 	}

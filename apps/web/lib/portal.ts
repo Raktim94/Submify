@@ -83,11 +83,9 @@ export async function portalExport(format: 'xlsx' | 'pdf'): Promise<Blob> {
 }
 
 // --- Calendar (read-only) ---
-// Bookings/event types are organization-scoped on the backend (no
-// project_id column exists on either table), so a portal session's
-// calendar view shows its whole organization's bookings, not just ones
-// tied to this one project. See
-// docs/decisions/0010-portal-calendar-read-only.md.
+// Scoped server-side to this portal session's own project (ADR 0011) — no
+// project parameter needed here, the portal session is inherently
+// single-project. See docs/decisions/0010-portal-calendar-read-only.md.
 
 export type PortalEventType = {
   id: string;

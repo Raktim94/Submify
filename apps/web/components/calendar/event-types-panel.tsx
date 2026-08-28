@@ -50,7 +50,7 @@ function slugify(s: string): string {
     .replace(/(^-|-$)/g, '');
 }
 
-function NewEventTypeForm({ onCreated }: { onCreated: () => void }) {
+function NewEventTypeForm({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState(30);
   const [location, setLocation] = useState('');
@@ -85,6 +85,7 @@ function NewEventTypeForm({ onCreated }: { onCreated: () => void }) {
     setBusy(true);
     try {
       await createEventType({
+        project_id: projectId,
         slug: slugify(title) || 'event',
         title: title.trim(),
         description: description.trim(),
@@ -182,7 +183,7 @@ function NewEventTypeForm({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-export function EventTypesPanel({ initialShowForm = false }: { initialShowForm?: boolean }) {
+export function EventTypesPanel({ projectId, initialShowForm = false }: { projectId: string; initialShowForm?: boolean }) {
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -197,10 +198,11 @@ export function EventTypesPanel({ initialShowForm = false }: { initialShowForm?:
   }, []);
 
   async function load() {
+    if (!projectId) return;
     setLoading(true);
     setError('');
     try {
-      const [et, b] = await Promise.all([listEventTypes(), listOrgBookings()]);
+      const [et, b] = await Promise.all([listEventTypes(projectId), listOrgBookings(projectId)]);
       setEventTypes(et.event_types);
       setBookings(b.bookings);
     } catch (err) {
@@ -212,7 +214,7 @@ export function EventTypesPanel({ initialShowForm = false }: { initialShowForm?:
 
   useEffect(() => {
     load();
-  }, []);
+  }, [projectId]);
 
   const upcoming = useMemo(
     () => bookings.filter((b) => b.status === 'confirmed').sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
@@ -259,6 +261,7 @@ export function EventTypesPanel({ initialShowForm = false }: { initialShowForm?:
           </CardHeader>
           <CardBody>
             <NewEventTypeForm
+              projectId={projectId}
               onCreated={() => {
                 setShowForm(false);
                 load();

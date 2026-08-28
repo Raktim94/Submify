@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"fmt"
@@ -13,6 +14,24 @@ import (
 	"github.com/nodedr/submify/apps/api/internal/db"
 	"github.com/nodedr/submify/apps/api/internal/telegram"
 )
+
+// resolveProjectID validates that projectID both is non-empty and actually
+// belongs to orgID — the IDOR boundary for scoping calendar data to one
+// project, matching the check every other project-scoped endpoint already
+// applies via ProjectOwnedBy. Writes the error response itself and returns
+// ok=false when the caller should stop. See ADR 0011.
+func (s *Server) resolveProjectID(c *gin.Context, orgID, projectID string) (string, bool) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "project_id is required"})
+		return "", false
+	}
+	if _, err := s.store.ProjectOwnedBy(orgID, projectID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
+		return "", false
+	}
+	return projectID, true
+}
 
 // notifyHostOfBooking fires a best-effort Telegram notification to the
 // event type's host (account-level bot token/chat ID — bookings don't
@@ -38,6 +57,7 @@ type ruleRequest struct {
 }
 
 type createEventTypeRequest struct {
+	ProjectID           string        `json:"project_id" binding:"required"`
 	Slug                string        `json:"slug" binding:"required"`
 	Title               string        `json:"title" binding:"required"`
 	Description         string        `json:"description"`
@@ -70,8 +90,12 @@ func (s *Server) CreateEventType(c *gin.Context) {
 	}
 
 	orgID := organizationIDFromContext(c)
+	projectID, ok := s.resolveProjectID(c, orgID, req.ProjectID)
+	if !ok {
+		return
+	}
 	userID := userIDFromContext(c)
-	et, err := s.store.CreateEventType(orgID, userID, db.CreateEventTypeInput{
+	et, err := s.store.CreateEventType(orgID, projectID, userID, db.CreateEventTypeInput{
 		Slug: req.Slug, Title: req.Title, Description: req.Description,
 		DurationMinutes: req.DurationMinutes, Location: req.Location, Timezone: req.Timezone,
 		BufferBeforeMinutes: req.BufferBeforeMinutes, BufferAfterMinutes: req.BufferAfterMinutes,
@@ -97,7 +121,12 @@ func (s *Server) CreateEventType(c *gin.Context) {
 }
 
 func (s *Server) ListEventTypes(c *gin.Context) {
-	items, err := s.store.ListEventTypes(organizationIDFromContext(c))
+	orgID := organizationIDFromContext(c)
+	projectID, ok := s.resolveProjectID(c, orgID, c.Query("project_id"))
+	if !ok {
+		return
+	}
+	items, err := s.store.ListEventTypes(orgID, projectID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -172,6 +201,11 @@ func (s *Server) UpsertEventTypeOverride(c *gin.Context) {
 // organization's bookings within a date range (defaults to the next 30
 // days, matching the "upcoming bookings" view in brief §13).
 func (s *Server) ListOrgBookings(c *gin.Context) {
+	orgID := organizationIDFromContext(c)
+	projectID, ok := s.resolveProjectID(c, orgID, c.Query("project_id"))
+	if !ok {
+		return
+	}
 	from := time.Now().UTC()
 	to := from.AddDate(0, 0, 30)
 	if v := c.Query("from"); v != "" {
@@ -184,7 +218,7 @@ func (s *Server) ListOrgBookings(c *gin.Context) {
 			to = t
 		}
 	}
-	items, err := s.store.ListBookingsForOrganization(organizationIDFromContext(c), from, to)
+	items, err := s.store.ListBookingsForOrganization(orgID, projectID, from, to)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -196,19 +230,7 @@ func (s *Server) CancelOrgBooking(c *gin.Context) {
 	// Org-scoped: confirm the booking actually belongs to this organization
 	// before cancelling, even though cancellation is keyed by booking ID.
 	orgID := organizationIDFromContext(c)
-	bookings, err := s.store.ListBookingsForOrganization(orgID, time.Time{}, time.Now().UTC().AddDate(10, 0, 0))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	found := false
-	for _, b := range bookings {
-		if b.ID == c.Param("id") {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if _, err := s.store.BookingOwnedBy(orgID, c.Param("id")); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "booking not found"})
 		return
 	}

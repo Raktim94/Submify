@@ -204,11 +204,9 @@ func (s *Server) PortalGuard() gin.HandlerFunc {
 		c.Header("Cache-Control", "no-store")
 		c.Set("portal_project_id", project.ID)
 		c.Set("portal_project_name", project.Name)
-		// Bookings/event types are organization-scoped, not project-scoped
-		// (no project_id column exists on either table) — resolve the
-		// portal session's organization once here so calendar handlers can
-		// scope their queries correctly. See
-		// docs/decisions/0010-portal-calendar-read-only.md.
+		// Also resolved for the calendar handlers, which scope by both
+		// organization_id (tenant isolation) and project_id (this portal
+		// session's own project — see ADR 0011).
 		c.Set("portal_organization_id", project.OrganizationID)
 		c.Next()
 	}

@@ -51,13 +51,17 @@ export type EventDialogProps = {
   /** Create-mode only: default kind/date for a fresh item. */
   kind?: PersonalEventKind;
   initialDate?: Date;
+  /** Create-mode only: which project's calendar the new item belongs to
+   * (every project has its own calendar — see ADR 0011). Not used when
+   * editing; an item's project is fixed at creation. */
+  projectId?: string;
 };
 
 // Combined view/edit/create/delete dialog for a personal calendar item —
 // deliberately one component rather than splitting create vs. edit, since
 // both share the exact same field set and only differ in which API call
 // fires on submit.
-export function EventDialog({ open, onClose, onSaved, onDeleted, item, kind: initialKind, initialDate }: EventDialogProps) {
+export function EventDialog({ open, onClose, onSaved, onDeleted, item, kind: initialKind, initialDate, projectId }: EventDialogProps) {
   const isEditing = Boolean(item);
 
   const [title, setTitle] = useState('');
@@ -140,7 +144,13 @@ export function EventDialog({ open, onClose, onSaved, onDeleted, item, kind: ini
         });
         onSaved(updated);
       } else {
+        if (!projectId) {
+          setError('Choose a calendar (project) first.');
+          setSaving(false);
+          return;
+        }
         const { item: created } = await createPersonalEvent({
+          project_id: projectId,
           title: title.trim(),
           description,
           kind,

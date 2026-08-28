@@ -3,6 +3,7 @@ import { api, apiBase, userFacingApiError } from './api';
 export type EventType = {
   id: string;
   organization_id: string;
+  project_id: string;
   host_user_id: string;
   slug: string;
   title: string;
@@ -35,6 +36,7 @@ export type AvailabilityOverride = {
 export type Booking = {
   id: string;
   organization_id: string;
+  project_id: string;
   event_type_id: string;
   starts_at: string;
   ends_at: string;
@@ -49,6 +51,7 @@ export type Booking = {
 };
 
 export type CreateEventTypeInput = {
+  project_id: string;
   slug: string;
   title: string;
   description?: string;
@@ -63,8 +66,8 @@ export type CreateEventTypeInput = {
   rules: AvailabilityRule[];
 };
 
-export async function listEventTypes(): Promise<{ event_types: EventType[] }> {
-  return api('/event-types');
+export async function listEventTypes(projectId: string): Promise<{ event_types: EventType[] }> {
+  return api(`/event-types?project_id=${encodeURIComponent(projectId)}`);
 }
 
 export async function createEventType(input: CreateEventTypeInput): Promise<{ event_type: EventType; rules: AvailabilityRule[] }> {
@@ -88,12 +91,11 @@ export async function upsertEventTypeOverride(
   return api(`/event-types/${encodeURIComponent(id)}/overrides`, { method: 'PUT', body: JSON.stringify(body) });
 }
 
-export async function listOrgBookings(from?: string, to?: string): Promise<{ bookings: Booking[] }> {
-  const q = new URLSearchParams();
+export async function listOrgBookings(projectId: string, from?: string, to?: string): Promise<{ bookings: Booking[] }> {
+  const q = new URLSearchParams({ project_id: projectId });
   if (from) q.set('from', from);
   if (to) q.set('to', to);
-  const qs = q.toString();
-  return api(`/bookings${qs ? `?${qs}` : ''}`);
+  return api(`/bookings?${q.toString()}`);
 }
 
 export async function cancelOrgBooking(id: string): Promise<{ booking: Booking }> {

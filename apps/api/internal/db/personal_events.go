@@ -13,6 +13,7 @@ import (
 type PersonalEvent struct {
 	ID             string     `json:"id"`
 	OrganizationID string     `json:"organization_id"`
+	ProjectID      string     `json:"project_id"`
 	UserID         string     `json:"user_id"`
 	Title          string     `json:"title"`
 	Description    string     `json:"description"`
@@ -28,12 +29,12 @@ type PersonalEvent struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
-const personalEventSelect = `id, organization_id, user_id, title, description, kind, starts_at, ends_at, all_day, color, is_completed, remind_at, reminder_sent_at, created_at, updated_at`
+const personalEventSelect = `id, organization_id, project_id, user_id, title, description, kind, starts_at, ends_at, all_day, color, is_completed, remind_at, reminder_sent_at, created_at, updated_at`
 
 func scanPersonalEvent(row interface{ Scan(...any) error }) (PersonalEvent, error) {
 	var e PersonalEvent
 	var endsAt, remindAt, reminderSentAt sql.NullTime
-	err := row.Scan(&e.ID, &e.OrganizationID, &e.UserID, &e.Title, &e.Description, &e.Kind, &e.StartsAt, &endsAt, &e.AllDay, &e.Color, &e.IsCompleted, &remindAt, &reminderSentAt, &e.CreatedAt, &e.UpdatedAt)
+	err := row.Scan(&e.ID, &e.OrganizationID, &e.ProjectID, &e.UserID, &e.Title, &e.Description, &e.Kind, &e.StartsAt, &endsAt, &e.AllDay, &e.Color, &e.IsCompleted, &remindAt, &reminderSentAt, &e.CreatedAt, &e.UpdatedAt)
 	if endsAt.Valid {
 		e.EndsAt = &endsAt.Time
 	}
@@ -70,12 +71,12 @@ func nullableTime(t *time.Time) sql.NullTime {
 	return sql.NullTime{Time: *t, Valid: true}
 }
 
-func (s *Store) CreatePersonalEvent(orgID, userID string, in PersonalEventInput) (PersonalEvent, error) {
+func (s *Store) CreatePersonalEvent(orgID, projectID, userID string, in PersonalEventInput) (PersonalEvent, error) {
 	row := s.DB.QueryRow(`
-		INSERT INTO personal_events (id, organization_id, user_id, title, description, kind, starts_at, ends_at, all_day, color, is_completed, remind_at)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO personal_events (id, organization_id, project_id, user_id, title, description, kind, starts_at, ends_at, all_day, color, is_completed, remind_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING `+personalEventSelect+`
-	`, orgID, userID, in.Title, in.Description, in.Kind, in.StartsAt, nullableTime(in.EndsAt), in.AllDay, in.Color, in.IsCompleted, nullableTime(in.RemindAt))
+	`, orgID, projectID, userID, in.Title, in.Description, in.Kind, in.StartsAt, nullableTime(in.EndsAt), in.AllDay, in.Color, in.IsCompleted, nullableTime(in.RemindAt))
 	return scanPersonalEvent(row)
 }
 
@@ -85,14 +86,14 @@ func (s *Store) CreatePersonalEvent(orgID, userID string, in PersonalEventInput)
 // organization). Items with no ends_at (a reminder/task with a single
 // point in time) are treated as overlapping if starts_at alone falls in
 // range.
-func (s *Store) ListPersonalEvents(orgID, userID string, from, to time.Time) ([]PersonalEvent, error) {
+func (s *Store) ListPersonalEvents(orgID, projectID, userID string, from, to time.Time) ([]PersonalEvent, error) {
 	rows, err := s.DB.Query(`
 		SELECT `+personalEventSelect+` FROM personal_events
-		WHERE organization_id=$1 AND user_id=$2
-		  AND starts_at < $4
-		  AND COALESCE(ends_at, starts_at) >= $3
+		WHERE organization_id=$1 AND project_id=$2 AND user_id=$3
+		  AND starts_at < $5
+		  AND COALESCE(ends_at, starts_at) >= $4
 		ORDER BY starts_at ASC
-	`, orgID, userID, from, to)
+	`, orgID, projectID, userID, from, to)
 	if err != nil {
 		return nil, err
 	}

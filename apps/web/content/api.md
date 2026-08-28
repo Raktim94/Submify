@@ -320,9 +320,11 @@ target a user outside the caller's organization (`404`).
 ## Client portal (per-project, read-only)
 
 Each project can expose a public, read-only portal at `https://<host>/<portal_slug>` so a
-client can **view and export** that project's submissions, and **view (not manage) the
-organization's calendar bookings** in a real month/week/day calendar — nothing else, and
-no write access to either. A project's portal is created with an auto-generated password
+client can **view and export** that project's submissions, and **view (not manage) that
+project's own calendar bookings** in a real month/week/day calendar — nothing else, and
+no write access to either. Every project has its own separate calendar (event types and
+bookings are scoped by `project_id`), so a portal visitor sees only their project's
+bookings, never another project's. A project's portal is created with an auto-generated password
 (shown once on project creation). The account owner can change the slug, (re)generate the
 password, and enable/disable the portal from **Projects** in the dashboard, then share the
 URL + password with the client.
@@ -367,15 +369,16 @@ Portal session required. File download of the project's submissions (first 5,000
 
 ### `GET /portal/event-types`
 
-Portal session required. Read-only, minimized event types for the portal session's
-**organization** (bookings/event types have no `project_id` — see
-`docs/decisions/0010-portal-calendar-read-only.md`). **Response:** `200`
+Portal session required. Read-only, minimized event types for the portal session's own
+**project** (see `docs/decisions/0010-portal-calendar-read-only.md` for the read-only
+scope decision and `docs/decisions/0011-project-scoped-calendar.md` for the project
+isolation). **Response:** `200`
 `{ "event_types": [{ "id", "title", "description", "duration_minutes", "location", "timezone", "is_active" }] }`
 — no `host_user_id` or scheduling-policy internals.
 
 ### `GET /portal/bookings?from=&to=`
 
-Portal session required. Read-only bookings for the portal session's organization, RFC3339
+Portal session required. Read-only bookings for the portal session's own project, RFC3339
 `from`/`to` (default: now to +30 days), same date-range contract as `GET /bookings`.
 Deliberately excludes `manage_token`, `attendee_email`, and `notes` — a portal visitor can see
 that a slot is booked and by whom (name only), not reschedule/cancel it or see the other
@@ -487,24 +490,32 @@ the update inline). Responds immediately, before the update finishes — poll
 
 ## Calendar & booking
 
-An **event type** defines a bookable service (duration, weekly hours,
-buffers, notice window) owned by one host in the caller's organization. Each
-has a public, unauthenticated booking flow at its `id`.
+**Every project has its own, separate calendar.** An **event type** defines
+a bookable service (duration, weekly hours, buffers, notice window) owned
+by one host and scoped to one project in the caller's organization. Each
+has a public, unauthenticated booking flow at its `id`. See
+`docs/decisions/0011-project-scoped-calendar.md`.
 
 ### `POST /event-types`
 
-**Body:** `slug`, `title`, `description`, `duration_minutes`, `location`,
-`timezone` (IANA name), `buffer_before_minutes`, `buffer_after_minutes`,
-`min_notice_minutes`, `max_advance_days` (default 60), `slot_interval_minutes`
-(default 15), `rules: [{ weekday: 0-6, start_minute, end_minute }]` (weekly
-recurring availability, `weekday` 0=Sunday).
+**Body:** `project_id` (required — which project's calendar this event
+type belongs to), `slug`, `title`, `description`, `duration_minutes`,
+`location`, `timezone` (IANA name), `buffer_before_minutes`,
+`buffer_after_minutes`, `min_notice_minutes`, `max_advance_days` (default
+60), `slot_interval_minutes` (default 15), `rules: [{ weekday: 0-6,
+start_minute, end_minute }]` (weekly recurring availability, `weekday`
+0=Sunday). `slug` only needs to be unique within the project, not the
+whole organization — two different projects can each have their own
+"consultation" event type.
 
-**Response:** `201` `{ "event_type": EventType, "rules": [...] }`
+**Response:** `201` `{ "event_type": EventType, "rules": [...] }`, or `400`
+if `project_id` is missing, `404` if it doesn't belong to your organization.
 
-### `GET /event-types` / `GET /event-types/{id}` / `DELETE /event-types/{id}`
+### `GET /event-types?project_id=` / `GET /event-types/{id}` / `DELETE /event-types/{id}`
 
-List, fetch (with `rules` and date `overrides`), or delete an event type —
-all organization-scoped.
+List (requires `project_id` — one project's event types), fetch (with
+`rules` and date `overrides`, by `id`), or delete (by `id`) an event type —
+all organization-scoped; list is additionally project-scoped.
 
 ### `PUT /event-types/{id}/overrides`
 
@@ -514,10 +525,10 @@ custom hours instead of the weekly rule).
 **Body:** `{ "date": "YYYY-MM-DD", "blocked": true }` or
 `{ "date": "YYYY-MM-DD", "blocked": false, "start_minute": ..., "end_minute": ... }`
 
-### `GET /bookings`
+### `GET /bookings?project_id=`
 
-Organization's bookings. **Query:** `from`, `to` (RFC3339, default: now to
-+30 days).
+One project's bookings. **Query:** `project_id` (required), `from`, `to`
+(RFC3339, default: now to +30 days).
 
 ### `POST /bookings/{id}/cancel`
 
@@ -533,16 +544,17 @@ scoped to both the caller's organization **and** their own user ID: one
 user can never see or edit another user's personal items, even within the
 same organization.
 
-### `GET /calendar/items`
+### `GET /calendar/items?project_id=`
 
-**Query (both required):** `from`, `to` (RFC3339) — items whose range
-overlaps `[from, to)`.
+**Query (all required):** `project_id`, `from`, `to` (RFC3339) — items
+whose range overlaps `[from, to)`, within that one project's calendar.
 
 **Response:** `200` `{ "items": [PersonalEvent, ...] }`
 
 ### `POST /calendar/items`
 
-**Body:** `title` (required), `description`, `kind` (`event` | `task` |
+**Body:** `project_id` (required — which project's calendar this item
+belongs to), `title` (required), `description`, `kind` (`event` | `task` |
 `reminder`, default `event`), `starts_at` (RFC3339, required), `ends_at`
 (RFC3339, optional — omit for a point-in-time task/reminder), `all_day`,
 `color`, `remind_at` (RFC3339, optional — when set, a Telegram notification
@@ -586,8 +598,10 @@ project's client-portal links and presigned upload URLs. Don't look for an
 API key in the Calendar settings for this; there isn't one to find, by
 design.
 
-**1. Get the event-type ID.** In the dashboard: **Calendar → Event Types →
-Copy Link** on the event type you want to embed. That copies
+**1. Get the event-type ID.** In the dashboard: **Calendar**, pick the
+right project from the **Calendar** dropdown (every project has its own
+calendar), then **Event Types → Copy Link** on the event type you want to
+embed. That copies
 `https://<your-submify-host>/book/<event-type-id>` — the ID is the last URL
 segment. You'll use `<event-type-id>` in both integration options below.
 
