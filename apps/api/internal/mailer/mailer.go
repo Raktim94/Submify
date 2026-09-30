@@ -6,6 +6,7 @@ package mailer
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -45,11 +46,18 @@ func sanitizeHeaderValue(s string) string {
 // buildMessage constructs a minimal, valid RFC 5322 message with a plain
 // text body. Recipients are joined into a single To header (all visible
 // to each other) — appropriate for a small internal notification list,
-// not a bulk-mail use case. Only header VALUES are sanitized here — body
-// is intentionally left untouched: the submission's field data is meant
-// to appear verbatim in the email body (see ADR 0007), and body content
-// can't smuggle headers since it's always written after the blank line
-// that already terminates the header block.
+// not a bulk-mail use case. Header VALUES are sanitized (see
+// sanitizeHeaderValue). The body is base64-encoded (Content-Transfer-
+// Encoding: base64, RFC 2045) rather than written raw: the submission's
+// field data must appear verbatim once decoded by the mail client (see
+// ADR 0007), but it is fully attacker-controlled and arbitrary-length, so
+// writing it unencoded would let it carry any byte sequence — including
+// CRLF pairs and lines that resemble headers — straight into the raw
+// bytes handed to the SMTP connection (CWE-93 email content injection,
+// flagged by CodeQL at the SendMail/w.Write call sites below). Base64
+// restricts the body's on-wire representation to [A-Za-z0-9+/=\r\n],
+// which closes that off structurally rather than relying on a blocklist
+// of "dangerous" substrings.
 func buildMessage(from string, to []string, subject, body string) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "From: %s\r\n", sanitizeHeaderValue(from))
@@ -61,9 +69,28 @@ func buildMessage(from string, to []string, subject, body string) []byte {
 	fmt.Fprintf(&b, "Subject: %s\r\n", sanitizeHeaderValue(subject))
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
+	b.WriteString("Content-Transfer-Encoding: base64\r\n")
 	b.WriteString("\r\n")
-	b.WriteString(body)
+	b.WriteString(encodeBase64Body(body))
 	return []byte(b.String())
+}
+
+// encodeBase64Body base64-encodes body and wraps it at 76 characters per
+// line (RFC 2045 §6.8's line-length limit for the base64 transfer
+// encoding), so mail clients that enforce that limit decode it correctly.
+func encodeBase64Body(body string) string {
+	encoded := base64.StdEncoding.EncodeToString([]byte(body))
+	var b strings.Builder
+	const lineLen = 76
+	for i := 0; i < len(encoded); i += lineLen {
+		end := i + lineLen
+		if end > len(encoded) {
+			end = len(encoded)
+		}
+		b.WriteString(encoded[i:end])
+		b.WriteString("\r\n")
+	}
+	return b.String()
 }
 
 // validateAddresses rejects (rather than silently mutates) any from/to

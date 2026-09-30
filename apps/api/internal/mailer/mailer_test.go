@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -45,16 +46,60 @@ func TestBuildMessage_HeaderInjection_FromAndToSanitized(t *testing.T) {
 	}
 }
 
-// TestBuildMessage_BodyLeftIntact confirms the fix didn't overcorrect —
-// body content (the submission's field data, intentionally verbatim per
-// ADR 0007) must survive unmodified, including its own newlines, since it
-// can never smuggle a header (it's always written after the blank line
-// that already terminates the header block).
-func TestBuildMessage_BodyLeftIntact(t *testing.T) {
+// TestBuildMessage_BodyPreservedThroughBase64 confirms the fix didn't
+// overcorrect — body content (the submission's field data, intentionally
+// verbatim per ADR 0007) must survive unmodified once decoded, including
+// its own newlines. It is no longer written raw into the message (see
+// TestBuildMessage_ContentInjection_BodyCannotInjectRawBytes) — it's
+// base64-encoded (Content-Transfer-Encoding: base64) and decoded back to
+// the original by the receiving mail client.
+func TestBuildMessage_BodyPreservedThroughBase64(t *testing.T) {
 	body := "line one\r\nline two\nline three"
 	msg := string(buildMessage("from@example.com", []string{"to@example.com"}, "subject", body))
-	if !strings.HasSuffix(msg, body) {
-		t.Fatalf("expected body to be preserved verbatim as the message suffix; got:\n%s", msg)
+
+	if !strings.Contains(msg, "Content-Transfer-Encoding: base64\r\n") {
+		t.Fatalf("expected a Content-Transfer-Encoding: base64 header; got:\n%s", msg)
+	}
+	parts := strings.SplitN(msg, "\r\n\r\n", 2)
+	if len(parts) != 2 {
+		t.Fatalf("expected a blank line separating headers from body; got:\n%s", msg)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(parts[1], "\r\n", ""))
+	if err != nil {
+		t.Fatalf("body is not valid base64: %v\ngot:\n%s", err, msg)
+	}
+	if string(decoded) != body {
+		t.Fatalf("expected decoded body to equal the original verbatim; got %q, want %q", decoded, body)
+	}
+}
+
+// TestBuildMessage_ContentInjection_BodyCannotInjectRawBytes proves the
+// fix for the email-content-injection finding (CodeQL go/email-injection,
+// CWE-93): body is fully attacker-controlled (submission field data) and
+// arbitrary-length, so writing it raw into the message would let it carry
+// any byte sequence straight into what gets written to the SMTP
+// connection — including lines that look like headers, or (absent Go's
+// automatic dot-stuffing on the DATA writer) a bare "." line. Base64
+// encoding restricts the body's on-wire bytes to a fixed safe alphabet,
+// so none of that attacker content ever reaches the wire unencoded.
+func TestBuildMessage_ContentInjection_BodyCannotInjectRawBytes(t *testing.T) {
+	malicious := "ignore me\r\nX-Injected: header-via-body\r\n\r\nFrom: attacker@evil.example\r\n.\r\nMAIL FROM:<spoofed@evil.example>"
+	msg := string(buildMessage("from@example.com", []string{"to@example.com"}, "subject", malicious))
+
+	parts := strings.SplitN(msg, "\r\n\r\n", 2)
+	if len(parts) != 2 {
+		t.Fatalf("expected a blank line separating headers from body; got:\n%s", msg)
+	}
+	onWireBody := parts[1]
+	for _, line := range strings.Split(onWireBody, "\r\n") {
+		if line == "" {
+			continue
+		}
+		for _, c := range line {
+			if !strings.ContainsRune("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=", c) {
+				t.Fatalf("on-wire body contains a non-base64 byte %q — attacker content reached the wire unencoded:\n%s", c, msg)
+			}
+		}
 	}
 }
 
