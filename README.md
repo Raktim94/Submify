@@ -738,3 +738,8 @@ Submify is built by **NODEDR INFOTECH PRIVATE LIMITED**.
 - API reference: [docs/api.md](docs/api.md)
 - Deployment guide: [docs/deployment.md](docs/deployment.md)
 - Third-party licenses: [THIRD_PARTY.md](THIRD_PARTY.md)
+
+
+## Case study
+
+Read the [Submify case study](https://www.raktimranjit.com/projects/submify) for the product background and design decisions.
