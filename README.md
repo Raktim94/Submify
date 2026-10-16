@@ -15,6 +15,11 @@ One Docker stack, one API key, every form on every site you own.
 
 **[Visit Submify](https://submify.nodedr.com/)** · **[Case study](https://www.raktimranjit.com/projects/submify)** · **[Repository](https://github.com/Raktim94/Submify)**
 
+<p align="center">
+  <img src="docs/assets/hero-animated.svg" alt="Submify: animated overview with an illustrative sample screen" width="100%">
+</p>
+
+
 [Quick start](#quick-start) · [How it works](#how-it-works) · [Architecture](#architecture) · [API](#api-overview) · [S3 uploads](#external-s3-uploads-optional) · [Docs](docs/api.md)
 
 </div>
@@ -59,6 +64,11 @@ Email notifications aren't built in — send mail from your own app after postin
 ---
 
 ## Quick start
+
+<p align="center">
+  <img src="docs/assets/install-animated.svg" alt="Animated terminal: clone the repo and run install.sh" width="100%">
+</p>
+
 
 **Linux / macOS:**
 
