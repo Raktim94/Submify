@@ -860,7 +860,7 @@ func (s *Server) Submit(c *gin.Context) {
 
 	notifyTelegram(project, dataBytes, filesBytes)
 	pushToZulivio(project, dataPart)
-	notifyEmail(project, dataBytes, filesBytes)
+	notifyEmail(s.store, project, dataBytes, filesBytes)
 
 	c.JSON(http.StatusCreated, sub)
 }

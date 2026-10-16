@@ -34,6 +34,9 @@ type Project = {
   smtp_from_email: string;
   notification_recipients?: string[];
   email_configured: boolean;
+  email_last_status?: 'pending' | 'accepted' | 'failed';
+  email_last_status_at?: string;
+  email_last_error?: string;
   portal_slug: string;
   portal_enabled: boolean;
   portal_password_set: boolean;
@@ -548,6 +551,7 @@ function ProjectCard({
                       Send each new submission by email through your own SMTP account — pick a sending address, and a list
                       of destination addresses to deliver to.
                     </p>
+                    <EmailStatus project={p} />
                     <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-700">
                       <input type="checkbox" checked={emailEnabledDraft} onChange={(e) => setEmailEnabledDraft(e.target.checked)} />
                       Email new submissions
@@ -1133,5 +1137,36 @@ export default function ProjectsPage() {
         onCancel={() => setDeleteTarget(null)}
       />
     </>
+  );
+}
+
+function EmailStatus({ project: p }: { project: Project }) {
+  if (!p.email_last_status) {
+    return <p className="mt-2 text-xs text-slate-500">No notification email has been sent yet.</p>;
+  }
+  const at = p.email_last_status_at ? new Date(p.email_last_status_at).toLocaleString() : '';
+  const tone =
+    p.email_last_status === 'failed'
+      ? 'border-rose-200 bg-rose-50 text-rose-900'
+      : p.email_last_status === 'accepted'
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+        : 'border-slate-200 bg-slate-50 text-slate-700';
+  const label =
+    p.email_last_status === 'failed'
+      ? 'Last send failed after retries'
+      : p.email_last_status === 'accepted'
+        ? 'Last send accepted by your SMTP server'
+        : 'Sending…';
+  return (
+    <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${tone}`} role="status">
+      <p className="font-medium">
+        {label}
+        {at ? ` · ${at}` : ''}
+      </p>
+      {p.email_last_status === 'failed' && p.email_last_error ? <p className="mt-1 break-words">{p.email_last_error}</p> : null}
+      {p.email_last_status === 'accepted' ? (
+        <p className="mt-1">Accepted means your SMTP server took the message; it does not confirm inbox delivery.</p>
+      ) : null}
+    </div>
   );
 }

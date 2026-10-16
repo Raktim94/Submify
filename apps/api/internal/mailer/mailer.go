@@ -171,22 +171,75 @@ func sendImplicitTLS(cfg Config, auth smtp.Auth, to []string, msg []byte) error 
 	return client.Quit()
 }
 
+// Status is the outcome of the most recent notification attempt for a
+// project. "Accepted" means the configured SMTP relay returned a success
+// reply to the end of the DATA command — it does NOT mean the message
+// reached an inbox (see ADR 0007).
+type Status string
+
+const (
+	StatusPending  Status = "pending"
+	StatusAccepted Status = "accepted"
+	StatusFailed   Status = "failed"
+)
+
+// Reporter receives status transitions for one notification. reason is
+// non-empty only for StatusFailed.
+type Reporter func(status Status, reason string)
+
+const maxReasonLen = 200
+
+// retryDelay is the pause after failed attempt i (0-based); a var so tests
+// can shorten it.
+var retryDelay = func(i int) time.Duration { return time.Duration(i+1) * 2 * time.Second }
+
+// failureReason turns an SMTP error into a short, single-line string safe
+// to persist: control characters are dropped, the SMTP password is
+// redacted if a server echoed it, and the length is capped. It never
+// includes the message body or session transcript.
+func failureReason(err error, cfg Config) string {
+	msg := err.Error()
+	if cfg.Password != "" {
+		msg = strings.ReplaceAll(msg, cfg.Password, "[redacted]")
+	}
+	msg = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, msg)
+	msg = strings.Join(strings.Fields(msg), " ")
+	if r := []rune(msg); len(r) > maxReasonLen {
+		msg = string(r[:maxReasonLen]) + "…"
+	}
+	return msg
+}
+
 // SendAsync delivers a notification email in the background with 3
 // retries, fire-and-forget — same pattern as internal/telegram.NotifyAsync
 // and internal/zulivio.PushAsync, so an SMTP outage never affects the
-// submission response.
-func SendAsync(cfg Config, to []string, subject, body string) {
+// submission response. report (optional) is told pending → accepted, or
+// pending → failed after the final retry.
+func SendAsync(cfg Config, to []string, subject, body string, report Reporter) {
 	if cfg.Host == "" || cfg.Username == "" || cfg.Password == "" || cfg.FromEmail == "" || len(to) == 0 {
 		return
 	}
+	if report == nil {
+		report = func(Status, string) {}
+	}
 	go func() {
+		report(StatusPending, "")
+		var lastErr error
 		for i := 0; i < 3; i++ {
-			if err := send(cfg, to, subject, body); err == nil {
+			if lastErr = send(cfg, to, subject, body); lastErr == nil {
+				report(StatusAccepted, "")
 				return
-			} else {
-				log.Printf("email notify failed (attempt=%d): %v", i+1, err)
 			}
-			time.Sleep(time.Duration(i+1) * 2 * time.Second)
+			log.Printf("email notify failed (attempt=%d): %v", i+1, lastErr)
+			if i < 2 {
+				time.Sleep(retryDelay(i))
+			}
 		}
+		report(StatusFailed, failureReason(lastErr, cfg))
 	}()
 }

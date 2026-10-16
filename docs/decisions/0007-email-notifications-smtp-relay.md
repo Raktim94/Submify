@@ -63,14 +63,8 @@ common self-hosted pain point worth handling correctly up front.
   introduced, but also none closed; a future hardening pass (§18-style
   "encrypt integration secrets at rest") would need to cover all of these
   uniformly, not just email.
-- No delivery-status tracking or bounce handling — matches the same
-  fire-and-forget, best-effort pattern as Telegram and Zulivio. A
-  misconfigured or rejecting mail server fails silently from the
-  submitter's perspective (the submission itself always succeeds
-  regardless of notification delivery) and is only visible in the server
-  log — consistent with, not worse than, the other two integrations, but
-  worth remembering as a pattern-wide gap if delivery visibility is ever
-  prioritized (§77's system-status area would be the natural place).
+- Delivery visibility was originally absent (fire-and-forget, server log
+  only); see "Delivery visibility" below for the follow-up.
 - Verified against a real (self-hosted, throwaway) MailHog SMTP server in
   this session rather than a live external provider — proves the SMTP
   client code is genuinely correct (STARTTLS handshake, auth, envelope,
@@ -79,3 +73,43 @@ common self-hosted pain point worth handling correctly up front.
   live external credential this environment doesn't have; the protocol
   implementation itself doesn't differ by provider, so this is a
   legitimate substitute, not a corner cut.
+
+## Delivery visibility (added 2026-10-16)
+
+**The gap.** With fire-and-forget sends, an operator whose SMTP credentials
+are wrong or revoked had no way to know notifications had stopped, short of
+reading server logs.
+
+**What SMTP can and cannot tell us.** Because each project brings its own
+SMTP account, Submify only ever talks to the customer's relay. Two things
+must be kept apart:
+
+- **Accepted by the relay**: the relay returned a success reply after
+  `DATA`. Submify observes this directly. It is a hand-off, not a guarantee.
+- **Delivered to an inbox**: only the recipient's mail system knows. A relay
+  can accept a message and later bounce it asynchronously, or the receiving
+  side can silently junk it. Bounces arrive (if at all) as a separate
+  message to the From/return-path mailbox, and complaints come through
+  provider-specific feedback loops (SES/SNS, Postmark/SendGrid webhooks,
+  ...). There is no standard, reliable way to get either across arbitrary
+  SMTP providers, so Submify does **not** claim to detect bounces or
+  complaints, and never labels SMTP acceptance as "delivered".
+
+**Decision.** Record only what Submify can observe, as the *latest* attempt
+per project on the `projects` row (migration `0016`): `email_last_status`
+(`pending` | `accepted` | `failed` after the 3 retries), `email_last_status_at`,
+and a short `email_last_error` (control characters stripped, SMTP password
+redacted, ~200 chars). The email body and SMTP transcript are not stored.
+The status is cleared when the project's email settings are saved, so a stale
+failure from old credentials is not shown against new ones. It is exposed on
+the existing project object (already scoped to the caller's organization) and
+shown in the dashboard's Email tab. Concurrent submissions overwrite each
+other; the field answers "is email working right now", not "what happened to
+message X".
+
+**Deliberately not done.** No per-message timeline, no separate ingestion
+service, and no bounce/complaint handling. If a provider-specific integration
+is added later (e.g. a signed SES/Postmark webhook), its states must be added
+as distinct, clearly labelled *provider-reported* values (e.g.
+`provider_bounced`), never merged into `accepted`/`delivered`, and only for
+providers that supply an authenticated feedback mechanism.
