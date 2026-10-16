@@ -19,7 +19,7 @@ command -v docker >/dev/null 2>&1 || die "Docker is required: https://docs.docke
 docker compose version >/dev/null 2>&1 || die "Docker Compose v2 plugin is required (docker compose version failed)."
 
 # Verify the current directory is writable before attempting a clone.
-if [ ! -w "." ]; then
+if [ ! -f docker-compose.yml ] && [ ! -w "." ]; then
   die "Current directory ($(pwd)) is not writable by this user.
        Run the installer from your home directory instead:
          cd ~ && curl -fsSL https://raw.githubusercontent.com/Raktim94/Submify/main/install.sh | bash
@@ -27,7 +27,12 @@ if [ ! -w "." ]; then
          SUBMIFY_INSTALL_DIR=/path/to/writable/dir curl -fsSL ... | bash"
 fi
 
-if [ -d "$INSTALL_DIR/.git" ]; then
+docker info >/dev/null 2>&1 || die "Docker is installed but not running, or your user can't talk to it. Start Docker (Linux: add your user to the 'docker' group)."
+
+if [ -f docker-compose.yml ] && [ -f scripts/compose-up.sh ]; then
+  log "Already inside the Submify repo - using the current directory."
+  INSTALL_DIR="."
+elif [ -d "$INSTALL_DIR/.git" ]; then
   log "Existing clone found at ./$INSTALL_DIR — updating."
   git -C "$INSTALL_DIR" checkout -- scripts/prune-docker.sh >/dev/null 2>&1 || true
   git -C "$INSTALL_DIR" pull --ff-only
