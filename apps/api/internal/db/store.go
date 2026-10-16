@@ -74,6 +74,11 @@ type Project struct {
 	SMTPFromEmail             string    `json:"smtp_from_email"`
 	NotificationRecipients    []string  `json:"notification_recipients,omitempty"`
 	EmailConfigured           bool      `json:"email_configured"`
+	// Latest notification attempt only (no per-message history). "accepted"
+	// means the SMTP relay accepted the message, not that it was delivered.
+	EmailLastStatus   string     `json:"email_last_status,omitempty"`
+	EmailLastStatusAt *time.Time `json:"email_last_status_at,omitempty"`
+	EmailLastError    string     `json:"email_last_error,omitempty"`
 	CreatedAt                 time.Time `json:"created_at"`
 }
 
@@ -425,7 +430,7 @@ func (s *Store) UpdateUserAPIKey(userID, newAPIKey string) error {
 	return nil
 }
 
-const projectSelect = `id, user_id, organization_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), COALESCE(portal_slug, ''), portal_enabled, COALESCE(portal_password_hash, ''), zulivio_enabled, COALESCE(zulivio_api_url, ''), COALESCE(zulivio_api_key, ''), email_notifications_enabled, COALESCE(smtp_host, ''), smtp_port, COALESCE(smtp_username, ''), COALESCE(smtp_password, ''), COALESCE(smtp_from_email, ''), COALESCE(notification_recipients, ''), created_at`
+const projectSelect = `id, user_id, organization_id, name, is_default, api_key, api_secret, COALESCE(allowed_origins, ''), COALESCE(telegram_bot_token, ''), COALESCE(telegram_chat_id, ''), COALESCE(s3_endpoint, ''), COALESCE(s3_access_key, ''), COALESCE(s3_secret_key, ''), COALESCE(s3_bucket, ''), COALESCE(portal_slug, ''), portal_enabled, COALESCE(portal_password_hash, ''), zulivio_enabled, COALESCE(zulivio_api_url, ''), COALESCE(zulivio_api_key, ''), email_notifications_enabled, COALESCE(smtp_host, ''), smtp_port, COALESCE(smtp_username, ''), COALESCE(smtp_password, ''), COALESCE(smtp_from_email, ''), COALESCE(notification_recipients, ''), COALESCE(email_last_status, ''), email_last_status_at, COALESCE(email_last_error, ''), created_at`
 
 func parseOriginsJSON(s string) ([]string, error) {
 	s = strings.TrimSpace(s)
@@ -467,7 +472,7 @@ func hydrateProjectEmail(p *Project, recipientsRaw string) error {
 func projectFromRow(row *sql.Row) (Project, error) {
 	var p Project
 	var originsRaw, recipientsRaw string
-	err := row.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.EmailNotificationsEnabled, &p.SMTPHost, &p.SMTPPort, &p.SMTPUsername, &p.SMTPPassword, &p.SMTPFromEmail, &recipientsRaw, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.EmailNotificationsEnabled, &p.SMTPHost, &p.SMTPPort, &p.SMTPUsername, &p.SMTPPassword, &p.SMTPFromEmail, &recipientsRaw, &p.EmailLastStatus, &p.EmailLastStatusAt, &p.EmailLastError, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -483,7 +488,7 @@ func projectFromRow(row *sql.Row) (Project, error) {
 func projectFromRows(rows *sql.Rows) (Project, error) {
 	var p Project
 	var originsRaw, recipientsRaw string
-	err := rows.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.EmailNotificationsEnabled, &p.SMTPHost, &p.SMTPPort, &p.SMTPUsername, &p.SMTPPassword, &p.SMTPFromEmail, &recipientsRaw, &p.CreatedAt)
+	err := rows.Scan(&p.ID, &p.UserID, &p.OrganizationID, &p.Name, &p.IsDefault, &p.APIKey, &p.APISecret, &originsRaw, &p.TelegramBotToken, &p.TelegramChatID, &p.S3Endpoint, &p.S3AccessKey, &p.S3SecretKey, &p.S3Bucket, &p.PortalSlug, &p.PortalEnabled, &p.PortalPasswordHash, &p.ZulivioEnabled, &p.ZulivioAPIURL, &p.ZulivioAPIKey, &p.EmailNotificationsEnabled, &p.SMTPHost, &p.SMTPPort, &p.SMTPUsername, &p.SMTPPassword, &p.SMTPFromEmail, &recipientsRaw, &p.EmailLastStatus, &p.EmailLastStatusAt, &p.EmailLastError, &p.CreatedAt)
 	if err != nil {
 		return Project{}, err
 	}
@@ -681,7 +686,10 @@ func (s *Store) UpdateProjectEmailNotifications(orgID, projectID string, enabled
 		    smtp_username = NULLIF($4, ''),
 		    smtp_password = NULLIF($5, ''),
 		    smtp_from_email = NULLIF($6, ''),
-		    notification_recipients = $7
+		    notification_recipients = $7,
+		    email_last_status = NULL,
+		    email_last_status_at = NULL,
+		    email_last_error = NULL
 		WHERE id=$8 AND organization_id=$9
 	`, enabled, strings.TrimSpace(host), port, strings.TrimSpace(username), strings.TrimSpace(password), strings.TrimSpace(fromEmail), recipientsPayload, projectID, orgID)
 	if err != nil {
@@ -692,6 +700,18 @@ func (s *Store) UpdateProjectEmailNotifications(orgID, projectID string, enabled
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+// SetProjectEmailStatus records the latest notification attempt outcome for
+// a project (overwriting the previous one). Only a status, timestamp and a
+// short failure reason are stored — never the message body or transcript.
+func (s *Store) SetProjectEmailStatus(projectID, status, reason string) error {
+	_, err := s.DB.Exec(`
+		UPDATE projects
+		SET email_last_status = $1, email_last_status_at = NOW(), email_last_error = NULLIF($2, '')
+		WHERE id = $3
+	`, status, reason, projectID)
+	return err
 }
 
 // ProjectOwnedBy resolves a project only if it belongs to orgID — this is

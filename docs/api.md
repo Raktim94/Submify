@@ -836,5 +836,17 @@ host/username/password/from-email are all set and at least one recipient
 is configured.
 
 Delivery is async and best-effort with 3 retries (same pattern as Telegram
-and Zulivio) — an SMTP failure never affects the submission response, and
-is only visible in the server log.
+and Zulivio) — an SMTP failure never affects the submission response.
+
+**Latest send status** (read-only, on the `Project` object) — the outcome of
+the most recent notification attempt only, not a per-message history:
+
+| Field | Notes |
+|---|---|
+| `email_last_status` | `pending` (send in progress), `accepted` (the SMTP relay accepted the message), or `failed` (all 3 attempts failed). Absent until the first send, and reset when email settings are saved. |
+| `email_last_status_at` | when that status was recorded |
+| `email_last_error` | short failure reason (max ~200 chars) when `failed`; never contains the email body or SMTP transcript |
+
+`accepted` means the relay took the message — **not** that it reached an
+inbox. Submify does not detect bounces or spam complaints for arbitrary SMTP
+providers, so no `delivered`, `bounced` or `complained` status exists.

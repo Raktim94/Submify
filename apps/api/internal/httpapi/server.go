@@ -577,7 +577,7 @@ func notifyTelegram(project db.Project, data []byte, files []byte) {
 	telegram.NotifyAsync(project.TelegramBotToken, project.TelegramChatID, buildTelegramMessage(project, data, files))
 }
 
-func notifyEmail(project db.Project, data []byte, files []byte) {
+func notifyEmail(store *db.Store, project db.Project, data []byte, files []byte) {
 	if !project.EmailNotificationsEnabled || !project.EmailConfigured {
 		return
 	}
@@ -589,7 +589,11 @@ func notifyEmail(project db.Project, data []byte, files []byte) {
 		Username:  project.SMTPUsername,
 		Password:  project.SMTPPassword,
 		FromEmail: project.SMTPFromEmail,
-	}, project.NotificationRecipients, subject, body)
+	}, project.NotificationRecipients, subject, body, func(status mailer.Status, reason string) {
+		if err := store.SetProjectEmailStatus(project.ID, string(status), reason); err != nil {
+			log.Printf("email status update failed for project %s: %v", project.ID, err)
+		}
+	})
 }
 
 func pushToZulivio(project db.Project, data map[string]interface{}) {
