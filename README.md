@@ -2,10 +2,12 @@
 
 <img src="apps/web/public/brand/submify-logo.png" alt="Submify" width="120" />
 
-# Submify
+# Submify — Open-Source, Self-Hosted Form Backend
 
-**Self-hosted Form Backend as a Service (FBaaS).**
-One Docker stack, one API key, every form on every site you own.
+**Collect website form submissions on your own server.**
+A self-hosted Formspree alternative with a submission dashboard, client portals, Telegram notifications, and optional S3-compatible file uploads.
+
+One Docker stack. Every website you manage. Your own database.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](apps/api/go.mod)
@@ -28,11 +30,40 @@ One Docker stack, one API key, every form on every site you own.
 
 ---
 
-Submify gives you a private Formspree/Form-to-email replacement you run yourself: a Go (Gin) API, a Next.js dashboard, PostgreSQL for storage, optional external S3-compatible storage for file uploads, and Nginx as a single entrypoint. Point any website's contact form at it, log in to read submissions, export to XLSX/PDF, and optionally get a Telegram ping when something new comes in.
+Submify is an **open-source form backend for contact forms, lead capture, feedback forms, and static websites**. Send form data to its JSON API, review submissions in a dashboard, and export them as Excel (XLSX) or PDF. Run it on your own infrastructure with Docker Compose and keep submission data in your own PostgreSQL database.
+
+Built with Go (Gin), Next.js, PostgreSQL, and Nginx, Submify lets developers reuse one backend across multiple sites. Agencies can give each client a password-protected, read-only submission portal. Telegram alerts and direct uploads to your own S3-compatible storage are optional.
 
 Submify is built and maintained by **[Nodedr Infotech Private Limited](https://www.nodedr.com)**, and released under the AGPL-3.0 license — free to self-host, modify, and use commercially. If you run a modified version as a network service for others, you must share that modified source under the same license.
 
 **Repository:** [github.com/Raktim94/Submify](https://github.com/Raktim94/Submify)
+
+## Who is Submify for?
+
+| Use case | How Submify helps |
+|----------|------------------|
+| Agencies managing client websites | Separate submissions by project and give clients read-only portals |
+| Developers building static websites | Submit JSON from your existing form with JavaScript or a server-side proxy |
+| React and Next.js projects | Call the API from a submit handler, Route Handler, or your own backend |
+| Business contact and enquiry forms | Review enquiries in one inbox and export records as XLSX or PDF |
+| Landing pages and waitlists | Store the fields you collect in project-scoped submissions |
+| Teams that self-host their tools | Run the API, dashboard, and database together with Docker Compose |
+
+You build the form UI; Submify handles submission storage and review. It is a form backend, not a drag-and-drop form builder.
+
+## A self-hosted Formspree alternative
+
+Choose Submify when you want control over your deployment, database, and file storage and are prepared to operate the server yourself. It can replace the submission-collection part of a hosted form service; integrations may need changes to match its JSON API.
+
+- **Hosting:** your own server or Docker-capable infrastructure.
+- **Data:** submissions stored in your PostgreSQL database.
+- **Client access:** password-protected, project-specific portals.
+- **Notifications:** optional Telegram alerts; built-in email notifications are not available.
+- **Files:** optional uploads to an external S3-compatible bucket.
+- **Cost:** no Submify software subscription for self-hosting; server and storage costs still apply.
+- **License:** AGPL-3.0, including source-sharing obligations for modified network services.
+
+See the [quick start](#quick-start) to install it or the [API reference](docs/api.md) to connect an existing form.
 
 ## How it works
 
@@ -152,6 +183,10 @@ docker compose logs -f api # follow API logs
 21. [Troubleshooting](#troubleshooting)
 22. [License](#license)
 23. [Developer & ownership](#developer--ownership)
+24. [Use cases](#who-is-submify-for)
+25. [Self-hosted Formspree alternative](#a-self-hosted-formspree-alternative)
+26. [Frequently asked questions](#frequently-asked-questions)
+27. [Support and contribute](#support-and-contribute)
 
 ---
 
@@ -729,6 +764,49 @@ If you installed with `./scripts/compose-up.sh`, substitute it for the bare `doc
 **Running tests:** `go test ./...` from `apps/api` covers password hashing, JWT, and related unit tests.
 
 ---
+
+## Frequently asked questions
+
+### What is a self-hosted form backend?
+
+A form backend receives and stores data submitted from a website. Self-hosting means you run that service on infrastructure you control. Submify provides the API, database-backed submission inbox, and dashboard while your website provides the form.
+
+### Can I use Submify with a static website, React, or Next.js?
+
+Yes. Send JSON to `POST /api/submit` from JavaScript or your site's backend. Configure allowed origins when submitting from a different domain. See [Connecting a client website](#connecting-a-client-website-forms) for the request format and example.
+
+### Can I manage forms from multiple client websites?
+
+Yes. Organize submissions into projects and share a project's password-protected client portal for read-only viewing and exports. Clients do not need access to your main dashboard.
+
+### Does Submify send email notifications?
+
+Email notifications are not built in. Optional Telegram notifications are available. Your own application can send email after submitting data to Submify.
+
+### Does Submify support file uploads?
+
+Yes, through optional external S3-compatible storage. Files upload directly to your bucket using presigned URLs; Submify stores their metadata. See [S3 upload configuration](#external-s3-uploads-optional).
+
+### Is Submify free to self-host?
+
+The software is available under AGPL-3.0 without a Submify subscription. You pay for your infrastructure and operate it yourself. Modified versions offered as a network service must meet the license's source-sharing requirements.
+
+### Are submissions unlimited?
+
+The documented default is 5,000 submissions per project, with request rate limits as well. See [Limits and security defaults](#limits-and-security-defaults) before planning capacity.
+
+### Who maintains Submify?
+
+[Raktim Ranjit](https://www.raktimranjit.com/) is the lead maintainer and developer. Submify is built by [NODEDR INFOTECH PRIVATE LIMITED](https://www.nodedr.com). Read the [Submify case study](https://www.raktimranjit.com/projects/submify) for the product background.
+
+## Support and contribute
+
+If Submify helps your work, **star this repository** so you can find it again and share it with developers who manage website forms.
+
+- Report reproducible bugs or suggest improvements in [GitHub Issues](https://github.com/Raktim94/Submify/issues). Include your setup, expected behavior, and steps to reproduce; remove secrets and personal submission data.
+- Discuss substantial changes in an issue before opening a pull request.
+- Help improve the installation guide, integration examples, and documentation.
+- Report security vulnerabilities privately to **info@nodedr.com**.
 
 ## License
 
