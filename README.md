@@ -15,6 +15,8 @@ One Docker stack, one API key, every form on every site you own.
 
 **[Visit Submify](https://submify.nodedr.com/)** · **[Case study](https://www.raktimranjit.com/projects/submify)** · **[Repository](https://github.com/Raktim94/Submify)**
 
+**Lead Maintainer & Developer: [Raktim Ranjit](https://www.raktimranjit.com/)**
+
 <p align="center">
   <img src="docs/assets/hero-animated.svg" alt="Submify: animated overview with an illustrative sample screen" width="100%">
 </p>
@@ -738,7 +740,8 @@ Submify is open source under the **GNU Affero General Public License v3.0 (AGPL-
 
 Submify is built by **NODEDR INFOTECH PRIVATE LIMITED**.
 
-- **Lead Developer & Founder:** Raktim Ranjit
+- **Lead Maintainer & Developer:** [Raktim Ranjit](https://www.raktimranjit.com/)
+- **Personal website:** [raktimranjit.com](https://www.raktimranjit.com/)
 - **Company:** NODEDR INFOTECH PRIVATE LIMITED
 - **Website:** [www.nodedr.com](https://www.nodedr.com)
 
