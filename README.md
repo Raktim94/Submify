@@ -510,6 +510,15 @@ await fetch(SUBMIT_URL, {
 
 > This repo's own Next.js dashboard (`apps/web`) ships an example of this pattern — a contact form posting through a Route Handler. See **`/docs/contact-proxy`** in the running app for the full guide, including a copy-paste prompt for AI coding assistants.
 
+### MCP server (Claude Code, Codex, Cursor)
+
+`apps/mcp` is an MCP server that lets an AI agent list projects, read and export submissions, post test submissions and manage bookings on your instance. See [apps/mcp/README.md](apps/mcp/README.md) for setup.
+
+```bash
+cd apps/mcp && npm install && npm run build
+claude mcp add submify -e SUBMIFY_URL=http://localhost:2512 -e SUBMIFY_EMAIL=you@example.com -e SUBMIFY_PASSWORD=... -- node $PWD/dist/index.js
+```
+
 ### Integrating with an AI coding assistant
 
 If you're wiring Submify into a site using Cursor, Claude Code, Copilot, or ChatGPT, paste this prompt and fill in the bracketed parts:
