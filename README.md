@@ -58,7 +58,7 @@ Choose Submify when you want control over your deployment, database, and file st
 - **Hosting:** your own server or Docker-capable infrastructure.
 - **Data:** submissions stored in your PostgreSQL database.
 - **Client access:** password-protected, project-specific portals.
-- **Notifications:** optional Telegram alerts; built-in email notifications are not available.
+- **Notifications:** optional Telegram alerts and per-project email notifications through your own SMTP account.
 - **Files:** optional uploads to an external S3-compatible bucket.
 - **Cost:** no Submify software subscription for self-hosting; server and storage costs still apply.
 - **License:** AGPL-3.0, including source-sharing obligations for modified network services.
@@ -92,7 +92,7 @@ Everything — Postgres, the API, the dashboard, and Nginx in front of both — 
 - Optional **Telegram** notification on new submission
 - Optional **presigned PUT** uploads to any S3-compatible storage
 
-Email notifications aren't built in — send mail from your own app after posting to Submify if you need that.
+Email notifications are optional: configure your own SMTP account and recipients per project. See [Email notifications](docs/api.md#email-notifications) for configuration and delivery-status details.
 
 ---
 
@@ -790,7 +790,7 @@ Yes. Organize submissions into projects and share a project's password-protected
 
 ### Does Submify send email notifications?
 
-Email notifications are not built in. Optional Telegram notifications are available. Your own application can send email after submitting data to Submify.
+Yes. Configure a per-project SMTP relay and notification recipients to send submission alerts. Delivery runs asynchronously with retries; Submify does not operate a shared sending service. Optional Telegram alerts are also available. See [Email notifications](docs/api.md#email-notifications).
 
 ### Does Submify support file uploads?
 
