@@ -1,0 +1,65 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: submify-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: submify
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing POSTGRES_PASSWORD in /etc/submify/submify.env}
+      POSTGRES_DB: submify
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U submify -d submify"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  api:
+    image: ghcr.io/raktim94/submify-api:@VERSION@
+    container_name: submify-api
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://submify:${POSTGRES_PASSWORD}@db:5432/submify?sslmode=disable"
+      JWT_SECRET: ${JWT_SECRET:?missing JWT_SECRET in /etc/submify/submify.env}
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-false}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-http://localhost:2512,http://127.0.0.1:2512}"
+      CORS_RELAX_PRIVATE_NETWORKS: "true"
+      CORS_ALLOW_SAME_HOST_ORIGIN: "true"
+      CORS_PUBLIC_SUBMIT_ANY_ORIGIN: "true"
+      TRUSTED_PROXIES: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      UPLOAD_MAX_SIZE_BYTES: "26214400"
+      UPLOAD_ALLOWED_MIME: "image/png,image/jpeg,application/pdf,text/plain"
+      LOCAL_STORAGE_DIR: "/data/uploads"
+      GIN_MODE: "release"
+    volumes:
+      - uploads:/data/uploads
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+  web:
+    image: ghcr.io/raktim94/submify-web:@VERSION@
+    container_name: submify-web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_BASE: "/api/v1"
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - api
+  nginx:
+    image: ghcr.io/raktim94/submify-nginx:@VERSION@
+    container_name: submify-nginx
+    restart: unless-stopped
+    ports:
+      - "${SUBMIFY_BIND_IP:-127.0.0.1}:${SUBMIFY_PORT:-2512}:2512"
+    depends_on:
+      - api
+      - web
+volumes:
+  pg_data:
+  uploads:

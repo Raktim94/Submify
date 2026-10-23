@@ -1,0 +1,16 @@
+[Unit]
+Description=Submify (Docker Compose)
+Documentation=https://submify.nodedr.com/docs
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=900
+ExecStart=/usr/bin/docker compose --project-name submify --env-file /etc/submify/submify.env -f /usr/lib/submify/docker-compose.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose --project-name submify --env-file /etc/submify/submify.env -f /usr/lib/submify/docker-compose.yml down
+
+[Install]
+WantedBy=multi-user.target
