@@ -43,3 +43,4 @@ jobs:
           sudo apt-get remove -y submify
           ! systemctl is-active --quiet submify.service
           sudo apt-get purge -y submify
+          test -f /etc/submify/submify.env
