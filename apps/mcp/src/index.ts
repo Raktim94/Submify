@@ -199,7 +199,7 @@ server.registerTool(
     description: "Post a test submission to a project through the public /api/submit endpoint (as a website form would). Creates a real submission.",
     inputSchema: {
       public_key: z.string().describe("Project public key (pk_live_...) or the account's primary api_key"),
-      data: z.record(z.unknown()).describe("Form fields as a JSON object"),
+      data: z.record(z.string(), z.unknown()).describe("Form fields as a JSON object"),
     },
   },
   async ({ public_key, data }) => {
