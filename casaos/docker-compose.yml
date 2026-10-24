@@ -239,9 +239,11 @@ x-casaos:
   scheme: http
   port_map: "2512"
   version: "0.4.1"
-  update_at: "2026-10-16"
+  update_at: "2026-10-24"
   release_notes:
     en_US: |-
+      0.4.1: security update: zod 4.6.6 (fixes a memory-exhaustion advisory); the MCP server now uses the zod 4 record API. No behaviour changes.
+
       0.1.0: initial CasaOS/ZimaOS store listing — project dashboard,
       spam-resistant public submit keys, file uploads (S3-compatible with
       local-disk fallback), calendar/booking, Telegram notifications,
