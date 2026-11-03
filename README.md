@@ -845,3 +845,7 @@ Submify is built by **NODEDR INFOTECH PRIVATE LIMITED**.
 ## Case study
 
 Read the [Submify case study](https://www.raktimranjit.com/projects/submify) for the product background and design decisions.
+
+## Commercial licence
+
+Licensed under the AGPL-3.0. A [commercial licence](COMMERCIAL-LICENSE.md) is available on request for use without the AGPL obligations. The Submify name and logo are not covered by the AGPL.
