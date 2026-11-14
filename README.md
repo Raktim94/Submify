@@ -519,6 +519,10 @@ cd apps/mcp && npm install && npm run build
 claude mcp add submify -e SUBMIFY_URL=http://localhost:2512 -e SUBMIFY_EMAIL=you@example.com -e SUBMIFY_PASSWORD=... -- node $PWD/dist/index.js
 ```
 
+### Integrate with AI Coding Agents
+
+Official agent-ready guide: [`prompts/AI_INTEGRATION_PROMPT.md`](prompts/AI_INTEGRATION_PROMPT.md) (verified submit contract, Next.js route handler, MCP setup, test checklist). Repo guidance for agents: [`AGENTS.md`](AGENTS.md), [`llms.txt`](llms.txt).
+
 ### Integrating with an AI coding assistant
 
 If you're wiring Submify into a site using Cursor, Claude Code, Copilot, or ChatGPT, paste this prompt and fill in the bracketed parts:
@@ -530,7 +534,7 @@ Submify is a self-hosted form backend. My instance's API base is [https://your-s
 
 Requirements:
 1. Add a submit handler (server-side route/action if this framework supports one, otherwise a client-side fetch) that POSTs JSON to `${API_BASE}/submit` with header `x-api-key: <the public key>` and body `{ "data": { ...form fields }, "files": [] }`.
-2. Validate the form client-side before sending (required fields, email format) and show inline success/error states based on the HTTP status (`200` success, `400` validation error from Submify, `401` bad key, `429` rate limited).
+2. Validate the form client-side before sending (required fields, email format) and show inline success/error states based on the HTTP status (`201` success, `400` validation error from Submify, `401` bad key, `429` rate limited).
 3. Add a hidden honeypot field (e.g. `_gotcha`) to the form; if it has a value, skip the request and show success anyway (silently drops bot submissions without calling Submify).
 4. Do not log or expose the API key in client-visible source if a server-side option exists for this framework; prefer an env var named `SUBMIFY_API_KEY` (or `NEXT_PUBLIC_SUBMIFY_API_KEY` only if this must run fully client-side and the project has no backend).
 5. Keep the request body under common upload limits — if the form has file inputs, use Submify's presign flow (`POST /api/v1/uploads/presign`, then `PUT` the file to the returned `upload_url`, then include `object_key` in `files` on the submit call) instead of inlining file bytes.

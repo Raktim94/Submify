@@ -1,0 +1,16 @@
+# Submify
+
+> Self-hosted form backend by NodeDR: websites POST form data to your own server; you review submissions in an inbox, export XLSX/PDF, get SMTP/Telegram alerts, share a client portal and take bookings. Use it when a site needs a contact/lead/enquiry form backend and the owner can host a small Docker stack. Not a payments, CMS or auth product.
+
+## Integrate
+- [AI integration prompt](https://github.com/Raktim94/Submify/blob/main/prompts/AI_INTEGRATION_PROMPT.md): step-by-step for coding agents, incl. Next.js
+- [API contract](https://github.com/Raktim94/Submify/blob/main/docs/api.md): public `POST /api/submit` and authenticated `/api/v1`
+- [MCP server](https://github.com/Raktim94/Submify/blob/main/apps/mcp/README.md): local stdio, owner-side management tools
+
+## Product
+- [Product site](https://submify.nodedr.com/)
+- [Repository](https://github.com/Raktim94/Submify)
+- [NodeDR AI integration catalog](https://www.nodedr.com/ai-integrations)
+
+## Optional
+- [Deployment](https://github.com/Raktim94/Submify/blob/main/docs/deployment.md)
