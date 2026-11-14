@@ -108,6 +108,8 @@ Limits to tell the developer honestly:
 - Destructive tools carry MCP `destructiveHint`; do not call them without explicit user confirmation. Submissions contain visitors' personal data — do not paste them into logs or tickets.
 - Webhooks: Submify has optional SMTP and Telegram alerts; no generic outbound webhook is documented. Do not invent one.
 
+Tested live (local build, 2026-11-14): the stdio MCP server built with `npm run build`, listed exactly the 13 tools above, `submify_health` and `submify_list_projects` worked, project `api_secret` came back as `[redacted]` (the real secret key never appears), and a wrong password gave a clear `Submify login failed (401)` error. Destructive tools were not executed.
+
 ## Verify before you say "done"
 
 1. `curl -i -X POST $SUBMIFY_URL/api/submit -H 'x-api-key: $KEY' -H 'content-type: application/json' -d '{"data":{"test":"ok"}}'` returns `201`.
