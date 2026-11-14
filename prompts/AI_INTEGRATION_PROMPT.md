@@ -84,6 +84,8 @@ export async function POST(req: Request) {
 
 Origin rule (verified in `submit_helpers.go`): if the project's allowed origins list is empty, any caller passes. If it is non-empty, a request with **no** `Origin`/`Referer` header (which is what a server-side `fetch` sends) is accepted **only** with a valid `x-signature`; otherwise it gets `403`. So for a Route Handler either forward the visitor's `Origin` header, or sign the body with the project secret key (`SUBMIFY_SECRET_KEY`, server-only, never `NEXT_PUBLIC_`).
 
+Rate-limit caveat (found in a live agent test): Submify limits `/api/submit` per client IP (default 90/min) and per key (180/min). A server-side proxy makes every visitor appear as your server's IP, so they share one 90/min bucket. For a busy site either post from the browser directly with the public key (it is safe there; keep the project's allowed origins set), or ask the Submify operator to raise `RATE_LIMIT_SUBMIT_IP_RPM`. Forwarded `X-Forwarded-For` is trusted only from `TRUSTED_PROXIES`.
+
 Client form requirements: labelled inputs, `aria-live` status region, disable the submit button while pending, show success only after the server returns `201`, keep an accessible error message, never swallow a `429`.
 
 ## MCP (manage the instance from an agent)
