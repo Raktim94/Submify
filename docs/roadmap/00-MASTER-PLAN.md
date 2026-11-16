@@ -1289,3 +1289,15 @@ should read first.
   deploy itself. User explicitly said "I'll handle migration myself" and
   asked to push the code to GitHub instead — done (see `git log` for the
   commit). Nothing in this slice was run against production.
+
+- **2026-11-16 — 0.5.0 released and deployed to production.** Master API keys
+  (`smk_`), built-in remote MCP at `/api/v1/mcp` (37 tools) and security-audit
+  fixes (ADR 0012). Production is the CasaOS app `submify` on 192.168.1.40
+  behind the `webbucket` tunnel (`api.nodedrdev.com` -> :2512). Backup
+  `~/backups/submify-pre-0.5.0-20261116210819.sql.gz` taken first; applied with
+  `casaos-cli app-management apply`; migration 0017 ran; row counts and project
+  key fingerprint identical before/after; new endpoints answer 401 via the
+  tunnel. Not verified in prod: an authenticated login (no credentials used).
+  Remaining audit gaps: hostname-based SSRF policy, public-key cap fill, apps/web
+  not audited, no independent verifier pass (usage limit).
+
