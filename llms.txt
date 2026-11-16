@@ -5,7 +5,7 @@
 ## Integrate
 - [AI integration prompt](https://github.com/Raktim94/Submify/blob/main/prompts/AI_INTEGRATION_PROMPT.md): step-by-step for coding agents, incl. Next.js
 - [API contract](https://github.com/Raktim94/Submify/blob/main/docs/api.md): public `POST /api/submit` and authenticated `/api/v1`
-- [MCP server](https://github.com/Raktim94/Submify/blob/main/apps/mcp/README.md): local stdio, owner-side management tools
+- [MCP server](https://github.com/Raktim94/Submify/blob/main/apps/mcp/README.md): built-in remote MCP at /api/v1/mcp with a master API key (smk_), plus a stdio bridge; owner-side management tools
 
 ## Product
 - [Product site](https://submify.nodedr.com/)

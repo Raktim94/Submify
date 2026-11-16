@@ -34,6 +34,9 @@ type Server struct {
 	portalLoginLimiter     *KeyedRateLimiter
 	localStorage           *storage.LocalBackend
 	uploadTokens           *storage.UploadTokenStore
+	// engine is the router itself, kept so the MCP endpoint can dispatch
+	// tool calls through the real routes in-process (see mcp.go).
+	engine *gin.Engine
 }
 
 func NewServer(cfg config.Config, store *db.Store) *Server {
@@ -138,7 +141,7 @@ func (s *Server) Router() *gin.Engine {
 		secured.GET("/projects/:id/export", s.Export)
 		secured.GET("/dashboard/summary", s.DashboardSummary)
 		secured.PUT("/users/me/integrations", s.UpdateUserIntegrations)
-		secured.PUT("/users/me/password", s.ChangePassword)
+		secured.PUT("/users/me/password", s.InteractiveSessionOnly(), s.ChangePassword)
 		secured.POST("/users/me/api-key/rotate", s.RotateAccountAPIKey)
 		secured.POST("/users/me/projects/rotate-keys", s.RotateAllProjectKeys)
 
@@ -149,6 +152,17 @@ func (s *Server) Router() *gin.Engine {
 		secured.PUT("/event-types/:id/overrides", s.UpsertEventTypeOverride)
 		secured.GET("/bookings", s.ListOrgBookings)
 		secured.POST("/bookings/:id/cancel", s.CancelOrgBooking)
+
+		// Master API keys for agents/automation. Listing works with a key;
+		// minting and revoking need a real dashboard session.
+		secured.GET("/api-keys", s.ListMasterAPIKeys)
+		secured.POST("/api-keys", s.InteractiveSessionOnly(), s.CreateMasterAPIKey)
+		secured.DELETE("/api-keys/:id", s.InteractiveSessionOnly(), s.RevokeMasterAPIKey)
+
+		// Remote MCP endpoint (Streamable HTTP, stateless JSON responses).
+		secured.POST("/mcp", s.MCP)
+		secured.GET("/mcp", s.MCPMethodNotAllowed)
+		secured.DELETE("/mcp", s.MCPMethodNotAllowed)
 
 		secured.GET("/calendar/items", s.ListPersonalEvents)
 		secured.POST("/calendar/items", s.CreatePersonalEvent)
@@ -170,27 +184,33 @@ func (s *Server) Router() *gin.Engine {
 		publicBooking.POST("/bookings/:token/cancel", s.PublicCancelBooking)
 	}
 
+	// Routes that create or replace login credentials, or hand out the whole
+	// database (password hashes, project secrets), are dashboard-only: a
+	// leaked master API key must not be able to mint a durable login, rewrite
+	// the owner's password through a crafted restore, or exfiltrate a full
+	// backup. See docs/decisions/0012-master-api-keys-and-remote-mcp.md.
 	admin := secured.Group("")
 	admin.Use(s.AdminGuard())
 	{
 		admin.GET("/users", s.ListUsers)
-		admin.POST("/users", s.CreateUser)
+		admin.POST("/users", s.InteractiveSessionOnly(), s.CreateUser)
 		admin.DELETE("/users/:id", s.DeleteUser)
-		admin.POST("/system/backup", s.CreateBackup)
+		admin.POST("/system/backup", s.InteractiveSessionOnly(), s.CreateBackup)
 		// Restore over an ALREADY-active install — distinct from the
 		// unauthenticated fresh-install-only /system/restore above. See
 		// docs/decisions/0009-s3-backup-and-self-update.md.
-		admin.POST("/system/restore/active", s.RestoreSystemActive)
+		admin.POST("/system/restore/active", s.InteractiveSessionOnly(), s.RestoreSystemActive)
 
-		admin.PUT("/system/backup/s3-config", s.SetBackupS3Config)
+		admin.PUT("/system/backup/s3-config", s.InteractiveSessionOnly(), s.SetBackupS3Config)
 		admin.POST("/system/backup/s3", s.BackupToS3)
 		admin.GET("/system/backup/s3", s.ListS3Backups)
-		admin.POST("/system/backup/s3/restore", s.RestoreFromS3)
+		admin.POST("/system/backup/s3/restore", s.InteractiveSessionOnly(), s.RestoreFromS3)
 
 		admin.GET("/system/update/check", s.CheckForUpdate)
 		admin.POST("/system/update/apply", s.ApplyUpdate)
 	}
 
+	s.engine = r
 	return r
 }
 

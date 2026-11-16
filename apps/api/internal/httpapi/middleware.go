@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"database/sql"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nodedr/submify/apps/api/internal/keys"
 )
 
 const (
@@ -57,6 +60,32 @@ func (s *Server) AuthGuard() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			return
 		}
+		// Master API key (agents, scripts): acts as the user who created it,
+		// in that user's organization. Only accepted from the Authorization
+		// header, never from a cookie.
+		if strings.HasPrefix(token, keys.MasterAPIKeyPrefix) {
+			if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(c.GetHeader("Authorization"))), "bearer ") {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "API keys are only accepted in the Authorization header"})
+				return
+			}
+			p, err := s.store.ResolveMasterAPIKey(hashMasterKey(token))
+			if err != nil {
+				if !errors.Is(err, sql.ErrNoRows) {
+					log.Printf("auth: master key lookup failed: %v", err)
+					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "could not verify API key"})
+					return
+				}
+				log.Printf("auth reject: remote=%s path=%s reason=unknown, revoked or expired master key", c.ClientIP(), c.Request.URL.Path)
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid, revoked or expired API key"})
+				return
+			}
+			c.Set("user_id", p.UserID)
+			c.Set("email", p.Email)
+			c.Set("organization_id", p.OrganizationID)
+			c.Set("master_key_id", p.KeyID)
+			c.Next()
+			return
+		}
 		claims, err := s.tokens.Parse(token, "access")
 		if err != nil {
 			log.Printf("auth reject: remote=%s path=%s reason=%v", c.ClientIP(), c.Request.URL.Path, err)
@@ -106,6 +135,20 @@ func (s *Server) AdminGuard() gin.HandlerFunc {
 		}
 		if !u.IsAdmin {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// InteractiveSessionOnly refuses requests authenticated with a master API
+// key. Used on the few routes where a leaked key must not be able to
+// entrench itself or lock the owner out: minting/revoking keys and
+// changing the account password.
+func (s *Server) InteractiveSessionOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, viaKey := c.Get("master_key_id"); viaKey {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "this action needs a signed-in dashboard session, not an API key"})
 			return
 		}
 		c.Next()

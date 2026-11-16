@@ -117,7 +117,7 @@ Alternative: a flat JSON object is stored directly as `data`:
 
 ---
 
-## Authenticated (`Authorization: Bearer <access_token>`, or session cookies)
+## Authenticated (`Authorization: Bearer <access_token or smk_ master API key>`, or session cookies)
 
 Requires a completed setup. Without any account, these routes return `503` `{ "error": "no accounts yet; register first" }`.
 
@@ -274,6 +274,41 @@ Rotates the public/secret key pair for **every** project in the caller's organiz
 (not just ones the caller personally created).
 
 **Response:** `200` `{ "status": "rotated", "projects_rotated": <number> }`
+
+## Master API keys and MCP (AI agents, scripts)
+
+A **master API key** (`smk_…`) lets an AI agent (Claude Code, Codex, Cursor) or a script run the account without a password. Send it as `Authorization: Bearer smk_…` to any authenticated `/api/v1` route. It acts as **the user who created it**, in that user's organization, with exactly that user's permissions (an admin's key can reach admin routes). Only a SHA-256 hash is stored; the key is shown once.
+
+A key stops working when it is revoked, expires, its user is deleted, or its user leaves the organization. Routes that create or replace login credentials or hand out the whole database need a dashboard session and return `403` for a key: `POST/DELETE /api-keys`, `PUT /users/me/password`, `POST /users`, `POST /system/backup`, `POST /system/restore/active`, `PUT /system/backup/s3-config`, `POST /system/backup/s3/restore`. A leaked key therefore cannot mint a replacement, add an account, rewrite the owner's password through a crafted restore, or lock you out. Keys are not included in backups. See `docs/decisions/0012-master-api-keys-and-remote-mcp.md`.
+
+### `GET /api-keys`
+
+Active keys: admins see the whole organization's, other members only their own.
+
+**Response:** `200` `{ "api_keys": [{ "id", "name", "key_prefix", "user_id", "user_email", "created_at", "expires_at"?, "last_used_at"? }] }`
+
+### `POST /api-keys` (dashboard session only)
+
+**Body:** `{ "name": "Claude Code on laptop", "expires_in_days": 90 }` (`expires_in_days` 0 or omitted = never, max 3650)
+
+**Response:** `201` `{ "api_key": { …metadata… }, "key": "smk_…" }` (the only time the key is returned)
+
+**Errors:** `400` bad name/expiry, `403` called with an API key, `409` 25 active keys already.
+
+### `DELETE /api-keys/{id}` (dashboard session only)
+
+Revokes immediately. **Response:** `200` `{ "status": "revoked" }`; `404` if not found or not yours (non-admins).
+
+### `POST /mcp` (remote MCP server)
+
+[Model Context Protocol](https://modelcontextprotocol.io) over Streamable HTTP: stateless JSON-RPC, JSON responses, no SSE stream (`GET`/`DELETE` return `405`). Requires the `Authorization` header (the session cookie alone is refused). Every tool runs through the same routes as above, so permissions and organization scoping are identical to REST.
+
+```bash
+claude mcp add --transport http submify https://forms.example.com/api/v1/mcp \
+  --header "Authorization: Bearer smk_…"
+```
+
+Tools: `submify_whoami`, `submify_health`, `submify_dashboard_summary`, `submify_list_projects`, `submify_create_project` (returns the public key and ready-to-paste snippets), `submify_update_project` (name, allowed origins, portal, email/SMTP, Telegram, Zulivio, S3), `submify_get_project_keys`, `submify_get_integration_snippet`, `submify_regenerate_project_keys`, `submify_rotate_all_project_keys`, `submify_delete_project`, `submify_list_submissions`, `submify_delete_submissions`, `submify_send_test_submission` (HMAC-signed, so it works with any `allowed_origins`), `submify_list_users`, `submify_delete_user`, `submify_list_api_keys`, `submify_list_event_types`, `submify_get_event_type`, `submify_create_event_type`, `submify_set_availability_override`, `submify_delete_event_type`, `submify_list_bookings`, `submify_cancel_booking`, `submify_list_calendar_items`, `submify_create_calendar_item`, `submify_update_calendar_item`, `submify_delete_calendar_item`, `submify_backup_to_s3`, `submify_list_s3_backups`, `submify_check_for_update`, `submify_apply_update`. Destructive tools carry `destructiveHint`. Project secrets are redacted except in `submify_get_project_keys`. Restore is dashboard-only.
 
 ## Organization & members
 

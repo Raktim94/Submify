@@ -142,7 +142,30 @@ func (s *Store) DeleteUserInOrganization(orgID, targetUserID string) error {
 	if role == RoleOwner {
 		return ErrCannotDeleteOwner
 	}
-	res, err := s.DB.Exec(`DELETE FROM users WHERE id = $1::uuid`, targetUserID)
+	// projects.user_id and event_types.host_user_id are ON DELETE CASCADE
+	// (from the single-user era). Projects and event types are shared by
+	// the organization now, so hand the departing member's ones to the
+	// owner first — otherwise removing a teammate silently deletes every
+	// project they created, with all its submissions and bookings.
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var ownerID string
+	if err := tx.QueryRow(`
+		SELECT user_id FROM organization_members
+		WHERE organization_id = $1::uuid AND role = $2 LIMIT 1
+	`, orgID, RoleOwner).Scan(&ownerID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE projects SET user_id = $1::uuid WHERE user_id = $2::uuid AND organization_id = $3::uuid`, ownerID, targetUserID, orgID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE event_types SET host_user_id = $1::uuid WHERE host_user_id = $2::uuid AND organization_id = $3::uuid`, ownerID, targetUserID, orgID); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM users WHERE id = $1::uuid`, targetUserID)
 	if err != nil {
 		return err
 	}
@@ -150,5 +173,5 @@ func (s *Store) DeleteUserInOrganization(orgID, targetUserID string) error {
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
-	return nil
+	return tx.Commit()
 }

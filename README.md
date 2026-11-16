@@ -512,12 +512,14 @@ await fetch(SUBMIT_URL, {
 
 ### MCP server (Claude Code, Codex, Cursor)
 
-`apps/mcp` is an MCP server that lets an AI agent list projects, read and export submissions, post test submissions and manage bookings on your instance. See [apps/mcp/README.md](apps/mcp/README.md) for setup.
+Every instance has a built-in remote MCP server at `/api/v1/mcp`. Create a **master API key** in **Settings → API keys for AI agents**, then:
 
 ```bash
-cd apps/mcp && npm install && npm run build
-claude mcp add submify -e SUBMIFY_URL=http://localhost:2512 -e SUBMIFY_EMAIL=you@example.com -e SUBMIFY_PASSWORD=... -- node $PWD/dist/index.js
+claude mcp add --transport http submify https://forms.example.com/api/v1/mcp \
+  --header "Authorization: Bearer smk_..."
 ```
+
+The agent can then create projects and website keys, generate the form snippet, set allowed origins, send a signed test submission, read submissions, and manage calendars, team members, backups and updates — 32 tools, each running through the same permission checks as the dashboard. The key acts as you; revoke it from Settings at any time. Creating/revoking keys, adding team members, downloading/restoring backups and changing the password stay dashboard-only. For stdio-only clients, `apps/mcp` bridges to the same endpoint (`SUBMIFY_API_KEY`); see [apps/mcp/README.md](apps/mcp/README.md).
 
 ### Integrate with AI Coding Agents
 

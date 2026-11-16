@@ -33,6 +33,7 @@ import { Field, Input } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { AgentApiKeysCard } from '@/components/settings/agent-api-keys-card';
 
 function StatusMessage({ message, isError }: { message: string; isError: boolean }) {
   return (
@@ -498,13 +499,15 @@ export default function SettingsPage() {
           ) : null}
         </Card>
 
+        <AgentApiKeysCard />
+
         {me.is_admin ? (
           <Card className="mb-8">
             <CardHeader>
               <CardTitle>Team accounts</CardTitle>
               <CardDescription>
                 Public sign-up is closed on this instance for security. As the admin, you can create additional accounts here
-                for teammates — each gets their own login and projects, separate from yours.
+                for teammates — each gets their own login and works on this organization’s shared projects.
               </CardDescription>
             </CardHeader>
 
@@ -554,7 +557,7 @@ export default function SettingsPage() {
         <ConfirmDialog
           open={Boolean(confirmDeleteUser)}
           title={`Remove ${confirmDeleteUser?.email ?? 'this account'}?`}
-          description="Their projects and submissions are deleted right away; any active session expires shortly after."
+          description="Their login, API keys and personal calendar items are removed. Projects they created stay with the organization (moved to the owner); any active session expires shortly after."
           confirmLabel="Remove account"
           danger
           onConfirm={onDeleteUser}

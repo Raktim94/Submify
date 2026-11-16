@@ -22,6 +22,10 @@ type Claims struct {
 	// ProjectID is set only on "portal" tokens; it scopes a client-portal session to a
 	// single project (read-only view/export), never to the owner's account.
 	ProjectID string `json:"pid,omitempty"`
+	// PortalCredentialTag is set only on "portal" tokens: a fingerprint of the
+	// portal password hash at sign-in, so regenerating or clearing the
+	// password ends existing client sessions.
+	PortalCredentialTag string `json:"pct,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -59,13 +63,14 @@ func (m *TokenManager) GeneratePairWithClaims(userID, email string) (string, *Cl
 
 // GeneratePortalToken issues a read-only "portal" access token scoped to one project.
 // It carries no user identity — only the project it may view/export.
-func (m *TokenManager) GeneratePortalToken(projectID string, ttl time.Duration) (string, *Claims, error) {
+func (m *TokenManager) GeneratePortalToken(projectID, credentialTag string, ttl time.Duration) (string, *Claims, error) {
 	now := time.Now()
 	jti := uuid.NewString()
 	claims := Claims{
 		Type:      "portal",
 		JTI:       jti,
-		ProjectID: projectID,
+		ProjectID:           projectID,
+		PortalCredentialTag: credentialTag,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   projectID,
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),

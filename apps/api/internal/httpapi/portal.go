@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -163,7 +165,7 @@ func (s *Server) issuePortalSession(c *gin.Context, project db.Project) {
 	if ttl <= 0 {
 		ttl = 12 * time.Hour
 	}
-	token, _, err := s.tokens.GeneratePortalToken(project.ID, ttl)
+	token, _, err := s.tokens.GeneratePortalToken(project.ID, portalCredentialTag(project.PortalPasswordHash), ttl)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -197,6 +199,10 @@ func (s *Server) PortalGuard() gin.HandlerFunc {
 		}
 		if !project.PortalEnabled {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "this portal is disabled"})
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(claims.PortalCredentialTag), []byte(portalCredentialTag(project.PortalPasswordHash))) != 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "portal password changed; sign in again"})
 			return
 		}
 		// Submissions (and, as of the portal calendar, bookings) are private
@@ -353,4 +359,12 @@ func (s *Server) PortalExport(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", "attachment; filename=submissions.xlsx")
 	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", out)
+}
+
+// portalCredentialTag fingerprints the current portal password hash. It is
+// embedded in portal tokens and compared on every request, so changing or
+// clearing the password signs out every existing portal session.
+func portalCredentialTag(passwordHash string) string {
+	sum := sha256.Sum256([]byte("portal-credential:" + passwordHash))
+	return hex.EncodeToString(sum[:8])
 }

@@ -90,25 +90,25 @@ Client form requirements: labelled inputs, `aria-live` status region, disable th
 
 ## MCP (manage the instance from an agent)
 
-`apps/mcp` is a **local stdio** server (Node). It is for the site **owner** managing projects and reading submissions — not for visitor-facing code.
+Since 0.5.0 every instance serves a **remote MCP server** at `/api/v1/mcp`, authenticated with a **master API key** (`smk_…`) created in the dashboard under **Settings → API keys for AI agents**. It is for the site **owner** managing the instance — never for visitor-facing code.
 
 ```bash
-cd apps/mcp && npm install && npm run build
-claude mcp add submify \
-  -e SUBMIFY_URL=https://forms.example.com:2512 \
-  -e SUBMIFY_EMAIL=agent@example.com \
-  -e SUBMIFY_PASSWORD='…' \
-  -- node /absolute/path/to/Submify/apps/mcp/dist/index.js
+claude mcp add --transport http submify https://forms.example.com/api/v1/mcp \
+  --header "Authorization: Bearer smk_…"
 ```
+
+Stdio-only clients: `cd apps/mcp && npm install && npm run build`, then run `node apps/mcp/dist/index.js` with `SUBMIFY_URL` and `SUBMIFY_API_KEY` set (it bridges to the remote endpoint). Instances older than 0.5.0 still need `SUBMIFY_EMAIL`/`SUBMIFY_PASSWORD`.
+
+Wiring a site end to end with MCP: `submify_create_project` (returns the public key and snippets) → paste the snippet → `submify_update_project` with `allowed_origins` → deploy the site → `submify_send_test_submission` → `submify_list_submissions`.
 
 Limits to tell the developer honestly:
 
-- It authenticates with an **account email + password**, not a scoped API key. Create a dedicated `member`-role user for the agent. Scoped MCP keys do not exist yet.
-- Tools: `submify_health`, `submify_list_projects`, `submify_create_project`, `submify_update_project`, `submify_regenerate_project_keys` (old keys die immediately), `submify_delete_project` (irreversible), `submify_list_submissions`, `submify_delete_submissions`, `submify_export_submissions`, `submify_submit_form`, `submify_list_event_types`, `submify_list_bookings`, `submify_cancel_booking`.
+- A key acts as the user who created it, with that user's permissions; for least privilege, create the key from a `member` account. Creating/revoking keys and changing the password are dashboard-only. Revoke a key in Settings and it stops immediately.
+- 32 tools cover projects, keys, snippets, submissions, team, calendar, S3 backup and updates; restore is dashboard-only. The full list is in `docs/api.md` ("Master API keys and MCP").
 - Destructive tools carry MCP `destructiveHint`; do not call them without explicit user confirmation. Submissions contain visitors' personal data — do not paste them into logs or tickets.
 - Webhooks: Submify has optional SMTP and Telegram alerts; no generic outbound webhook is documented. Do not invent one.
 
-Tested live (local build, 2026-11-14): the stdio MCP server built with `npm run build`, listed exactly the 13 tools above, `submify_health` and `submify_list_projects` worked, project `api_secret` came back as `[redacted]` (the real secret key never appears), and a wrong password gave a clear `Submify login failed (401)` error. Destructive tools were not executed.
+Tested live (2026-11-16, local instance + real Postgres): the remote endpoint and the stdio bridge both listed 32 tools to the official MCP SDK client; create project → signed test submission → list submissions worked; a revoked key got `401`; a key could not create keys, create accounts, take or restore backups, or change the password (`403`). Earlier (2026-11-14) the legacy password-mode server listed its 13 tools, `submify_health` and `submify_list_projects` worked, project `api_secret` came back as `[redacted]` (the real secret key never appears), and a wrong password gave a clear `Submify login failed (401)` error. Destructive tools were not executed.
 
 ## Verify before you say "done"
 

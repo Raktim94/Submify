@@ -211,6 +211,10 @@ func (s *Server) Register(c *gin.Context) {
 		return
 	}
 	u, err := s.store.RegisterUser(strings.TrimSpace(req.FullName), strings.TrimSpace(req.Phone), strings.TrimSpace(req.Email), hash)
+	if errors.Is(err, db.ErrRegistrationClosed) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "registration is closed; this instance already has an account — sign in instead"})
+		return
+	}
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -391,14 +395,13 @@ func (s *Server) Refresh(c *gin.Context) {
 			return
 		}
 	} else {
-		exp := time.Now().UTC().Add(time.Duration(s.cfg.RefreshTokenTTLHours) * time.Hour)
-		if claims.ExpiresAt != nil {
-			exp = claims.ExpiresAt.Time
-		}
-		if err := s.store.CreateRefreshSession(jti, claims.UserID, exp); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+		// No server-side session for this token: reject. Every refresh token
+		// issued since migration 0006 has a row, and revocation (logout,
+		// rotation, password change) lives only in that row, so accepting an
+		// unknown jti would revive revoked tokens whenever the rows are gone
+		// (e.g. after a restore truncates users CASCADE).
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token not recognised; sign in again"})
+		return
 	}
 
 	access, _, refresh, newRefreshClaims, err := s.tokens.GeneratePairWithClaims(claims.UserID, claims.Email)
@@ -1077,7 +1080,27 @@ func (s *Server) ChangePassword(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "password updated"})
+	// A password change is the owner's recovery action: end every other
+	// session (a stolen refresh token must not keep renewing). The caller's
+	// own refresh session, if identifiable, is kept so they stay signed in.
+	keepJTI := ""
+	rt := strings.TrimSpace(c.GetHeader("x-refresh-token"))
+	if cookie, err := c.Request.Cookie(refreshCookieName); rt == "" && err == nil {
+		rt = strings.TrimSpace(cookie.Value)
+	}
+	if rt != "" {
+		if rc, err := s.tokens.Parse(rt, "refresh"); err == nil && rc.UserID == u.ID {
+			keepJTI = rc.JTI
+			if keepJTI == "" {
+				keepJTI = rc.ID
+			}
+		}
+	}
+	revoked, err := s.store.RevokeUserRefreshSessions(u.ID, keepJTI)
+	if err != nil {
+		log.Printf("change password: revoking sessions for user=%s failed: %v", u.ID, err)
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "password updated", "other_sessions_signed_out": revoked})
 }
 
 // ListUsers returns every member of the caller's organization (not the whole instance —

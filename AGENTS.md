@@ -9,7 +9,7 @@ Read [`prompts/AI_INTEGRATION_PROMPT.md`](prompts/AI_INTEGRATION_PROMPT.md). Key
 - Public endpoint is `POST /api/submit` (not `/api/v1`), header `x-api-key: pk_live_…`, success is `201`.
 - The public key is safe in client code. The project **secret** key, account password and SMTP/S3/Telegram credentials never go in a website or in your output.
 - Submify is self-hosted: ask for the instance URL; do not invent one.
-- API contract: [`docs/api.md`](docs/api.md). MCP server (owner tooling, stdio): [`apps/mcp/README.md`](apps/mcp/README.md).
+- API contract: [`docs/api.md`](docs/api.md). MCP: built-in remote server at `/api/v1/mcp` with a master API key; stdio bridge in [`apps/mcp/README.md`](apps/mcp/README.md).
 
 ## Working on this repository
 

@@ -54,3 +54,17 @@ func NewPortalPassword() (string, error) {
 	}
 	return string(out), nil
 }
+
+// MasterAPIKeyPrefix marks a master API key so AuthGuard can tell it apart
+// from a JWT without trying to parse it.
+const MasterAPIKeyPrefix = "smk_"
+
+// NewMasterAPIKey returns a master API key (agent/automation credential).
+// 32 random bytes, so a plain SHA-256 of it is a safe storage hash.
+func NewMasterAPIKey() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return MasterAPIKeyPrefix + hex.EncodeToString(b), nil
+}

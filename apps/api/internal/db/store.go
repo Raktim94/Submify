@@ -12,6 +12,10 @@ import (
 	"github.com/nodedr/submify/apps/api/internal/keys"
 )
 
+// ErrRegistrationClosed is returned by RegisterUser when an account already
+// exists (public registration only ever creates the first one).
+var ErrRegistrationClosed = errors.New("registration is closed")
+
 type Store struct {
 	DB *sql.DB
 }
@@ -306,6 +310,22 @@ func (s *Store) RegisterUser(fullName, phone, email, passwordHash string) (User,
 		return User{}, err
 	}
 	defer tx.Rollback()
+
+	// First-run registration must be atomic: the handler's HasAnyUser check
+	// runs before this transaction (and before the slow password hash), so
+	// concurrent requests could each pass it and each become an is_admin
+	// owner of a separate organization. Serialize on an advisory lock and
+	// re-check inside the transaction.
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(727001)`); err != nil {
+		return User{}, err
+	}
+	var existing int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&existing); err != nil {
+		return User{}, err
+	}
+	if existing > 0 {
+		return User{}, ErrRegistrationClosed
+	}
 
 	userID := uuid.NewString()
 	userAPIKey := uuid.NewString()
@@ -985,4 +1005,17 @@ func (s *Store) RevokeRefreshSession(jti, userID string) error {
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+// RevokeUserRefreshSessions revokes every active refresh session of a user
+// except keepJTI (may be empty). Returns how many were revoked.
+func (s *Store) RevokeUserRefreshSessions(userID, keepJTI string) (int64, error) {
+	res, err := s.DB.Exec(`
+		UPDATE refresh_sessions SET revoked_at = NOW()
+		WHERE user_id = $1::uuid AND revoked_at IS NULL AND jti <> $2
+	`, userID, keepJTI)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

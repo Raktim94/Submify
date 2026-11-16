@@ -325,3 +325,29 @@ export async function deleteUser(userId: string): Promise<{ status: string }> {
     method: 'DELETE'
   });
 }
+
+export type MasterAPIKey = {
+  id: string;
+  name: string;
+  key_prefix: string;
+  user_id: string;
+  user_email: string;
+  created_at: string;
+  expires_at?: string;
+  last_used_at?: string;
+};
+
+export async function listMasterAPIKeys(): Promise<{ api_keys: MasterAPIKey[] }> {
+  return api('/api-keys');
+}
+
+export async function createMasterAPIKey(body: {
+  name: string;
+  expires_in_days?: number;
+}): Promise<{ api_key: MasterAPIKey; key: string }> {
+  return api('/api-keys', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function revokeMasterAPIKey(id: string): Promise<{ status: string }> {
+  return api(`/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
