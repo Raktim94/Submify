@@ -465,8 +465,16 @@ func collectExportDataKeys(rows []db.Submission) []string {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	// Bound the spreadsheet width. Submit caps fields per submission, but
+	// the union across thousands of rows could still be huge; keep the first
+	// maxExportColumns keys alphabetically (the rest remain in the raw JSON).
+	if len(keys) > maxExportColumns {
+		keys = keys[:maxExportColumns]
+	}
 	return keys
 }
+
+const maxExportColumns = 300
 
 func exportHeaders(dataKeys []string) []string {
 	h := make([]string, 0, 2+len(dataKeys)+4)

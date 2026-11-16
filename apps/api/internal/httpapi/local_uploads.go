@@ -74,10 +74,35 @@ func (s *Server) LocalUploadGet(c *gin.Context) {
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	// Only types that cannot execute or restyle the page are shown inline;
+	// everything else (including legacy objects stored with an .html/.svg
+	// extension before keys were derived from the content type) downloads.
+	disposition := "attachment"
+	switch contentType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain; charset=utf-8":
+		disposition = "inline"
+	default:
+		contentType = "application/octet-stream"
+	}
 	c.Header("Content-Type", contentType)
-	c.Header("Content-Disposition", `inline; filename="`+filepath.Base(key)+`"`)
+	c.Header("Content-Disposition", disposition+`; filename="`+safeDownloadName(filepath.Base(key))+`"`)
 	c.Header("X-Content-Type-Options", "nosniff")
 	if _, err := io.Copy(c.Writer, f); err != nil {
 		log.Printf("local download stream error key=%s: %v", key, err)
 	}
+}
+
+// safeDownloadName keeps only characters that cannot break out of a quoted
+// Content-Disposition filename.
+func safeDownloadName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "download"
+	}
+	return b.String()
 }

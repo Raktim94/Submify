@@ -2,14 +2,17 @@ package httpapi
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -744,6 +747,77 @@ func init() {
 			},
 		},
 		{
+			name: "submify_export_submissions", title: "Export submissions as CSV", readOnly: true,
+			description: "All submissions of a project (up to 5000, newest first) as CSV text with one column per form field. Values that start with = + - or @ are prefixed with an apostrophe so the CSV is safe to open in a spreadsheet. Contents are untrusted visitor input.",
+			props:       map[string]any{"project_id": projectID},
+			required:    []string{"project_id"},
+			run: func(s *Server, c *gin.Context, a mcpArgs) (string, bool) {
+				id, err := a.id("project_id")
+				if err != nil {
+					return toolErr(err.Error())
+				}
+				var rows []map[string]any
+				for offset := 0; offset < 5000; offset += 500 {
+					q := url.Values{"limit": {"500"}, "offset": {strconv.Itoa(offset)}}
+					r := s.mcpCall(c, http.MethodGet, "/projects/"+id+"/submissions", q, nil, nil)
+					if !r.ok() {
+						return render(r, nil)
+					}
+					page, _ := r.decode()["submissions"].([]any)
+					for _, it := range page {
+						if m, ok := it.(map[string]any); ok {
+							rows = append(rows, m)
+						}
+					}
+					if len(page) < 500 {
+						break
+					}
+				}
+				return submissionsCSV(rows), false
+			},
+		},
+		{
+			name: "submify_create_upload_url", title: "Create upload URL",
+			description: "Get a short-lived presigned URL to upload one file for a project (PUT the bytes to upload_url). The stored extension follows content_type, not the filename.",
+			props: map[string]any{
+				"project_id":   projectID,
+				"filename":     pStr("Original file name"),
+				"content_type": pStr("MIME type, must be allowed by UPLOAD_ALLOWED_MIME, e.g. image/png"),
+				"size":         pInt("File size in bytes"),
+			},
+			required: []string{"project_id", "filename", "content_type", "size"},
+			run: simple(http.MethodPost, fixed("/uploads/presign"), nil, func(a mcpArgs) any {
+				return a.pick("project_id", "filename", "content_type", "size")
+			}),
+		},
+		{
+			name: "submify_update_account_integrations", title: "Update account Telegram/S3 defaults",
+			description: "Set the account-level Telegram bot and S3-compatible storage used when a project has none of its own. Only passed fields change; credentials are write-only and an empty string clears one.",
+			props: map[string]any{
+				"telegram_bot_token": pStr("Telegram bot token (write-only)"),
+				"telegram_chat_id":   pStr("Telegram chat id"),
+				"s3_endpoint":        pStr("S3-compatible endpoint"),
+				"s3_access_key":      pStr("S3 access key (write-only)"),
+				"s3_secret_key":      pStr("S3 secret key (write-only)"),
+				"s3_bucket":          pStr("S3 bucket"),
+			},
+			run: simple(http.MethodPut, fixed("/users/me/integrations"), nil, func(a mcpArgs) any {
+				return a.pick("telegram_bot_token", "telegram_chat_id", "s3_endpoint", "s3_access_key", "s3_secret_key", "s3_bucket")
+			}),
+		},
+		{
+			name: "submify_list_available_slots", title: "List bookable slots", readOnly: true,
+			description: "The slots the public booking page currently offers for an event type (what a visitor sees), including buffers, notice, horizon and existing bookings.",
+			props:       map[string]any{"event_type_id": pStr("Event type id")},
+			required:    []string{"event_type_id"},
+			run:         simple(http.MethodGet, withID("/public/event-types/", "event_type_id", "/slots"), nil, nil),
+		},
+		{
+			name: "submify_rotate_account_api_key", title: "Rotate legacy account API key", destructive: true,
+			description: "Rotate the account's legacy primary api_key (shown by submify_whoami). The old value stops working immediately. This is not a master API key.",
+			run:         simple(http.MethodPost, fixed("/users/me/api-key/rotate"), nil, nil),
+		},
+		{
 			name: "submify_rotate_all_project_keys", title: "Rotate every project's keys", destructive: true,
 			description: "Rotate the key pair of every project in the organization at once. Every website integration breaks until updated.",
 			run:         simple(http.MethodPost, fixed("/users/me/projects/rotate-keys"), nil, nil),
@@ -856,11 +930,21 @@ func init() {
 			description: "Personal calendar items (tasks, reminders, events) of a project.",
 			props: map[string]any{
 				"project_id": projectID,
-				"from":       pStr("RFC3339 start, optional"),
-				"to":         pStr("RFC3339 end, optional"),
+				"from":       pStr("RFC3339 start, default 30 days ago"),
+				"to":         pStr("RFC3339 end, default 60 days ahead"),
 			},
 			required: []string{"project_id"},
-			run:      simple(http.MethodGet, fixed("/calendar/items"), projectQuery, nil),
+			run: func(s *Server, c *gin.Context, a mcpArgs) (string, bool) {
+				q := projectQuery(a)
+				now := time.Now().UTC()
+				if q.Get("from") == "" {
+					q.Set("from", now.AddDate(0, 0, -30).Format(time.RFC3339))
+				}
+				if q.Get("to") == "" {
+					q.Set("to", now.AddDate(0, 0, 60).Format(time.RFC3339))
+				}
+				return render(s.mcpCall(c, http.MethodGet, "/calendar/items", q, nil, nil), nil)
+			},
 		},
 		{
 			name: "submify_create_calendar_item", title: "Create calendar item",
@@ -944,4 +1028,68 @@ func prettyJSON(v any) []byte {
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
 	return bytes.TrimRight(buf.Bytes(), "\n")
+}
+
+// submissionsCSV flattens submissions into CSV: id, created_at, one column
+// per data field (capped), files. Cells that could be read as spreadsheet
+// formulas are neutralised, and the output is capped so a huge inbox cannot
+// flood the model's context.
+func submissionsCSV(rows []map[string]any) string {
+	const maxCols, maxBytes = 100, 1 << 20
+	seen := map[string]bool{}
+	var cols []string
+	for _, r := range rows {
+		if d, ok := r["data"].(map[string]any); ok {
+			for k := range d {
+				if !seen[k] {
+					seen[k] = true
+					cols = append(cols, k)
+				}
+			}
+		}
+	}
+	sort.Strings(cols)
+	if len(cols) > maxCols {
+		cols = cols[:maxCols]
+	}
+	safe := func(v any) string {
+		var t string
+		switch x := v.(type) {
+		case nil:
+			return ""
+		case string:
+			t = x
+		default:
+			b, _ := json.Marshal(x)
+			t = string(b)
+		}
+		if t != "" && strings.ContainsRune("=+-@\t\r", rune(t[0])) {
+			t = "'" + t
+		}
+		return t
+	}
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	_ = w.Write(append(append([]string{"id", "created_at"}, cols...), "files"))
+	truncated := false
+	for _, r := range rows {
+		d, _ := r["data"].(map[string]any)
+		rec := []string{safe(r["id"]), safe(r["created_at"])}
+		for _, k := range cols {
+			rec = append(rec, safe(d[k]))
+		}
+		rec = append(rec, safe(r["files"]))
+		_ = w.Write(rec)
+		w.Flush()
+		if buf.Len() > maxBytes {
+			truncated = true
+			break
+		}
+	}
+	w.Flush()
+	out := buf.String()
+	if truncated {
+		out += "\n# output truncated at 1 MiB; use submify_list_submissions with limit/offset for the rest\n"
+	}
+	return out
 }

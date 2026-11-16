@@ -329,9 +329,15 @@ func (s *Server) PublicCreateBooking(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBookingBodyBytes)
 	var req createBookingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.AttendeeName) > maxAttendeeName || len(req.AttendeeEmail) > maxAttendeeEmail ||
+		len(req.AttendeeTimezone) > maxAttendeeTZ || len(req.Notes) > maxBookingNotes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name, email, timezone or notes is too long"})
 		return
 	}
 	startsAt, err := time.Parse(time.RFC3339, req.StartsAt)
@@ -341,6 +347,13 @@ func (s *Server) PublicCreateBooking(c *gin.Context) {
 	}
 	if startsAt.Before(time.Now().UTC().Add(time.Duration(et.MinNoticeMinutes) * time.Minute)) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "that time no longer meets the minimum notice window"})
+		return
+	}
+	if ok, err := s.slotIsBookable(et, startsAt, ""); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	} else if !ok {
+		c.JSON(http.StatusConflict, gin.H{"error": "that time is not available; pick one of the listed slots"})
 		return
 	}
 	endsAt := startsAt.Add(time.Duration(et.DurationMinutes) * time.Minute)
@@ -390,6 +403,7 @@ func (s *Server) PublicRescheduleBooking(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBookingBodyBytes)
 	var req rescheduleBookingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -398,6 +412,13 @@ func (s *Server) PublicRescheduleBooking(c *gin.Context) {
 	startsAt, err := time.Parse(time.RFC3339, req.StartsAt)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "starts_at must be RFC3339"})
+		return
+	}
+	if ok, err := s.slotIsBookable(et, startsAt, b.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	} else if !ok {
+		c.JSON(http.StatusConflict, gin.H{"error": "that time is not available; pick one of the listed slots"})
 		return
 	}
 	endsAt := startsAt.Add(time.Duration(et.DurationMinutes) * time.Minute)
@@ -433,4 +454,64 @@ func (s *Server) PublicCancelBooking(c *gin.Context) {
 		s.notifyHostOfBooking(et, "cancelled", updated)
 	}
 	c.JSON(http.StatusOK, gin.H{"booking": updated})
+}
+
+const (
+	maxBookingBodyBytes = 32 << 10
+	maxAttendeeName     = 200
+	maxAttendeeEmail    = 254
+	maxAttendeeTZ       = 64
+	maxBookingNotes     = 5000
+)
+
+// slotIsBookable reports whether startsAt is exactly one of the slots the
+// event type currently offers (weekly rules, date overrides, buffers, minimum
+// notice, booking horizon, slot grid and existing bookings). excludeBookingID,
+// when set, ignores that booking's own time so it can be rescheduled onto an
+// overlapping slot. Listing slots and accepting bookings must use the same
+// rules, or the public page is advisory only.
+func (s *Server) slotIsBookable(et db.EventType, startsAt time.Time, excludeBookingID string) (bool, error) {
+	rules, err := s.store.ListAvailabilityRules(et.ID)
+	if err != nil {
+		return false, err
+	}
+	dbOverrides, err := s.store.ListAvailabilityOverrides(et.ID)
+	if err != nil {
+		return false, err
+	}
+	now := time.Now().UTC()
+	horizon := now.AddDate(0, 0, et.MaxAdvanceDays+1)
+	busyRanges, err := s.store.ListBusyRanges(et.ID, now, horizon)
+	if err != nil {
+		return false, err
+	}
+	cfg := availability.Config{
+		Timezone: et.Timezone, DurationMinutes: et.DurationMinutes,
+		BufferBeforeMinutes: et.BufferBeforeMinutes, BufferAfterMinutes: et.BufferAfterMinutes,
+		MinNoticeMinutes: et.MinNoticeMinutes, MaxAdvanceDays: et.MaxAdvanceDays,
+		SlotIntervalMinutes: et.SlotIntervalMinutes,
+	}
+	for _, r := range rules {
+		cfg.Rules = append(cfg.Rules, availability.Rule{Weekday: time.Weekday(r.Weekday), StartMinute: r.StartMinute, EndMinute: r.EndMinute})
+	}
+	for _, o := range dbOverrides {
+		cfg.Overrides = append(cfg.Overrides, availability.Override{Date: o.Date, Blocked: o.Blocked, StartMinute: o.StartMinute, EndMinute: o.EndMinute})
+	}
+	var busy []availability.Busy
+	for _, b := range busyRanges {
+		if excludeBookingID != "" && b.BookingID == excludeBookingID {
+			continue
+		}
+		busy = append(busy, availability.Busy{Start: b.Start, End: b.End})
+	}
+	slots, err := availability.AvailableSlots(cfg, now, busy)
+	if err != nil {
+		return false, err
+	}
+	for _, sl := range slots {
+		if sl.Start.Equal(startsAt) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -34,22 +37,22 @@ type createProjectRequest struct {
 }
 
 type updateProjectRequest struct {
-	Name             string    `json:"name"`
-	RegenerateKey    bool      `json:"regenerate_key"`
-	AllowedOrigins   *[]string `json:"allowed_origins"`
-	TelegramBotToken *string   `json:"telegram_bot_token"`
-	TelegramChatID   *string   `json:"telegram_chat_id"`
-	S3Endpoint       *string   `json:"s3_endpoint"`
-	S3AccessKey      *string   `json:"s3_access_key"`
-	S3SecretKey      *string   `json:"s3_secret_key"`
-	S3Bucket         *string   `json:"s3_bucket"`
-	PortalSlug               *string `json:"portal_slug"`
-	PortalEnabled            *bool   `json:"portal_enabled"`
-	PortalPassword           *string `json:"portal_password"`
-	RegeneratePortalPassword bool    `json:"regenerate_portal_password"`
-	ZulivioEnabled *bool   `json:"zulivio_enabled"`
-	ZulivioAPIURL  *string `json:"zulivio_api_url"`
-	ZulivioAPIKey  *string `json:"zulivio_api_key"`
+	Name                      string    `json:"name"`
+	RegenerateKey             bool      `json:"regenerate_key"`
+	AllowedOrigins            *[]string `json:"allowed_origins"`
+	TelegramBotToken          *string   `json:"telegram_bot_token"`
+	TelegramChatID            *string   `json:"telegram_chat_id"`
+	S3Endpoint                *string   `json:"s3_endpoint"`
+	S3AccessKey               *string   `json:"s3_access_key"`
+	S3SecretKey               *string   `json:"s3_secret_key"`
+	S3Bucket                  *string   `json:"s3_bucket"`
+	PortalSlug                *string   `json:"portal_slug"`
+	PortalEnabled             *bool     `json:"portal_enabled"`
+	PortalPassword            *string   `json:"portal_password"`
+	RegeneratePortalPassword  bool      `json:"regenerate_portal_password"`
+	ZulivioEnabled            *bool     `json:"zulivio_enabled"`
+	ZulivioAPIURL             *string   `json:"zulivio_api_url"`
+	ZulivioAPIKey             *string   `json:"zulivio_api_key"`
 	EmailNotificationsEnabled *bool     `json:"email_notifications_enabled"`
 	SMTPHost                  *string   `json:"smtp_host"`
 	SMTPPort                  *int      `json:"smtp_port"`
@@ -608,8 +611,21 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		if req.ZulivioEnabled != nil {
 			enabled = *req.ZulivioEnabled
 		}
+		if req.ZulivioAPIURL != nil {
+			if err := rejectLinkLocalDestination(*req.ZulivioAPIURL); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
 		mergedURL := mergeIntegrationField(currentProject.ZulivioAPIURL, req.ZulivioAPIURL)
 		mergedKey := mergeIntegrationField(currentProject.ZulivioAPIKey, req.ZulivioAPIKey)
+		// A stored key is bound to the destination it was set for. Pointing
+		// the integration somewhere else without supplying a new key must not
+		// replay the old key to the new host (the key is write-only, so a
+		// member who cannot read it could otherwise collect it).
+		if req.ZulivioAPIKey == nil && strings.TrimRight(strings.TrimSpace(mergedURL), "/") != strings.TrimRight(strings.TrimSpace(currentProject.ZulivioAPIURL), "/") {
+			mergedKey = ""
+		}
 		if err := s.store.UpdateProjectZulivio(orgID, id, enabled, mergedURL, mergedKey); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, sql.ErrNoRows) {
@@ -642,9 +658,22 @@ func (s *Server) UpdateProject(c *gin.Context) {
 		if req.NotificationRecipients != nil {
 			recipients = *req.NotificationRecipients
 		}
+		if req.SMTPHost != nil {
+			if err := rejectLinkLocalDestination(*req.SMTPHost); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
 		mergedHost := mergeIntegrationField(currentProject.SMTPHost, req.SMTPHost)
 		mergedUsername := mergeIntegrationField(currentProject.SMTPUsername, req.SMTPUsername)
 		mergedPassword := mergeIntegrationField(currentProject.SMTPPassword, req.SMTPPassword)
+		// Same binding for the SMTP password: changing the host, port or
+		// username without re-entering it clears it.
+		if req.SMTPPassword == nil && (!strings.EqualFold(strings.TrimSpace(mergedHost), strings.TrimSpace(currentProject.SMTPHost)) ||
+			port != currentProject.SMTPPort ||
+			strings.TrimSpace(mergedUsername) != strings.TrimSpace(currentProject.SMTPUsername)) {
+			mergedPassword = ""
+		}
 		mergedFromEmail := mergeIntegrationField(currentProject.SMTPFromEmail, req.SMTPFromEmail)
 		if err := s.store.UpdateProjectEmailNotifications(orgID, id, enabled, mergedHost, port, mergedUsername, mergedPassword, mergedFromEmail, recipients); err != nil {
 			status := http.StatusInternalServerError
@@ -824,6 +853,14 @@ func (s *Server) Submit(c *gin.Context) {
 		return
 	}
 
+	// Bound the shape of what an anonymous caller can store: exports build a
+	// column per distinct key across all rows, so an unbounded key count
+	// makes later exports quadratic in CPU and memory.
+	if len(dataPartFor(raw)) > maxSubmissionFields {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("too many fields (max %d)", maxSubmissionFields)})
+		return
+	}
+
 	count, err := s.store.CountSubmissions(project.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -907,7 +944,7 @@ func (s *Server) PresignUpload(c *gin.Context) {
 	// disk storage, so uploads work out of the box on a fresh self-hosted
 	// install. See docs/decisions/0003-local-storage-fallback.md.
 	if s3Endpoint == "" || s3Bucket == "" || s3Access == "" || s3Secret == "" {
-		objectKey := storage.ProjectKey(req.ProjectID, req.Filename)
+		objectKey := storage.ProjectKey(req.ProjectID, req.ContentType)
 		ttl := time.Duration(s.cfg.PresignExpiryMinutes) * time.Minute
 		token, err := s.uploadTokens.Issue(objectKey, req.Size, ttl)
 		if err != nil {
@@ -929,7 +966,7 @@ func (s *Server) PresignUpload(c *gin.Context) {
 		SecretKey:     s3Secret,
 		Bucket:        s3Bucket,
 		ProjectID:     req.ProjectID,
-		Filename:      req.Filename,
+		ContentType:   req.ContentType,
 		ExpiryMinutes: s.cfg.PresignExpiryMinutes,
 	})
 	if err != nil {
@@ -1237,3 +1274,39 @@ func (s *Server) RotateAllProjectKeys(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "rotated", "projects_rotated": rotated})
 }
 
+const maxSubmissionFields = 200
+
+// dataPartFor returns the field map a submission would store: the nested
+// "data" object when present, otherwise the top-level object itself.
+func dataPartFor(raw map[string]interface{}) map[string]interface{} {
+	if d, ok := raw["data"]; ok {
+		if mapped, ok := d.(map[string]interface{}); ok {
+			return mapped
+		}
+	}
+	return raw
+}
+
+// rejectLinkLocalDestination refuses owner-supplied outbound destinations
+// that are literally link-local addresses (169.254.0.0/16, fe80::/10), which
+// include cloud metadata services (169.254.169.254). Private LAN and
+// loopback hosts stay allowed because self-hosters legitimately relay mail
+// through an internal SMTP server. Hostnames are not resolved here.
+func rejectLinkLocalDestination(hostOrURL string) error {
+	h := strings.TrimSpace(hostOrURL)
+	if h == "" {
+		return nil
+	}
+	if u, err := url.Parse(h); err == nil && u.Host != "" {
+		h = u.Hostname()
+	} else {
+		h = strings.Trim(strings.SplitN(h, "/", 2)[0], "[]")
+		if host, _, err := net.SplitHostPort(h); err == nil {
+			h = host
+		}
+	}
+	if ip := net.ParseIP(strings.Trim(h, "[]")); ip != nil && (ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) {
+		return errors.New("link-local addresses (such as cloud metadata endpoints) are not allowed as a destination")
+	}
+	return nil
+}

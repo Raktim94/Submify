@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,7 +20,7 @@ type PresignInput struct {
 	SecretKey     string
 	Bucket        string
 	ProjectID     string
-	Filename      string
+	ContentType   string
 	ExpiryMinutes int
 }
 
@@ -85,7 +84,7 @@ func PresignUpload(ctx context.Context, in PresignInput) (PresignResult, error) 
 		return PresignResult{}, err
 	}
 
-	ext := filepath.Ext(in.Filename)
+	ext := ExtForContentType(in.ContentType)
 	key := strings.Join([]string{
 		in.ProjectID,
 		time.Now().UTC().Format("2006-01-02"),

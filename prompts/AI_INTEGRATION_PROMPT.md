@@ -104,11 +104,11 @@ Wiring a site end to end with MCP: `submify_create_project` (returns the public 
 Limits to tell the developer honestly:
 
 - A key acts as the user who created it, with that user's permissions; for least privilege, create the key from a `member` account. Creating/revoking keys and changing the password are dashboard-only. Revoke a key in Settings and it stops immediately.
-- 32 tools cover projects, keys, snippets, submissions, team, calendar, S3 backup and updates; restore is dashboard-only. The full list is in `docs/api.md` ("Master API keys and MCP").
+- 37 tools cover projects, keys, snippets, submissions, team, calendar, S3 backup and updates; restore is dashboard-only. The full list is in `docs/api.md` ("Master API keys and MCP").
 - Destructive tools carry MCP `destructiveHint`; do not call them without explicit user confirmation. Submissions contain visitors' personal data — do not paste them into logs or tickets.
 - Webhooks: Submify has optional SMTP and Telegram alerts; no generic outbound webhook is documented. Do not invent one.
 
-Tested live (2026-11-16, local instance + real Postgres): the remote endpoint and the stdio bridge both listed 32 tools to the official MCP SDK client; create project → signed test submission → list submissions worked; a revoked key got `401`; a key could not create keys, create accounts, take or restore backups, or change the password (`403`). Earlier (2026-11-14) the legacy password-mode server listed its 13 tools, `submify_health` and `submify_list_projects` worked, project `api_secret` came back as `[redacted]` (the real secret key never appears), and a wrong password gave a clear `Submify login failed (401)` error. Destructive tools were not executed.
+Tested live (2026-11-16, local instance + real Postgres): the remote endpoint and the stdio bridge both listed 37 tools to the official MCP SDK client; create project → signed test submission → list submissions worked; a revoked key got `401`; a key could not create keys, create accounts, take or restore backups, or change the password (`403`). Earlier (2026-11-14) the legacy password-mode server listed its 13 tools, `submify_health` and `submify_list_projects` worked, project `api_secret` came back as `[redacted]` (the real secret key never appears), and a wrong password gave a clear `Submify login failed (401)` error. Destructive tools were not executed.
 
 ## Verify before you say "done"
 

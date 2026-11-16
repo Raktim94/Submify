@@ -319,13 +319,14 @@ func (s *Store) CancelBooking(id string) (Booking, error) {
 // BusyRange is a confirmed booking's buffer-inclusive occupied window —
 // feeds directly into availability.Busy.
 type BusyRange struct {
-	Start time.Time
-	End   time.Time
+	BookingID string
+	Start     time.Time
+	End       time.Time
 }
 
 func (s *Store) ListBusyRanges(eventTypeID string, from, to time.Time) ([]BusyRange, error) {
 	rows, err := s.DB.Query(`
-		SELECT busy_starts_at, busy_ends_at FROM bookings
+		SELECT id::text, busy_starts_at, busy_ends_at FROM bookings
 		WHERE event_type_id=$1 AND status='confirmed' AND busy_ends_at > $2 AND busy_starts_at < $3
 	`, eventTypeID, from, to)
 	if err != nil {
@@ -335,7 +336,7 @@ func (s *Store) ListBusyRanges(eventTypeID string, from, to time.Time) ([]BusyRa
 	out := []BusyRange{}
 	for rows.Next() {
 		var b BusyRange
-		if err := rows.Scan(&b.Start, &b.End); err != nil {
+		if err := rows.Scan(&b.BookingID, &b.Start, &b.End); err != nil {
 			return nil, err
 		}
 		out = append(out, b)

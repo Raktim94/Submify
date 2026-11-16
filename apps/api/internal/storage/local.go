@@ -22,14 +22,44 @@ type LocalBackend struct {
 }
 
 // ProjectKey builds the same "projectID/date/uuid.ext" shape the S3 backend
-// uses, so both backends produce interchangeable object keys.
-func ProjectKey(projectID, filename string) string {
-	ext := filepath.Ext(filename)
+// uses, so both backends produce interchangeable object keys. The extension
+// comes from the validated content type, never from the client's filename,
+// so an upload approved as image/png cannot be stored (and later served) as
+// .html or .svg.
+func ProjectKey(projectID, contentType string) string {
 	return strings.Join([]string{
 		projectID,
 		time.Now().UTC().Format("2006-01-02"),
-		uuid.NewString() + ext,
+		uuid.NewString() + ExtForContentType(contentType),
 	}, "/")
+}
+
+// ExtForContentType maps a declared content type to a safe file extension.
+// Anything unrecognised becomes ".bin" (served as a download).
+func ExtForContentType(contentType string) string {
+	ct := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	switch ct {
+	case "image/png":
+		return ".png"
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	case "application/pdf":
+		return ".pdf"
+	case "text/plain":
+		return ".txt"
+	case "text/csv":
+		return ".csv"
+	case "application/zip":
+		return ".zip"
+	case "application/json":
+		return ".json"
+	default:
+		return ".bin"
+	}
 }
 
 var errKeyEscapesRoot = errors.New("object key escapes storage root")

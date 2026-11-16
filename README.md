@@ -519,7 +519,7 @@ claude mcp add --transport http submify https://forms.example.com/api/v1/mcp \
   --header "Authorization: Bearer smk_..."
 ```
 
-The agent can then create projects and website keys, generate the form snippet, set allowed origins, send a signed test submission, read submissions, and manage calendars, team members, backups and updates — 32 tools, each running through the same permission checks as the dashboard. The key acts as you; revoke it from Settings at any time. Creating/revoking keys, adding team members, downloading/restoring backups and changing the password stay dashboard-only. For stdio-only clients, `apps/mcp` bridges to the same endpoint (`SUBMIFY_API_KEY`); see [apps/mcp/README.md](apps/mcp/README.md).
+The agent can then create projects and website keys, generate the form snippet, set allowed origins, send a signed test submission, read submissions, and manage calendars, team members, backups and updates — 37 tools, each running through the same permission checks as the dashboard. The key acts as you; revoke it from Settings at any time. Creating/revoking keys, adding team members, downloading/restoring backups and changing the password stay dashboard-only. For stdio-only clients, `apps/mcp` bridges to the same endpoint (`SUBMIFY_API_KEY`); see [apps/mcp/README.md](apps/mcp/README.md).
 
 ### Integrate with AI Coding Agents
 

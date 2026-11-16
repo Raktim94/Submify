@@ -127,7 +127,12 @@ func send(apiURL, apiKey string, leadJSON []byte) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Never follow redirects: the destination is owner-configured, and a
+	// redirect would carry the bearer key to a host nobody approved.
+	client := &http.Client{
+		Timeout:       10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
